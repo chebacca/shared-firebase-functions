@@ -6,11 +6,12 @@
 
 import { onRequest } from 'firebase-functions/v2/https';
 import { getFirestore } from 'firebase-admin/firestore';
-import { getAuth } from 'firebase-admin/auth';
+// import { getAuth } from 'firebase-admin/auth';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
+import { Request, Response } from 'express';
 
 const db = getFirestore();
-const auth = getAuth();
+// const auth = getAuth();
 
 export const teamMemberAuth = onRequest(
   {
@@ -18,16 +19,18 @@ export const teamMemberAuth = onRequest(
     timeoutSeconds: 60,
     cors: true
   },
-  async (req, res) => {
+  async (req: Request, res: Response): Promise<void> => {
     try {
       const { userId, organizationId, projectId } = req.body;
 
       if (!userId) {
-        return res.status(400).json(createErrorResponse('User ID is required'));
+        res.status(400).json(createErrorResponse('User ID is required'));
+        return;
       }
 
       if (!organizationId) {
-        return res.status(400).json(createErrorResponse('Organization ID is required'));
+        res.status(400).json(createErrorResponse('Organization ID is required'));
+        return;
       }
 
       console.log(`👥 [TEAM AUTH] Authenticating team member: ${userId} for org: ${organizationId}`);
@@ -35,14 +38,16 @@ export const teamMemberAuth = onRequest(
       // Get user data
       const userDoc = await db.collection('users').doc(userId).get();
       if (!userDoc.exists) {
-        return res.status(404).json(createErrorResponse('User not found'));
+        res.status(404).json(createErrorResponse('User not found'));
+        return;
       }
 
       const userData = userDoc.data();
       
       // Verify organization membership
-      if (userData.organizationId !== organizationId) {
-        return res.status(403).json(createErrorResponse('User not member of organization'));
+      if (userData?.organizationId !== organizationId) {
+        res.status(403).json(createErrorResponse('User not member of organization'));
+        return;
       }
 
       // Get team member data
@@ -53,14 +58,16 @@ export const teamMemberAuth = onRequest(
         .get();
 
       if (teamMemberQuery.empty) {
-        return res.status(404).json(createErrorResponse('Team member record not found'));
+        res.status(404).json(createErrorResponse('Team member record not found'));
+        return;
       }
 
       const teamMemberData = teamMemberQuery.docs[0].data();
       
       // Check if team member is active
-      if (!teamMemberData.isActive) {
-        return res.status(403).json(createErrorResponse('Team member account is inactive'));
+      if (!teamMemberData?.isActive) {
+        res.status(403).json(createErrorResponse('Team member account is inactive'));
+        return;
       }
 
       // Get project-specific role if projectId provided
@@ -79,8 +86,8 @@ export const teamMemberAuth = onRequest(
 
       // Get effective permissions
       const permissions = getEffectivePermissions(
-        userData.role,
-        teamMemberData.role,
+        userData?.role,
+        teamMemberData?.role,
         projectRole
       );
 
@@ -88,7 +95,7 @@ export const teamMemberAuth = onRequest(
         userId,
         organizationId,
         projectId,
-        userRole: userData.role,
+        userRole: userData?.role,
         teamMemberRole: teamMemberData.role,
         projectRole,
         hierarchy: teamMemberData.hierarchy,
@@ -103,11 +110,11 @@ export const teamMemberAuth = onRequest(
 
       console.log(`👥 [TEAM AUTH] Authentication successful for user: ${userId}`);
 
-      return res.status(200).json(createSuccessResponse(authResult, 'Team member authenticated successfully'));
+      res.status(200).json(createSuccessResponse(authResult, 'Team member authenticated successfully'));
 
     } catch (error: any) {
       console.error('❌ [TEAM AUTH] Error:', error);
-      return res.status(500).json(handleError(error, 'teamMemberAuth'));
+      res.status(500).json(handleError(error, 'teamMemberAuth'));
     }
   }
 );

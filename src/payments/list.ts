@@ -1,7 +1,7 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
-import { Payment } from '../shared/types';
+// import { Payment } from '../shared/types';
 
 // Shared business logic function
 async function listPaymentsLogic(data: any, context?: any): Promise<any> {

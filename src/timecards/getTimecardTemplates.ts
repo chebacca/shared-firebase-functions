@@ -20,7 +20,7 @@ export const getTimecardTemplates = onCall(
   },
   async (request) => {
     try {
-      const { organizationId, userId } = request.data;
+      const { organizationId } = request.data;
 
       if (!organizationId) {
         throw new Error('Organization ID is required');
@@ -63,7 +63,7 @@ export const getTimecardTemplatesHttp = onRequest(
   },
   async (req, res) => {
     try {
-      const { organizationId, userId } = req.query;
+      const { organizationId } = req.query;
 
       if (!organizationId) {
         res.status(400).json(createErrorResponse('Organization ID is required'));

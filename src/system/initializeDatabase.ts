@@ -7,6 +7,7 @@
 import { onRequest } from 'firebase-functions/v2/https';
 import { getFirestore } from 'firebase-admin/firestore';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
+import { Request, Response } from 'express';
 
 const db = getFirestore();
 
@@ -16,16 +17,18 @@ export const initializeDatabase = onRequest(
     timeoutSeconds: 300,
     cors: true
   },
-  async (req, res) => {
+  async (req: Request, res: Response) => {
     try {
       const { organizationId, userId } = req.body;
 
       if (!organizationId) {
-        return res.status(400).json(createErrorResponse('Organization ID is required'));
+        res.status(400).json(createErrorResponse('Organization ID is required'));
+        return;
       }
 
       if (!userId) {
-        return res.status(400).json(createErrorResponse('User ID is required'));
+        res.status(400).json(createErrorResponse('User ID is required'));
+        return;
       }
 
       console.log(`🚀 [INITIALIZE DATABASE] Starting database initialization for org: ${organizationId}`);
@@ -34,7 +37,7 @@ export const initializeDatabase = onRequest(
       const results = {
         collectionsCreated: 0,
         documentsCreated: 0,
-        errors: []
+        errors: [] as any[]
       };
 
       // Create default collections and documents
@@ -115,7 +118,7 @@ export const initializeDatabase = onRequest(
           console.log(`📊 [INITIALIZE DATABASE] Created collection: ${collection.name}`);
         } catch (error) {
           console.error(`❌ [INITIALIZE DATABASE] Error creating collection ${collection.name}:`, error);
-          results.errors.push(`Failed to create collection ${collection.name}: ${error}`);
+          results.errors.push(`Failed to create collection ${collection.name}: ${error instanceof Error ? error.message : String(error)}` as any);
         }
       }
 
@@ -124,16 +127,16 @@ export const initializeDatabase = onRequest(
 
       console.log(`🚀 [INITIALIZE DATABASE] Database initialization completed for org: ${organizationId}`);
 
-      return res.status(200).json(createSuccessResponse({
+      res.status(200).json(createSuccessResponse({
         organizationId,
         userId,
         results,
-        timestamp: new Date()
+        timestamp: new Date().toISOString()
       }, 'Database initialized successfully'));
 
     } catch (error: any) {
       console.error('❌ [INITIALIZE DATABASE] Error:', error);
-      return res.status(500).json(handleError(error, 'initializeDatabase'));
+      res.status(500).json(handleError(error, 'initializeDatabase'));
     }
   }
 );

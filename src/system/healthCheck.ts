@@ -7,7 +7,8 @@
 import { onRequest } from 'firebase-functions/v2/https';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
-import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
+import { createSuccessResponse, handleError } from '../shared/utils';
+import { Request, Response } from 'express';
 
 const db = getFirestore();
 const auth = getAuth();
@@ -18,7 +19,7 @@ export const healthCheck = onRequest(
     timeoutSeconds: 30,
     cors: true
   },
-  async (req, res) => {
+  async (req: Request, res: Response) => {
     try {
       const startTime = Date.now();
       
@@ -77,11 +78,11 @@ export const healthCheck = onRequest(
       console.log(`🏥 [HEALTH CHECK] System status: ${overallStatus} (${totalLatency}ms)`);
 
       const statusCode = overallStatus === 'healthy' ? 200 : 503;
-      return res.status(statusCode).json(createSuccessResponse(healthData, 'Health check completed'));
+      res.status(statusCode).json(createSuccessResponse(healthData, 'Health check completed'));
 
     } catch (error: any) {
       console.error('❌ [HEALTH CHECK] Error:', error);
-      return res.status(500).json(handleError(error, 'healthCheck'));
+      res.status(500).json(handleError(error, 'healthCheck'));
     }
   }
 );

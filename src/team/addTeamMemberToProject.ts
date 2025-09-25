@@ -7,6 +7,7 @@
 import { onRequest } from 'firebase-functions/v2/https';
 import { getFirestore } from 'firebase-admin/firestore';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
+import { Request, Response } from 'express';
 
 const db = getFirestore();
 
@@ -16,7 +17,7 @@ export const addTeamMemberToProject = onRequest(
     timeoutSeconds: 60,
     cors: true
   },
-  async (req, res) => {
+  async (req: Request, res: Response) => {
     try {
       const { 
         teamMemberId, 
@@ -29,19 +30,23 @@ export const addTeamMemberToProject = onRequest(
       } = req.body;
 
       if (!teamMemberId) {
-        return res.status(400).json(createErrorResponse('Team member ID is required'));
+        res.status(400).json(createErrorResponse('Team member ID is required'));
+        return;
       }
 
       if (!projectId) {
-        return res.status(400).json(createErrorResponse('Project ID is required'));
+        res.status(400).json(createErrorResponse('Project ID is required'));
+        return;
       }
 
       if (!organizationId) {
-        return res.status(400).json(createErrorResponse('Organization ID is required'));
+        res.status(400).json(createErrorResponse('Organization ID is required'));
+        return;
       }
 
       if (!role) {
-        return res.status(400).json(createErrorResponse('Role is required'));
+        res.status(400).json(createErrorResponse('Role is required'));
+        return;
       }
 
       console.log(`👥 [ADD TO PROJECT] Adding team member ${teamMemberId} to project ${projectId}`);
@@ -49,33 +54,39 @@ export const addTeamMemberToProject = onRequest(
       // Verify team member exists and is active
       const teamMemberDoc = await db.collection('teamMembers').doc(teamMemberId).get();
       if (!teamMemberDoc.exists) {
-        return res.status(404).json(createErrorResponse('Team member not found'));
+        res.status(404).json(createErrorResponse('Team member not found'));
+        return;
       }
 
       const teamMemberData = teamMemberDoc.data();
-      if (!teamMemberData.isActive) {
-        return res.status(400).json(createErrorResponse('Team member is inactive'));
+      if (!teamMemberData?.isActive) {
+        res.status(400).json(createErrorResponse('Team member is inactive'));
+        return;
       }
 
       if (teamMemberData.organizationId !== organizationId) {
-        return res.status(403).json(createErrorResponse('Team member not in organization'));
+        res.status(403).json(createErrorResponse('Team member not in organization'));
+        return;
       }
 
       // Verify project exists
       const projectDoc = await db.collection('projects').doc(projectId).get();
       if (!projectDoc.exists) {
-        return res.status(404).json(createErrorResponse('Project not found'));
+        res.status(404).json(createErrorResponse('Project not found'));
+        return;
       }
 
       const projectData = projectDoc.data();
-      if (projectData.organizationId !== organizationId) {
-        return res.status(403).json(createErrorResponse('Project not in organization'));
+      if (projectData?.organizationId !== organizationId) {
+        res.status(403).json(createErrorResponse('Project not in organization'));
+        return;
       }
 
       // Check if team member is already assigned to project
       const existingAssignments = teamMemberData.projectAssignments || {};
       if (existingAssignments[projectId]) {
-        return res.status(400).json(createErrorResponse('Team member already assigned to project'));
+        res.status(400).json(createErrorResponse('Team member already assigned to project'));
+        return;
       }
 
       // Create project assignment
@@ -95,7 +106,7 @@ export const addTeamMemberToProject = onRequest(
       });
 
       // Add team member to project's team list
-      const projectTeamMembers = projectData.teamMembers || [];
+      const projectTeamMembers = projectData?.teamMembers || [];
       if (!projectTeamMembers.includes(teamMemberId)) {
         await db.collection('projects').doc(projectId).update({
           teamMembers: [...projectTeamMembers, teamMemberId],
@@ -105,17 +116,17 @@ export const addTeamMemberToProject = onRequest(
 
       console.log(`👥 [ADD TO PROJECT] Successfully added team member ${teamMemberId} to project ${projectId}`);
 
-      return res.status(200).json(createSuccessResponse({
+      res.status(200).json(createSuccessResponse({
         teamMemberId,
         projectId,
         organizationId,
         assignment: projectAssignment,
-        assignedAt: new Date()
+        assignedAt: new Date().toISOString()
       }, 'Team member added to project successfully'));
 
     } catch (error: any) {
       console.error('❌ [ADD TO PROJECT] Error:', error);
-      return res.status(500).json(handleError(error, 'addTeamMemberToProject'));
+      res.status(500).json(handleError(error, 'addTeamMemberToProject'));
     }
   }
 );

@@ -1,7 +1,7 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
-import { Dataset } from '../shared/types';
+// import { Dataset } from '../shared/types';
 
 // Shared business logic function
 async function updateDatasetLogic(data: any, context?: any): Promise<any> {

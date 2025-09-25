@@ -6,7 +6,8 @@
 
 import { onRequest } from 'firebase-functions/v2/https';
 import { getFirestore } from 'firebase-admin/firestore';
-import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
+import { createSuccessResponse, handleError } from '../shared/utils';
+import { Request, Response } from 'express';
 
 const db = getFirestore();
 
@@ -16,7 +17,7 @@ export const listCollections = onRequest(
     timeoutSeconds: 60,
     cors: true
   },
-  async (req, res) => {
+  async (req: Request, res: Response) => {
     try {
       console.log('📊 [LIST COLLECTIONS] Fetching all collections...');
 
@@ -31,14 +32,14 @@ export const listCollections = onRequest(
 
       console.log(`📊 [LIST COLLECTIONS] Found ${collectionList.length} collections`);
 
-      return res.status(200).json(createSuccessResponse({
+      res.status(200).json(createSuccessResponse({
         collections: collectionList,
         count: collectionList.length
       }, 'Collections listed successfully'));
 
     } catch (error: any) {
       console.error('❌ [LIST COLLECTIONS] Error:', error);
-      return res.status(500).json(handleError(error, 'listCollections'));
+      res.status(500).json(handleError(error, 'listCollections'));
     }
   }
 );

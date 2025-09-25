@@ -6,7 +6,7 @@
 
 import { onCall } from 'firebase-functions/v2/https';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
+import { createSuccessResponse, handleError } from '../shared/utils';
 
 // Initialize Gemini AI
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
@@ -254,7 +254,7 @@ function parseWorkflowResponse(aiResponse: string, deliverables: any[], projectT
         inputDeliverablesCount: deliverables.length,
         aiModel: 'gemini-pro',
         version: '1.0',
-        error: error.message
+        error: error instanceof Error ? error.message : String(error)
       },
       rawResponse: aiResponse
     };

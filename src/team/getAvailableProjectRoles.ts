@@ -6,6 +6,7 @@
 
 import { onRequest } from 'firebase-functions/v2/https';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
+import { Request, Response } from 'express';
 
 export const getAvailableProjectRoles = onRequest(
   {
@@ -13,12 +14,13 @@ export const getAvailableProjectRoles = onRequest(
     timeoutSeconds: 30,
     cors: true
   },
-  async (req, res) => {
+  async (req: Request, res: Response): Promise<void> => {
     try {
       const { userRole, organizationRole, projectId } = req.body;
 
       if (!userRole) {
-        return res.status(400).json(createErrorResponse('User role is required'));
+        res.status(400).json(createErrorResponse('User role is required'));
+        return;
       }
 
       console.log(`👥 [PROJECT ROLES] Getting available roles for user role: ${userRole}`);
@@ -43,7 +45,7 @@ export const getAvailableProjectRoles = onRequest(
 
       console.log(`👥 [PROJECT ROLES] Found ${rolesWithDetails.length} available roles`);
 
-      return res.status(200).json(createSuccessResponse({
+      res.status(200).json(createSuccessResponse({
         userRole,
         organizationRole,
         projectId,
@@ -53,7 +55,7 @@ export const getAvailableProjectRoles = onRequest(
 
     } catch (error: any) {
       console.error('❌ [PROJECT ROLES] Error:', error);
-      return res.status(500).json(handleError(error, 'getAvailableProjectRoles'));
+      res.status(500).json(handleError(error, 'getAvailableProjectRoles'));
     }
   }
 );

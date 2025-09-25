@@ -1,7 +1,7 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
-import { Project } from '../shared/types';
+// import { Project } from '../shared/types';
 
 // Shared business logic function
 async function updateProjectLogic(data: any, context?: any): Promise<any> {

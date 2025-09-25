@@ -7,6 +7,7 @@
 import { onRequest } from 'firebase-functions/v2/https';
 import { getFirestore } from 'firebase-admin/firestore';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
+import { Request, Response } from 'express';
 
 const db = getFirestore();
 
@@ -16,20 +17,23 @@ export const removeTeamMemberFromProject = onRequest(
     timeoutSeconds: 60,
     cors: true
   },
-  async (req, res) => {
+  async (req: Request, res: Response): Promise<void> => {
     try {
       const { teamMemberId, projectId, organizationId, removedBy } = req.body;
 
       if (!teamMemberId) {
-        return res.status(400).json(createErrorResponse('Team member ID is required'));
+        res.status(400).json(createErrorResponse('Team member ID is required'));
+        return;
       }
 
       if (!projectId) {
-        return res.status(400).json(createErrorResponse('Project ID is required'));
+        res.status(400).json(createErrorResponse('Project ID is required'));
+        return;
       }
 
       if (!organizationId) {
-        return res.status(400).json(createErrorResponse('Organization ID is required'));
+        res.status(400).json(createErrorResponse('Organization ID is required'));
+        return;
       }
 
       console.log(`👥 [REMOVE FROM PROJECT] Removing team member ${teamMemberId} from project ${projectId}`);
@@ -37,29 +41,34 @@ export const removeTeamMemberFromProject = onRequest(
       // Verify team member exists
       const teamMemberDoc = await db.collection('teamMembers').doc(teamMemberId).get();
       if (!teamMemberDoc.exists) {
-        return res.status(404).json(createErrorResponse('Team member not found'));
+        res.status(404).json(createErrorResponse('Team member not found'));
+        return;
       }
 
       const teamMemberData = teamMemberDoc.data();
-      if (teamMemberData.organizationId !== organizationId) {
-        return res.status(403).json(createErrorResponse('Team member not in organization'));
+      if (teamMemberData?.organizationId !== organizationId) {
+        res.status(403).json(createErrorResponse('Team member not in organization'));
+        return;
       }
 
       // Verify project exists
       const projectDoc = await db.collection('projects').doc(projectId).get();
       if (!projectDoc.exists) {
-        return res.status(404).json(createErrorResponse('Project not found'));
+        res.status(404).json(createErrorResponse('Project not found'));
+        return;
       }
 
       const projectData = projectDoc.data();
-      if (projectData.organizationId !== organizationId) {
-        return res.status(403).json(createErrorResponse('Project not in organization'));
+      if (projectData?.organizationId !== organizationId) {
+        res.status(403).json(createErrorResponse('Project not in organization'));
+        return;
       }
 
       // Check if team member is assigned to project
-      const existingAssignments = teamMemberData.projectAssignments || {};
+      const existingAssignments = teamMemberData?.projectAssignments || {};
       if (!existingAssignments[projectId]) {
-        return res.status(400).json(createErrorResponse('Team member not assigned to project'));
+        res.status(400).json(createErrorResponse('Team member not assigned to project'));
+        return;
       }
 
       // Remove project assignment from team member
@@ -72,8 +81,8 @@ export const removeTeamMemberFromProject = onRequest(
       });
 
       // Remove team member from project's team list
-      const projectTeamMembers = projectData.teamMembers || [];
-      const updatedTeamMembers = projectTeamMembers.filter(id => id !== teamMemberId);
+      const projectTeamMembers = projectData?.teamMembers || [];
+      const updatedTeamMembers = projectTeamMembers.filter((id: any) => id !== teamMemberId);
 
       await db.collection('projects').doc(projectId).update({
         teamMembers: updatedTeamMembers,
@@ -82,17 +91,17 @@ export const removeTeamMemberFromProject = onRequest(
 
       console.log(`👥 [REMOVE FROM PROJECT] Successfully removed team member ${teamMemberId} from project ${projectId}`);
 
-      return res.status(200).json(createSuccessResponse({
+      res.status(200).json(createSuccessResponse({
         teamMemberId,
         projectId,
         organizationId,
-        removedAt: new Date(),
+        removedAt: new Date().toISOString(),
         removedBy: removedBy || 'system'
       }, 'Team member removed from project successfully'));
 
     } catch (error: any) {
       console.error('❌ [REMOVE FROM PROJECT] Error:', error);
-      return res.status(500).json(handleError(error, 'removeTeamMemberFromProject'));
+      res.status(500).json(handleError(error, 'removeTeamMemberFromProject'));
     }
   }
 );

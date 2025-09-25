@@ -1,7 +1,7 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
-import { License } from '../shared/types';
+// import { License } from '../shared/types';
 
 // Shared business logic function
 async function updateLicenseLogic(data: any, context?: any): Promise<any> {

@@ -7,7 +7,7 @@
 
 import { onCall, onRequest } from 'firebase-functions/v2/https';
 import { getFirestore } from 'firebase-admin/firestore';
-import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
+import { createSuccessResponse, handleError } from '../shared/utils';
 
 const db = getFirestore();
 

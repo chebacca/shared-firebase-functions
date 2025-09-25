@@ -7,6 +7,7 @@
 import { onRequest } from 'firebase-functions/v2/https';
 import { getFirestore } from 'firebase-admin/firestore';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
+import { Request, Response } from 'express';
 
 const db = getFirestore();
 
@@ -16,12 +17,13 @@ export const getLicensedTeamMembers = onRequest(
     timeoutSeconds: 60,
     cors: true
   },
-  async (req, res) => {
+  async (req: Request, res: Response): Promise<void> => {
     try {
       const { organizationId, licenseType, includeInactive = false } = req.body;
 
       if (!organizationId) {
-        return res.status(400).json(createErrorResponse('Organization ID is required'));
+        res.status(400).json(createErrorResponse('Organization ID is required'));
+        return;
       }
 
       console.log(`👥 [LICENSED TEAM] Getting licensed team members for org: ${organizationId}`);
@@ -52,7 +54,7 @@ export const getLicensedTeamMembers = onRequest(
           .where('status', '==', 'active')
           .get();
         
-        const activeLicenses = [];
+        const activeLicenses: any[] = [];
         licensesQuery.forEach(licenseDoc => {
           const licenseData = licenseDoc.data();
           activeLicenses.push({
@@ -100,7 +102,7 @@ export const getLicensedTeamMembers = onRequest(
 
       console.log(`👥 [LICENSED TEAM] Found ${licensedTeamMembers.length} licensed team members for org: ${organizationId}`);
 
-      return res.status(200).json(createSuccessResponse({
+      res.status(200).json(createSuccessResponse({
         organizationId,
         licenseType,
         teamMembers: licensedTeamMembers,
@@ -110,7 +112,7 @@ export const getLicensedTeamMembers = onRequest(
 
     } catch (error: any) {
       console.error('❌ [LICENSED TEAM] Error:', error);
-      return res.status(500).json(handleError(error, 'getLicensedTeamMembers'));
+      res.status(500).json(handleError(error, 'getLicensedTeamMembers'));
     }
   }
 );

@@ -7,6 +7,7 @@
 import { onRequest } from 'firebase-functions/v2/https';
 import { getFirestore } from 'firebase-admin/firestore';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
+import { Request, Response } from 'express';
 
 const db = getFirestore();
 
@@ -16,16 +17,18 @@ export const getProjectTeamMembers = onRequest(
     timeoutSeconds: 60,
     cors: true
   },
-  async (req, res) => {
+  async (req: Request, res: Response): Promise<void> => {
     try {
       const { projectId, organizationId, includeInactive = false } = req.body;
 
       if (!projectId) {
-        return res.status(400).json(createErrorResponse('Project ID is required'));
+        res.status(400).json(createErrorResponse('Project ID is required'));
+        return;
       }
 
       if (!organizationId) {
-        return res.status(400).json(createErrorResponse('Organization ID is required'));
+        res.status(400).json(createErrorResponse('Organization ID is required'));
+        return;
       }
 
       console.log(`👥 [PROJECT TEAM] Getting team members for project: ${projectId}`);
@@ -76,7 +79,7 @@ export const getProjectTeamMembers = onRequest(
 
       console.log(`👥 [PROJECT TEAM] Found ${teamMembers.length} team members for project: ${projectId}`);
 
-      return res.status(200).json(createSuccessResponse({
+      res.status(200).json(createSuccessResponse({
         projectId,
         organizationId,
         teamMembers,
@@ -86,7 +89,7 @@ export const getProjectTeamMembers = onRequest(
 
     } catch (error: any) {
       console.error('❌ [PROJECT TEAM] Error:', error);
-      return res.status(500).json(handleError(error, 'getProjectTeamMembers'));
+      res.status(500).json(handleError(error, 'getProjectTeamMembers'));
     }
   }
 );

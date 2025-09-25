@@ -5,7 +5,8 @@
  */
 
 import { onRequest } from 'firebase-functions/v2/https';
-import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
+import { createSuccessResponse, handleError } from '../shared/utils';
+import { Request, Response } from 'express';
 
 export const debugRoleConversion = onRequest(
   {
@@ -13,7 +14,7 @@ export const debugRoleConversion = onRequest(
     timeoutSeconds: 30,
     cors: true
   },
-  async (req, res) => {
+  async (req: Request, res: Response) => {
     try {
       const { userRole, organizationRole, projectRole, testAll = false } = req.body;
 
@@ -29,7 +30,7 @@ export const debugRoleConversion = onRequest(
         roleConversion: {},
         hierarchyMapping: {},
         permissionMapping: {},
-        testResults: [],
+        testResults: [] as any[],
         timestamp: new Date()
       };
 
@@ -37,7 +38,7 @@ export const debugRoleConversion = onRequest(
         // Test all possible role combinations
         const allUserRoles = ['SUPERADMIN', 'ADMIN', 'admin', 'owner', 'MANAGER', 'MEMBER', 'member', 'viewer', 'USER', 'GUEST'];
         const allOrgRoles = ['SUPERADMIN', 'ADMIN', 'admin', 'owner', 'MANAGER', 'MEMBER', 'member', 'viewer', 'USER', 'GUEST'];
-        const allProjectRoles = ['PRODUCER', 'DIRECTOR', 'POST_PRODUCER', 'POST_COORDINATOR', 'EDITOR', 'ASSISTANT_EDITOR', 'PRODUCTION_ASSISTANT', 'POST_PA', 'GUEST'];
+        // const allProjectRoles = ['PRODUCER', 'DIRECTOR', 'POST_PRODUCER', 'POST_COORDINATOR', 'EDITOR', 'ASSISTANT_EDITOR', 'PRODUCTION_ASSISTANT', 'POST_PA', 'GUEST'];
 
         for (const userR of allUserRoles) {
           for (const orgR of allOrgRoles) {
@@ -85,11 +86,11 @@ export const debugRoleConversion = onRequest(
 
       console.log(`🐛 [DEBUG ROLE] Role conversion debug completed`);
 
-      return res.status(200).json(createSuccessResponse(debugResults, 'Role conversion debug completed successfully'));
+      res.status(200).json(createSuccessResponse(debugResults, 'Role conversion debug completed successfully'));
 
     } catch (error: any) {
       console.error('❌ [DEBUG ROLE] Error:', error);
-      return res.status(500).json(handleError(error, 'debugRoleConversion'));
+      res.status(500).json(handleError(error, 'debugRoleConversion'));
     }
   }
 );

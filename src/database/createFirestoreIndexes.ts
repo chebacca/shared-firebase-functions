@@ -5,10 +5,11 @@
  */
 
 import { onRequest } from 'firebase-functions/v2/https';
-import { getFirestore } from 'firebase-admin/firestore';
+// import { getFirestore } from 'firebase-admin/firestore';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
+import { Request, Response } from 'express';
 
-const db = getFirestore();
+// const db = getFirestore();
 
 export const createFirestoreIndexes = onRequest(
   {
@@ -16,16 +17,18 @@ export const createFirestoreIndexes = onRequest(
     timeoutSeconds: 60,
     cors: true
   },
-  async (req, res) => {
+  async (req: Request, res: Response) => {
     try {
       const { collectionName, indexes } = req.body;
 
       if (!collectionName) {
-        return res.status(400).json(createErrorResponse('Collection name is required'));
+        res.status(400).json(createErrorResponse('Collection name is required'));
+        return;
       }
 
       if (!indexes || !Array.isArray(indexes)) {
-        return res.status(400).json(createErrorResponse('Indexes array is required'));
+        res.status(400).json(createErrorResponse('Indexes array is required'));
+        return;
       }
 
       console.log(`📊 [CREATE INDEXES] Creating ${indexes.length} indexes for ${collectionName}`);
@@ -43,7 +46,7 @@ export const createFirestoreIndexes = onRequest(
 
       console.log(`📊 [CREATE INDEXES] Index creation initiated for ${collectionName}`);
 
-      return res.status(200).json(createSuccessResponse({
+      res.status(200).json(createSuccessResponse({
         collectionName,
         indexes: indexResults,
         message: 'Index creation initiated. Check Firebase Console for status.'
@@ -51,7 +54,7 @@ export const createFirestoreIndexes = onRequest(
 
     } catch (error: any) {
       console.error('❌ [CREATE INDEXES] Error:', error);
-      return res.status(500).json(handleError(error, 'createFirestoreIndexes'));
+      res.status(500).json(handleError(error, 'createFirestoreIndexes'));
     }
   }
 );

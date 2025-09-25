@@ -5,21 +5,21 @@
  */
 
 import { onRequest } from 'firebase-functions/v2/https';
-import * as express from 'express';
-import * as cors from 'cors';
+import express from 'express';
+import cors from 'cors';
 
 // Import all function modules
-import * as auth from '../auth';
-import * as projects from '../projects';
-import * as datasets from '../datasets';
-import * as sessions from '../sessions';
-import * as licensing from '../licensing';
-import * as payments from '../payments';
-import * as database from '../database';
-import * as system from '../system';
-import * as ai from '../ai';
-import * as team from '../team';
-import * as debug from '../debug';
+// import * as auth from '../auth';
+// import * as projects from '../projects';
+// import * as datasets from '../datasets';
+// import * as sessions from '../sessions';
+// import * as licensing from '../licensing';
+// import * as payments from '../payments';
+// import * as database from '../database';
+// import * as system from '../system';
+// import * as ai from '../ai';
+// import * as team from '../team';
+// import * as debug from '../debug';
 
 // Create Express app
 const app = express();
@@ -37,7 +37,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Health check endpoint
-app.get('/health', (req, res) => {
+app.get('/health', (req: express.Request, res: express.Response) => {
   res.status(200).json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
@@ -47,7 +47,7 @@ app.get('/health', (req, res) => {
 });
 
 // API documentation endpoint
-app.get('/docs', (req, res) => {
+app.get('/docs', (req: express.Request, res: express.Response) => {
   res.status(200).json({
     title: 'BACKBONE Unified API',
     version: '1.0.0',
@@ -120,20 +120,22 @@ app.get('/docs', (req, res) => {
 });
 
 // Mount all function modules
-app.use('/auth', auth);
-app.use('/projects', projects);
-app.use('/datasets', datasets);
-app.use('/sessions', sessions);
-app.use('/licensing', licensing);
-app.use('/payments', payments);
-app.use('/database', database);
-app.use('/system', system);
-app.use('/ai', ai);
-app.use('/team', team);
-app.use('/debug', debug);
+// Note: Individual functions are exported separately
+// These modules contain Firebase Functions, not Express routers
+// app.use('/auth', auth);
+// app.use('/projects', projects);
+// app.use('/datasets', datasets);
+// app.use('/sessions', sessions);
+// app.use('/licensing', licensing);
+// app.use('/payments', payments);
+// app.use('/database', database);
+// app.use('/system', system);
+// app.use('/ai', ai);
+// app.use('/team', team);
+// app.use('/debug', debug);
 
 // 404 handler
-app.use('*', (req, res) => {
+app.use('*', (req: express.Request, res: express.Response) => {
   res.status(404).json({
     error: 'Endpoint not found',
     path: req.originalUrl,

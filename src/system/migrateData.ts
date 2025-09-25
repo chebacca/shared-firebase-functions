@@ -7,6 +7,7 @@
 import { onRequest } from 'firebase-functions/v2/https';
 import { getFirestore } from 'firebase-admin/firestore';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
+import { Request, Response } from 'express';
 
 const db = getFirestore();
 
@@ -16,12 +17,13 @@ export const migrateData = onRequest(
     timeoutSeconds: 300,
     cors: true
   },
-  async (req, res) => {
+  async (req: Request, res: Response) => {
     try {
-      const { migrationType, organizationId, options = {} } = req.body;
+      const { migrationType, organizationId } = req.body;
 
       if (!migrationType) {
-        return res.status(400).json(createErrorResponse('Migration type is required'));
+        res.status(400).json(createErrorResponse('Migration type is required'));
+        return;
       }
 
       console.log(`🔄 [MIGRATE DATA] Starting migration: ${migrationType} for org: ${organizationId}`);
@@ -33,7 +35,7 @@ export const migrateData = onRequest(
         documentsUpdated: 0,
         errors: [],
         startTime: new Date(),
-        endTime: null
+        endTime: null as string | null
       };
 
       switch (migrationType) {
@@ -47,17 +49,18 @@ export const migrateData = onRequest(
           await migrateAddOrganizationFields(organizationId, results);
           break;
         default:
-          return res.status(400).json(createErrorResponse(`Unknown migration type: ${migrationType}`));
+          res.status(400).json(createErrorResponse(`Unknown migration type: ${migrationType}`));
+          return;
       }
 
-      results.endTime = new Date();
+      results.endTime = new Date().toISOString();
       console.log(`🔄 [MIGRATE DATA] Migration completed: ${migrationType}`);
 
-      return res.status(200).json(createSuccessResponse(results, 'Data migration completed successfully'));
+      res.status(200).json(createSuccessResponse(results, 'Data migration completed successfully'));
 
     } catch (error: any) {
       console.error('❌ [MIGRATE DATA] Error:', error);
-      return res.status(500).json(handleError(error, 'migrateData'));
+      res.status(500).json(handleError(error, 'migrateData'));
     }
   }
 );
@@ -142,11 +145,11 @@ async function migrateAddOrganizationFields(organizationId: string, results: any
       const data = orgDoc.data();
       const updates: any = {};
       
-      if (!data.settings) {
+      if (!data?.settings) {
         updates.settings = {};
       }
       
-      if (!data.subscription) {
+      if (!data?.subscription) {
         updates.subscription = {
           type: 'basic',
           status: 'active'

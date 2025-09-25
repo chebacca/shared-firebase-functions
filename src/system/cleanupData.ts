@@ -7,6 +7,7 @@
 import { onRequest } from 'firebase-functions/v2/https';
 import { getFirestore } from 'firebase-admin/firestore';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
+import { Request, Response } from 'express';
 
 const db = getFirestore();
 
@@ -16,12 +17,13 @@ export const cleanupData = onRequest(
     timeoutSeconds: 300,
     cors: true
   },
-  async (req, res) => {
+  async (req: Request, res: Response) => {
     try {
       const { organizationId, cleanupType, options = {} } = req.body;
 
       if (!organizationId) {
-        return res.status(400).json(createErrorResponse('Organization ID is required'));
+        res.status(400).json(createErrorResponse('Organization ID is required'));
+        return;
       }
 
       console.log(`🧹 [CLEANUP DATA] Starting cleanup: ${cleanupType || 'all'} for org: ${organizationId}`);
@@ -33,7 +35,7 @@ export const cleanupData = onRequest(
         collectionsProcessed: 0,
         errors: [],
         startTime: new Date(),
-        endTime: null
+        endTime: null as string | null
       };
 
       // Perform different types of cleanup
@@ -49,14 +51,14 @@ export const cleanupData = onRequest(
         await cleanupInvalidData(organizationId, results);
       }
 
-      results.endTime = new Date();
+      results.endTime = new Date().toISOString();
       console.log(`🧹 [CLEANUP DATA] Cleanup completed: ${results.documentsDeleted} documents deleted`);
 
-      return res.status(200).json(createSuccessResponse(results, 'Data cleanup completed successfully'));
+      res.status(200).json(createSuccessResponse(results, 'Data cleanup completed successfully'));
 
     } catch (error: any) {
       console.error('❌ [CLEANUP DATA] Error:', error);
-      return res.status(500).json(handleError(error, 'cleanupData'));
+      res.status(500).json(handleError(error, 'cleanupData'));
     }
   }
 );
