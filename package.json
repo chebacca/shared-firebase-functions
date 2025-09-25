@@ -27,7 +27,14 @@
     "test:watch": "jest --watch",
     "clean": "rm -rf lib",
     "prebuild": "npm run clean",
-    "predeploy": "npm run build"
+    "predeploy": "npm run build",
+    "git:status": "git status",
+    "git:add": "git add .",
+    "git:commit": "git commit -m",
+    "git:push": "git push origin main",
+    "git:log": "git log --oneline -10",
+    "git:diff": "git diff --cached",
+    "git:setup": "git config user.name 'BACKBONE Development Team' && git config user.email 'dev@backbone-logic.com'"
   },
   "dependencies": {
     "firebase-admin": "^12.0.0",

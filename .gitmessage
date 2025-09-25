@@ -1,0 +1,32 @@
+# 🔥 BACKBONE Shared Firebase Functions - Commit Message Template
+# 
+# Type: feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert
+# 
+# Examples:
+# feat: add new authentication function
+# fix: resolve role conversion bug
+# docs: update API documentation
+# style: format code with prettier
+# refactor: reorganize function structure
+# test: add unit tests for auth functions
+# chore: update dependencies
+# perf: optimize database queries
+# ci: add GitHub Actions workflow
+# build: update build configuration
+# revert: revert previous commit
+#
+# Scope (optional): auth|projects|datasets|sessions|licensing|payments|database|system|ai|team|callSheets|timecards|debug|api|shared
+#
+# Description: Brief description of changes
+#
+# Body (optional): Detailed explanation of changes
+#
+# Footer (optional): Reference issues, breaking changes, etc.
+#
+# Example:
+# feat(auth): add password reset functionality
+#
+# Add forgotPassword and resetPassword functions with email verification
+# and secure token generation for password reset flow.
+#
+# Closes #123
