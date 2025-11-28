@@ -7,7 +7,6 @@
 import { onRequest } from 'firebase-functions/v2/https';
 import { getFirestore } from 'firebase-admin/firestore';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
-import { Request, Response } from 'express';
 
 const db = getFirestore();
 
@@ -17,7 +16,7 @@ export const getLicensedTeamMembers = onRequest(
     timeoutSeconds: 60,
     cors: true
   },
-  async (req: Request, res: Response): Promise<void> => {
+  async (req: any, res: any): Promise<void> => {
     try {
       const { organizationId, licenseType, includeInactive = false } = req.body;
 

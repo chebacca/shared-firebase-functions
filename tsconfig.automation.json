@@ -1,0 +1,32 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./lib",
+    "rootDir": "./src",
+    "strict": true
+  },
+  "include": [
+    "src/notifications/sendEmail.ts",
+    "src/clipShowPro/automationExecutor.ts",
+    "src/index.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "lib",
+    "src/box.ts",
+    "src/integrations/airtable.ts",
+    "src/integrations/airtableSyncQueue.ts",
+    "src/pbm/**/*",
+    "src/timecards/**/*",
+    "src/api/**/*",
+    "src/admin/**/*",
+    "src/database/**/*",
+    "src/debug/**/*",
+    "src/system/**/*",
+    "src/team/**/*",
+    "src/unified/**/*",
+    "src/updateUserActivity.ts",
+    "src/clipShowPro/automationTriggers.ts"
+  ]
+}
+

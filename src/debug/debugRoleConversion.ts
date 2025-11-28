@@ -6,7 +6,6 @@
 
 import { onRequest } from 'firebase-functions/v2/https';
 import { createSuccessResponse, handleError } from '../shared/utils';
-import { Request, Response } from 'express';
 
 export const debugRoleConversion = onRequest(
   {
@@ -14,7 +13,7 @@ export const debugRoleConversion = onRequest(
     timeoutSeconds: 30,
     cors: true
   },
-  async (req: Request, res: Response) => {
+  async (req: any, res: any) => {
     try {
       const { userRole, organizationRole, projectRole, testAll = false } = req.body;
 

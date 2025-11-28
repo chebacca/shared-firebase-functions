@@ -5,9 +5,8 @@
  */
 
 import { onRequest } from 'firebase-functions/v2/https';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
-import { Request, Response } from 'express';
 
 const db = getFirestore();
 
@@ -17,7 +16,7 @@ export const migrateData = onRequest(
     timeoutSeconds: 300,
     cors: true
   },
-  async (req: Request, res: Response) => {
+  async (req: any, res: any) => {
     try {
       const { migrationType, organizationId } = req.body;
 
@@ -81,8 +80,8 @@ async function migrateAddTimestamps(organizationId: string, results: any) {
         const data = doc.data();
         if (!data.updatedAt) {
           batch.update(doc.ref, {
-            updatedAt: new Date(),
-            createdAt: data.createdAt || new Date()
+            updatedAt: Timestamp.now(),
+            createdAt: data.createdAt || Timestamp.now()
           });
           batchCount++;
         }
@@ -117,7 +116,7 @@ async function migrateUpdateUserRoles(organizationId: string, results: any) {
         const hierarchy = getHierarchyFromRole(data.role);
         batch.update(doc.ref, {
           hierarchy,
-          updatedAt: new Date()
+          updatedAt: Timestamp.now()
         });
         batchCount++;
       }
@@ -157,7 +156,7 @@ async function migrateAddOrganizationFields(organizationId: string, results: any
       }
       
       if (Object.keys(updates).length > 0) {
-        updates.updatedAt = new Date();
+        updates.updatedAt = Timestamp.now();
         await orgRef.update(updates);
         results.documentsUpdated++;
       }

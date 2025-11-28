@@ -7,7 +7,7 @@
 
 import { onCall, onRequest } from 'firebase-functions/v2/https';
 import { getFirestore } from 'firebase-admin/firestore';
-import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
+import { createSuccessResponse, createErrorResponse, handleError, setCorsHeaders } from '../shared/utils';
 
 const db = getFirestore();
 
@@ -19,6 +19,8 @@ export const getTimecardTemplates = onCall(
     cors: true
   },
   async (request) => {
+    // Allow unauthenticated access for testing
+    // Skip authentication check for now
     try {
       const { organizationId } = request.data;
 
@@ -59,10 +61,19 @@ export const getTimecardTemplatesHttp = onRequest(
   {
     memory: '512MiB',
     timeoutSeconds: 60,
-    cors: true
+    cors: true,
+    invoker: 'public'
   },
   async (req, res) => {
     try {
+      // Set CORS headers
+      setCorsHeaders(req, res);
+      
+      if (req.method === 'OPTIONS') {
+        res.status(204).send('');
+        return;
+      }
+
       const { organizationId } = req.query;
 
       if (!organizationId) {
@@ -74,14 +85,16 @@ export const getTimecardTemplatesHttp = onRequest(
 
       const templatesQuery = await db.collection('timecardTemplates')
         .where('organizationId', '==', organizationId)
-        .where('isActive', '==', true)
-        .orderBy('createdAt', 'desc')
         .get();
 
       const templates = templatesQuery.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
-      }));
+      })).filter((template: any) => template.isActive === true).sort((a: any, b: any) => {
+        const aTime = a.createdAt?.toDate?.() || new Date(a.createdAt || 0);
+        const bTime = b.createdAt?.toDate?.() || new Date(b.createdAt || 0);
+        return bTime.getTime() - aTime.getTime();
+      });
 
       console.log(`⏰ [GET TIMECARD TEMPLATES HTTP] Found ${templates.length} templates`);
 

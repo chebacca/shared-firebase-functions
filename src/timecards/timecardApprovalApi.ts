@@ -1,0 +1,329 @@
+/**
+ * 🔥 UNIFIED TIMECARD APPROVAL API FUNCTION
+ * Handles all timecard approval operations through a single endpoint
+ * Routes: /api/timecard-approval/*
+ */
+
+import { onRequest } from 'firebase-functions/v2/https';
+import { getFirestore } from 'firebase-admin/firestore';
+import { createSuccessResponse, createErrorResponse, handleError, setCorsHeaders } from '../shared/utils';
+
+const db = getFirestore();
+
+export const timecardApprovalApi = onRequest(
+  {
+    memory: '512MiB',
+    timeoutSeconds: 60,
+    cors: true,
+    invoker: 'public'
+  },
+  async (req, res) => {
+  try {
+    // Set CORS headers
+    setCorsHeaders(req, res);
+    
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+
+    // Verify user authentication
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json(createErrorResponse('Unauthorized', 'Valid authentication token required'));
+      return;
+    }
+
+    const token = authHeader.split('Bearer ')[1];
+    let decodedToken;
+    try {
+      const { getAuth } = await import('firebase-admin/auth');
+      decodedToken = await getAuth().verifyIdToken(token);
+    } catch (error) {
+      res.status(401).json(createErrorResponse('Invalid token', 'Authentication token is invalid'));
+      return;
+    }
+
+    const { getAuth } = await import('firebase-admin/auth');
+    const userRecord = await getAuth().getUser(decodedToken.uid);
+    const userClaims = userRecord.customClaims || {};
+    const userOrgId = userClaims.organizationId;
+
+    if (!userOrgId) {
+      res.status(400).json(createErrorResponse('Organization ID required', 'User must be associated with an organization'));
+      return;
+    }
+
+    // Parse the URL path to determine the operation
+    const path = req.path;
+    const method = req.method;
+
+    console.log(`⏰ [TIMECARD APPROVAL API] ${method} ${path} for user: ${decodedToken.uid} in org: ${userOrgId}`);
+
+    // Handle different timecard approval operations based on path and method
+    if (path === '/pending' && method === 'GET') {
+      await handlePendingApprovals(req, res, userOrgId, decodedToken.uid);
+    } else if (path === '/my-submissions' && method === 'GET') {
+      await handleMySubmissions(req, res, userOrgId, decodedToken.uid);
+    } else if (path === '/history' && method === 'GET') {
+      await handleApprovalHistory(req, res, userOrgId, decodedToken.uid);
+    } else if (path === '/direct-reports' && method === 'GET') {
+      await handleDirectReports(req, res, userOrgId, decodedToken.uid);
+    } else {
+      res.status(404).json(createErrorResponse('Not found', 'Timecard approval endpoint not found'));
+      return;
+    }
+
+  } catch (error: any) {
+    console.error('❌ [TIMECARD APPROVAL API] Error:', error);
+    res.status(500).json(handleError(error, 'timecardApprovalApi'));
+    return;
+  }
+});
+
+// ============================================================================
+// PENDING APPROVALS OPERATIONS
+// ============================================================================
+
+async function handlePendingApprovals(req: any, res: any, organizationId: string, userId: string) {
+  try {
+    const { projectId } = req.query;
+
+    console.log(`⏰ [PENDING APPROVALS] Getting pending approvals for org: ${organizationId}`);
+
+    let query = db.collection('timecards')
+      .where('organizationId', '==', organizationId)
+      .where('status', '==', 'submitted');
+
+    // Apply additional filters
+    if (projectId) {
+      query = query.where('projectId', '==', projectId);
+    }
+
+    query = query.orderBy('submittedAt', 'desc');
+
+    const timecardsSnapshot = await query.get();
+    const timecards = timecardsSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    console.log(`⏰ [PENDING APPROVALS] Found ${timecards.length} pending approvals`);
+
+    res.status(200).json(createSuccessResponse({
+      timecards,
+      count: timecards.length,
+      organizationId,
+      filters: { projectId }
+    }, 'Pending approvals retrieved successfully'));
+
+  } catch (error: any) {
+    console.error('❌ [PENDING APPROVALS] Error:', error);
+    res.status(500).json(handleError(error, 'handlePendingApprovals'));
+  }
+}
+
+// ============================================================================
+// MY SUBMISSIONS OPERATIONS
+// ============================================================================
+
+async function handleMySubmissions(req: any, res: any, organizationId: string, userId: string) {
+  try {
+    const { projectId, status, startDate, endDate } = req.query;
+
+    console.log(`⏰ [MY SUBMISSIONS] Getting submissions for user: ${userId} in org: ${organizationId}`);
+
+    let query = db.collection('timecards')
+      .where('organizationId', '==', organizationId)
+      .where('userId', '==', userId);
+
+    // Apply additional filters
+    if (projectId) {
+      query = query.where('projectId', '==', projectId);
+    }
+
+    if (status) {
+      query = query.where('status', '==', status);
+    }
+
+    if (startDate) {
+      query = query.where('date', '>=', startDate);
+    }
+
+    if (endDate) {
+      query = query.where('date', '<=', endDate);
+    }
+
+    query = query.orderBy('date', 'desc');
+
+    const timecardsSnapshot = await query.get();
+    const timecards = timecardsSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    console.log(`⏰ [MY SUBMISSIONS] Found ${timecards.length} submissions`);
+
+    res.status(200).json(createSuccessResponse({
+      timecards,
+      count: timecards.length,
+      organizationId,
+      userId,
+      filters: { projectId, status, startDate, endDate }
+    }, 'My submissions retrieved successfully'));
+
+  } catch (error: any) {
+    console.error('❌ [MY SUBMISSIONS] Error:', error);
+    res.status(500).json(handleError(error, 'handleMySubmissions'));
+  }
+}
+
+// ============================================================================
+// APPROVAL HISTORY OPERATIONS
+// ============================================================================
+
+async function handleApprovalHistory(req: any, res: any, organizationId: string, userId: string) {
+  try {
+    const { projectId, status, startDate, endDate, page = 1, limit = 20, search } = req.query;
+
+    console.log(`⏰ [APPROVAL HISTORY] Getting approval history for org: ${organizationId}`);
+
+    let query = db.collection('timecards')
+      .where('organizationId', '==', organizationId)
+      .where('status', 'in', ['approved', 'rejected']);
+
+    // Apply additional filters
+    if (projectId) {
+      query = query.where('projectId', '==', projectId);
+    }
+
+    if (status) {
+      query = query.where('status', '==', status);
+    }
+
+    if (startDate) {
+      query = query.where('date', '>=', startDate);
+    }
+
+    if (endDate) {
+      query = query.where('date', '<=', endDate);
+    }
+
+    query = query.orderBy('approvedAt', 'desc');
+
+    const timecardsSnapshot = await query.get();
+    const allTimecards = timecardsSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as any[];
+
+    // Calculate summary statistics
+    const total = allTimecards.length;
+    const approved = allTimecards.filter((tc: any) => tc.status === 'approved').length;
+    const rejected = allTimecards.filter((tc: any) => tc.status === 'rejected').length;
+    const escalated = allTimecards.filter((tc: any) => tc.escalatedAt).length;
+    const completed = approved + rejected;
+
+    // Calculate average processing time
+    let totalProcessingTime = 0;
+    let processedCount = 0;
+
+    allTimecards.forEach((timecard: any) => {
+      if (timecard.submittedAt && (timecard.approvedAt || timecard.rejectedAt)) {
+        const submitted = new Date(timecard.submittedAt);
+        const completed = new Date(timecard.approvedAt || timecard.rejectedAt);
+        const processingTime = completed.getTime() - submitted.getTime();
+        totalProcessingTime += processingTime;
+        processedCount++;
+      }
+    });
+
+    const averageProcessingTime = processedCount > 0 ? totalProcessingTime / processedCount : 0;
+
+    // Apply pagination
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const startIndex = (pageNum - 1) * limitNum;
+    const endIndex = startIndex + limitNum;
+    const approvalHistory = allTimecards.slice(startIndex, endIndex);
+
+    console.log(`⏰ [APPROVAL HISTORY] Found ${total} approval history records, returning ${approvalHistory.length} for page ${pageNum}`);
+
+    res.status(200).json(createSuccessResponse({
+      approvalHistory,
+      summary: {
+        total,
+        approved,
+        rejected,
+        escalated,
+        completed,
+        averageProcessingTime
+      },
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total: total,
+        totalPages: Math.ceil(total / limitNum)
+      }
+    }, 'Approval history retrieved successfully'));
+
+  } catch (error: any) {
+    console.error('❌ [APPROVAL HISTORY] Error:', error);
+    res.status(500).json(handleError(error, 'handleApprovalHistory'));
+  }
+}
+
+// ============================================================================
+// DIRECT REPORTS OPERATIONS
+// ============================================================================
+
+async function handleDirectReports(req: any, res: any, organizationId: string, userId: string) {
+  try {
+    console.log(`⏰ [DIRECT REPORTS] Getting direct reports for manager: ${userId} in org: ${organizationId}`);
+
+    // Get team members who report to this manager
+    const teamMembersQuery = await db.collection('teamMembers')
+      .where('organizationId', '==', organizationId)
+      .where('managerId', '==', userId)
+      .where('isActive', '==', true)
+      .get();
+
+    const directReports = [];
+    
+    for (const doc of teamMembersQuery.docs) {
+      const teamMember = doc.data();
+      
+      // Get user details from users collection
+      const userDoc = await db.collection('users').doc(teamMember.userId).get();
+      
+      if (userDoc.exists) {
+        const userData = userDoc.data();
+        if (userData) {
+          directReports.push({
+            id: teamMember.userId,
+            email: userData.email,
+            displayName: userData.displayName || userData.name,
+            role: teamMember.role,
+            teamMemberRole: teamMember.teamMemberRole,
+            isActive: teamMember.isActive,
+            createdAt: teamMember.createdAt,
+            managerId: teamMember.managerId
+          });
+        }
+      }
+    }
+
+    console.log(`⏰ [DIRECT REPORTS] Found ${directReports.length} direct reports`);
+
+    res.status(200).json(createSuccessResponse({
+      directReports,
+      count: directReports.length,
+      organizationId,
+      managerId: userId
+    }, 'Direct reports retrieved successfully'));
+
+  } catch (error: any) {
+    console.error('❌ [DIRECT REPORTS] Error:', error);
+    res.status(500).json(handleError(error, 'handleDirectReports'));
+  }
+}

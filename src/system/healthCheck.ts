@@ -8,18 +8,17 @@ import { onRequest } from 'firebase-functions/v2/https';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { createSuccessResponse, handleError } from '../shared/utils';
-import { Request, Response } from 'express';
 
 const db = getFirestore();
 const auth = getAuth();
 
-export const healthCheck = onRequest(
+export const healthCheck: any = onRequest(
   {
     memory: '256MiB',
     timeoutSeconds: 30,
     cors: true
   },
-  async (req: Request, res: Response) => {
+  async (req: any, res: any) => {
     try {
       const startTime = Date.now();
       

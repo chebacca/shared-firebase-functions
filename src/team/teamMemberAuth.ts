@@ -5,10 +5,10 @@
  */
 
 import { onRequest } from 'firebase-functions/v2/https';
+import { Request, Response } from 'express';
 import { getFirestore } from 'firebase-admin/firestore';
 // import { getAuth } from 'firebase-admin/auth';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
-import { Request, Response } from 'express';
 
 const db = getFirestore();
 // const auth = getAuth();
@@ -19,7 +19,7 @@ export const teamMemberAuth = onRequest(
     timeoutSeconds: 60,
     cors: true
   },
-  async (req: Request, res: Response): Promise<void> => {
+  async (req: any, res: any): Promise<void> => {
     try {
       const { userId, organizationId, projectId } = req.body;
 

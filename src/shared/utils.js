@@ -527,6 +527,7 @@ var setCorsHeaders = function (req, res) {
         'https://dashboard-1c3a5.web.app',
         'http://localhost:3000',
         'http://localhost:3001',
+        'http://localhost:4003',
         'http://localhost:5173',
         'null'
     ];

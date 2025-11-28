@@ -7,17 +7,16 @@
 import { onRequest } from 'firebase-functions/v2/https';
 import { getFirestore } from 'firebase-admin/firestore';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
-import { Request, Response } from 'express';
 
 const db = getFirestore();
 
-export const cleanupData = onRequest(
+export const cleanupData: any = onRequest(
   {
     memory: '1GiB',
     timeoutSeconds: 300,
     cors: true
   },
-  async (req: Request, res: Response) => {
+  async (req: any, res: any) => {
     try {
       const { organizationId, cleanupType, options = {} } = req.body;
 

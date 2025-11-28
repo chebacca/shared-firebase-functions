@@ -1,0 +1,41 @@
+params:
+  - param: SMTP_CONNECTION_URI
+    label: Connection URI
+    type: string
+    validationRegex: ^.*$
+    description: Complete SMTP connection URI
+    placeholder: smtps://username:password@smtp.example.com:465
+    
+  - param: SMTP_FROM
+    label: Default FROM email
+    type: string
+    validationRegex: ^[^\s@]+@[^\s@]+\.[^\s@]+$
+    description: Default FROM email address for emails sent by this extension
+    default: noreply@clipshowpro.com
+    
+  - param: SMTP_REPLY_TO
+    label: Default REPLY-TO email
+    type: string
+    validationRegex: ^[^\s@]+@[^\s@]+\.[^\s@]+$
+    description: Default REPLY-TO email address for emails sent by this extension
+    default: support@clipshowpro.com
+    
+  - param: COLLECTION_NAME
+    label: Collection Name
+    type: string
+    validationRegex: ^(firestore\.paths\.input\.pattern)$
+    description: Path to the collection containing the email documents
+    default: mail
+    
+  - param: COLLECTION_NAME
+    label: Collection Name
+    type: string
+    validationRegex: ^([\/$])?(collection-groups|[a-z]{1,}[a-z0-9-]{0,}[a-z0-9])\/(?:[^\/]+$|.*\/([a-z]{1,}[a-z0-9-]{0,}[a-z0-9]))$
+    description: Path to the collection containing the email documents
+    default: mail
+
+resources:
+  name: firestore-send-email
+  type: firebase.extensions
+  ref: firebase/firestore-send-email@0.2.4
+

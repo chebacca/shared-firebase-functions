@@ -1,0 +1,17 @@
+{
+  "functions": [
+    {
+      "source": ".",
+      "codebase": "timecard-functions",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log"
+      ],
+      "predeploy": [
+        "npx tsc src/timecards-only.ts --outDir lib --target es2018 --module commonjs --esModuleInterop --skipLibCheck"
+      ]
+    }
+  ]
+}

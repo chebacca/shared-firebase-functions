@@ -1,0 +1,39 @@
+{
+  "name": "shared-firebase-functions",
+  "version": "1.0.0",
+  "description": "Shared Firebase Functions for BACKBONE Projects",
+  "main": "lib/index.js",
+  "types": "lib/index.js",
+  "scripts": {
+    "build": "tsc",
+    "build-clipshow": "npx tsc src/clipShowPro/*.ts --outDir lib/clipShowPro --target es2020 --module commonjs --esModuleInterop --skipLibCheck",
+    "build-timecards": "npx tsc src/timecards/*.ts --outDir lib/timecards --target es2018 --module commonjs --esModuleInterop --skipLibCheck",
+    "dev": "tsc --watch",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@google-cloud/aiplatform": "^3.0.0",
+    "@google-cloud/functions-framework": "^4.0.0",
+    "axios": "^1.6.0",
+    "box-node-sdk": "^3.0.0",
+    "crypto": "^1.0.1",
+    "firebase-admin": "^12.0.0",
+    "firebase-functions": "^5.1.0",
+    "googleapis": "^134.0.0",
+    "nodemailer": "^6.9.0",
+    "openai": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.5",
+    "@types/nodemailer": "^6.4.0",
+    "typescript": "^5.3.3"
+  },
+  "keywords": [
+    "firebase",
+    "functions",
+    "shared",
+    "backbone"
+  ],
+  "author": "BACKBONE Team",
+  "license": "MIT"
+}

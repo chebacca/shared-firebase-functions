@@ -11,3 +11,8 @@ export {
   refreshUserClaims,
   getAuthStatus
 } from './verify';
+export { generateAuthTransferToken } from './generateAuthTransferToken';
+export { 
+  updateEDLConverterClaims,
+  grantEDLConverterAccessToEnterpriseUsers 
+} from './updateEDLConverterClaims';

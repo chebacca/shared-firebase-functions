@@ -7,7 +7,6 @@
 import { onRequest } from 'firebase-functions/v2/https';
 import { getFirestore } from 'firebase-admin/firestore';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
-import { Request, Response } from 'express';
 
 const db = getFirestore();
 
@@ -17,7 +16,7 @@ export const initializeDatabase = onRequest(
     timeoutSeconds: 300,
     cors: true
   },
-  async (req: Request, res: Response) => {
+  async (req: any, res: any) => {
     try {
       const { organizationId, userId } = req.body;
 

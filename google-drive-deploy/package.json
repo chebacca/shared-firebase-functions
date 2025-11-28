@@ -1,0 +1,14 @@
+{
+  "name": "google-drive-functions",
+  "version": "1.0.0",
+  "description": "Google Drive Integration Functions for Clip Show Pro",
+  "main": "google-drive-functions.js",
+  "engines": {
+    "node": "20"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.0.0",
+    "firebase-functions": "^5.1.0",
+    "googleapis": "^134.0.0"
+  }
+}

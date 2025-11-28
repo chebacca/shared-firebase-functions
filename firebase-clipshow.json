@@ -1,0 +1,40 @@
+{
+  "functions": [
+    {
+      "source": ".",
+      "codebase": "clipshow-pro",
+      "runtime": "nodejs20",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "src/**",
+        "lib/timecards/**",
+        "lib/admin/**",
+        "lib/api/**",
+        "lib/auth/**",
+        "lib/callSheets/**",
+        "lib/database/**",
+        "lib/datasets/**",
+        "lib/debug/**",
+        "lib/edl-converter/**",
+        "lib/inventory/**",
+        "lib/licensing/**",
+        "lib/notifications/**",
+        "lib/payments/**",
+        "lib/pbm/**",
+        "lib/projects/**",
+        "lib/sessions/**",
+        "lib/settings/**",
+        "lib/shared/**",
+        "lib/system/**",
+        "lib/team/**",
+        "lib/unified/**",
+        "index.ts",
+        "index-clipshow.ts"
+      ],
+      "predeploy": []
+    }
+  ]
+}

@@ -7,17 +7,16 @@
 import { onRequest } from 'firebase-functions/v2/https';
 import { getFirestore } from 'firebase-admin/firestore';
 import { createSuccessResponse, handleError } from '../shared/utils';
-import { Request, Response } from 'express';
 
 const db = getFirestore();
 
-export const listCollections = onRequest(
+export const listCollections: any = onRequest(
   {
     memory: '512MiB',
     timeoutSeconds: 60,
     cors: true
   },
-  async (req: Request, res: Response) => {
+  async (req: any, res: any) => {
     try {
       console.log('📊 [LIST COLLECTIONS] Fetching all collections...');
 

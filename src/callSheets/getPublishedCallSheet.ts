@@ -7,33 +7,55 @@
 
 import { onCall, onRequest } from 'firebase-functions/v2/https';
 import { getFirestore } from 'firebase-admin/firestore';
-import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
+import { createSuccessResponse, createErrorResponse, handleError, setCorsHeaders } from '../shared/utils';
 
 const db = getFirestore();
 
 // Firebase Callable function
 export const getPublishedCallSheet = onCall(
   {
+    region: 'us-central1',
     memory: '256MiB',
     timeoutSeconds: 30,
+    invoker: 'public',  // Required for CORS preflight requests
     cors: true
   },
   async (request) => {
     try {
-      const { publicId } = request.data;
+      const { publicId, accessCode } = request.data;
 
-      if (!publicId) {
-        throw new Error('Public ID is required');
+      // Support both publicId and accessCode for backward compatibility
+      const searchValue = publicId || accessCode;
+
+      if (!searchValue) {
+        throw new Error('Public ID or access code is required');
       }
 
-      console.log(`📋 [GET PUBLISHED CALL SHEET] Getting call sheet: ${publicId}`);
+      console.log(`📋 [GET PUBLISHED CALL SHEET] Getting call sheet: ${searchValue} (publicId: ${publicId}, accessCode: ${accessCode})`);
 
-      // Find published call sheet by public ID
-      const publishedCallSheetsQuery = await db.collection('publishedCallSheets')
-        .where('publicId', '==', publicId)
-        .where('isPublished', '==', true)
+      // Try to find by accessCode first (most common case)
+      let publishedCallSheetsQuery = await db.collection('publishedCallSheets')
+        .where('accessCode', '==', searchValue)
+        .where('isActive', '==', true)
         .limit(1)
         .get();
+
+      // If not found by accessCode, try publicId
+      if (publishedCallSheetsQuery.empty) {
+        publishedCallSheetsQuery = await db.collection('publishedCallSheets')
+          .where('publicId', '==', searchValue)
+          .where('isPublished', '==', true)
+          .limit(1)
+          .get();
+      }
+
+      // Also try without status filter as last resort (for backward compatibility)
+      if (publishedCallSheetsQuery.empty) {
+        publishedCallSheetsQuery = await db.collection('publishedCallSheets')
+          .where('publicId', '==', searchValue)
+          .limit(1)
+          .get();
+      }
 
       if (publishedCallSheetsQuery.empty) {
         throw new Error('Published call sheet not found');
@@ -41,6 +63,15 @@ export const getPublishedCallSheet = onCall(
 
       const publishedCallSheetDoc = publishedCallSheetsQuery.docs[0];
       const publishedCallSheetData = publishedCallSheetDoc.data();
+
+      // 🔧 CRITICAL FIX: Check if call sheet is disabled/cancelled
+      if (publishedCallSheetData.isActive === false || publishedCallSheetData.isPublished === false) {
+        console.log(`📋 [GET PUBLISHED CALL SHEET] Call sheet is disabled: ${searchValue}`, {
+          isActive: publishedCallSheetData.isActive,
+          isPublished: publishedCallSheetData.isPublished
+        });
+        throw new Error('Published call sheet has been cancelled or disabled');
+      }
 
       // Check if expired
       if (publishedCallSheetData.expiresAt && new Date() > publishedCallSheetData.expiresAt.toDate()) {
@@ -64,27 +95,59 @@ export const getPublishedCallSheet = onCall(
 // HTTP function
 export const getPublishedCallSheetHttp = onRequest(
   {
+    region: 'us-central1',
     memory: '256MiB',
     timeoutSeconds: 30,
-    cors: true
+    invoker: 'public',  // Required for CORS preflight requests
+    cors: false  // 🔧 CRITICAL FIX: Handle CORS manually to ensure proper preflight handling
   },
   async (req, res) => {
+    // 🔧 CRITICAL FIX: Handle OPTIONS preflight request FIRST before any other logic
+    if (req.method === 'OPTIONS') {
+      setCorsHeaders(req, res);
+      res.status(204).send('');
+      return;
+    }
+    
+    // 🔧 CRITICAL FIX: Set CORS headers for all responses using the utility function
+    setCorsHeaders(req, res);
+    
     try {
-      const { publicId } = req.query;
+      const { publicId, accessCode } = req.query;
 
-      if (!publicId) {
-        res.status(400).json(createErrorResponse('Public ID is required'));
+      // Support both publicId and accessCode for backward compatibility
+      const searchValue = publicId || accessCode;
+
+      if (!searchValue) {
+        res.status(400).json(createErrorResponse('Public ID or access code is required'));
         return;
       }
 
-      console.log(`📋 [GET PUBLISHED CALL SHEET HTTP] Getting call sheet: ${publicId}`);
+      console.log(`📋 [GET PUBLISHED CALL SHEET HTTP] Getting call sheet: ${searchValue} (publicId: ${publicId}, accessCode: ${accessCode})`);
 
-      // Find published call sheet by public ID
-      const publishedCallSheetsQuery = await db.collection('publishedCallSheets')
-        .where('publicId', '==', publicId)
-        .where('isPublished', '==', true)
+      // Try to find by accessCode first (most common case)
+      let publishedCallSheetsQuery = await db.collection('publishedCallSheets')
+        .where('accessCode', '==', searchValue)
+        .where('isActive', '==', true)
         .limit(1)
         .get();
+
+      // If not found by accessCode, try publicId
+      if (publishedCallSheetsQuery.empty) {
+        publishedCallSheetsQuery = await db.collection('publishedCallSheets')
+          .where('publicId', '==', searchValue)
+          .where('isPublished', '==', true)
+          .limit(1)
+          .get();
+      }
+
+      // Also try without status filter as last resort (for backward compatibility)
+      if (publishedCallSheetsQuery.empty) {
+        publishedCallSheetsQuery = await db.collection('publishedCallSheets')
+          .where('publicId', '==', searchValue)
+          .limit(1)
+          .get();
+      }
 
       if (publishedCallSheetsQuery.empty) {
         res.status(404).json(createErrorResponse('Published call sheet not found'));
@@ -93,6 +156,16 @@ export const getPublishedCallSheetHttp = onRequest(
 
       const publishedCallSheetDoc = publishedCallSheetsQuery.docs[0];
       const publishedCallSheetData = publishedCallSheetDoc.data();
+
+      // 🔧 CRITICAL FIX: Check if call sheet is disabled/cancelled
+      if (publishedCallSheetData.isActive === false || publishedCallSheetData.isPublished === false) {
+        console.log(`📋 [GET PUBLISHED CALL SHEET HTTP] Call sheet is disabled: ${searchValue}`, {
+          isActive: publishedCallSheetData.isActive,
+          isPublished: publishedCallSheetData.isPublished
+        });
+        res.status(410).json(createErrorResponse('Published call sheet has been cancelled or disabled'));
+        return;
+      }
 
       // Check if expired
       if (publishedCallSheetData.expiresAt && new Date() > publishedCallSheetData.expiresAt.toDate()) {

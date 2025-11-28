@@ -183,11 +183,42 @@ const result = await response.json();
 ```bash
 # Required
 GEMINI_API_KEY=your_gemini_api_key
+ENCRYPTION_KEY=your_32_byte_encryption_key  # For Slack/OAuth token encryption
+
+# Video Transcript APIs (for extractTranscript function)
+YOUTUBE_API_KEY=your_youtube_data_api_v3_key  # Required for YouTube transcripts
+VIMEO_ACCESS_TOKEN=your_vimeo_api_access_token  # Optional, for Vimeo transcripts
 
 # Optional
 NODE_ENV=production
 FIREBASE_PROJECT_ID=backbone-logic
 ```
+
+### **Video Transcript API Setup**
+
+For transcript extraction functionality, see the detailed setup guide:
+- **[Transcript API Setup Guide](./docs/TRANSCRIPT_API_SETUP.md)** - Complete guide for YouTube and Vimeo API configuration
+
+### **Setting Up Encryption Key for Slack Integration**
+
+The Slack integration requires an encryption key to securely store Slack access tokens. 
+
+**Generate a secure encryption key:**
+```bash
+# Generate a 32-byte hex key
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+**Set the encryption key in Firebase Functions:**
+```bash
+# For Firebase Functions v2 (recommended)
+firebase functions:secrets:set ENCRYPTION_KEY
+
+# Or for legacy config
+firebase functions:config:set integrations.encryption_key="YOUR_HEX_KEY_HERE"
+```
+
+**Security Note**: This key is critical for protecting Slack tokens. Never commit it to version control or expose it in logs.
 
 ### **Firebase Configuration**
 - **Project**: `backbone-logic`

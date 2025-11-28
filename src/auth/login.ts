@@ -31,9 +31,10 @@ export const loginUser = functions.https.onCall(async (data: any, context: any) 
       return createErrorResponse('Account is deactivated');
     }
 
-    // Update last login
+    // Update last login and last active
     await admin.firestore().collection('users').doc(userRecord.uid).update({
       lastLoginAt: admin.firestore.Timestamp.now(),
+      lastActive: admin.firestore.Timestamp.now(),
       updatedAt: admin.firestore.Timestamp.now()
     });
 

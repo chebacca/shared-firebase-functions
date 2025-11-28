@@ -347,14 +347,24 @@ export const updateCustomClaimsWithDualRoleSupport = async (
   userId: string,
   projectId: string,
   projectRole: string,
-  projectHierarchy: number
+  projectHierarchy: number,
+  licensingRole?: string
 ): Promise<any> => {
   try {
     const userRecord = await auth.getUser(userId);
     const currentClaims = userRecord.customClaims || {};
     
+    // Determine licensing role (Tier 1: Organizational)
+    // Priority: provided parameter > existing licensingRole > existing role > teamMemberRole
+    const determinedLicensingRole = licensingRole || 
+      currentClaims.licensingRole || 
+      currentClaims.role || 
+      (currentClaims.teamMemberRole ? currentClaims.teamMemberRole.toUpperCase() : 'MEMBER');
+    
     // Determine if user is an owner
-    const isOwner = currentClaims.role === 'OWNER' || currentClaims.isOrganizationOwner === true;
+    const isOwner = determinedLicensingRole === 'OWNER' || 
+      currentClaims.role === 'OWNER' || 
+      currentClaims.isOrganizationOwner === true;
     const ownerHierarchy = isOwner ? 100 : 0;
     
     // Calculate effective hierarchy (max of owner and project hierarchy)
@@ -377,6 +387,14 @@ export const updateCustomClaimsWithDualRoleSupport = async (
     const enhancedClaims = {
       ...currentClaims, // Preserve all existing claims
       
+      // Tier 1: Licensing Website Role (Organizational)
+      licensingRole: determinedLicensingRole,
+      
+      // Tier 2: App-Specific Roles (Functional)
+      dashboardRole: currentClaims.dashboardRole || projectRole, // Use projectRole as dashboardRole if not set
+      clipShowProRole: currentClaims.clipShowProRole,
+      callSheetRole: currentClaims.callSheetRole,
+      
       // Enhanced hierarchy system
       hierarchy: effectiveHierarchy,
       effectiveHierarchy: effectiveHierarchy,
@@ -397,6 +415,10 @@ export const updateCustomClaimsWithDualRoleSupport = async (
       canManageOrganization: isOwner || effectiveHierarchy >= 90,
       canAccessTimecardAdmin: effectiveHierarchy >= 90,
       
+      // Legacy compatibility (keep for backward compatibility)
+      role: determinedLicensingRole, // Primary role maps to licensingRole
+      teamMemberRole: currentClaims.teamMemberRole || determinedLicensingRole.toLowerCase(),
+      
       // Enhanced permissions
       permissions: [
         ...(currentClaims.permissions || []),
@@ -413,6 +435,8 @@ export const updateCustomClaimsWithDualRoleSupport = async (
     await auth.setCustomUserClaims(userId, enhancedClaims);
     
     console.log(`[DUAL ROLE CLAIMS] Enhanced claims updated for user: ${userId}`);
+    console.log(`   - Licensing Role (Tier 1): ${determinedLicensingRole}`);
+    console.log(`   - Dashboard Role (Tier 2): ${enhancedClaims.dashboardRole}`);
     console.log(`   - Effective Hierarchy: ${effectiveHierarchy}`);
     console.log(`   - Is Owner: ${isOwner}`);
     console.log(`   - Admin Access: ${effectiveHierarchy >= 90}`);
@@ -464,20 +488,32 @@ export const setCorsHeaders = (req: any, res: any): void => {
     'https://backbone-client.web.app',
     'https://backbone-callsheet-standalone.web.app',
     'https://dashboard-1c3a5.web.app',
+    'https://clipshowpro.web.app', // Added Clip Show Pro origin
     'http://localhost:3000',
     'http://localhost:3001',
+    'http://localhost:4003',
+
+    'http://localhost:4007', // Standalone Call Sheet App
+    'http://localhost:4010',
     'http://localhost:5173',
     'null'
   ];
   
   const origin = req.headers.origin;
-  if (origin && (allowedOrigins.includes(origin) || origin === 'null')) {
+  
+  // Always allow the origin that made the request in development mode
+  if (process.env.NODE_ENV === 'development' || process.env.FUNCTIONS_EMULATOR === 'true') {
+    res.set('Access-Control-Allow-Origin', origin || '*');
+  } else if (origin && (allowedOrigins.includes(origin) || origin === 'null')) {
     res.set('Access-Control-Allow-Origin', origin || '*');
   } else {
-    res.set('Access-Control-Allow-Origin', '*');
+    // In production, be more restrictive but still allow the request to proceed
+    res.set('Access-Control-Allow-Origin', 'https://backbone-client.web.app');
   }
   
+  // Set other CORS headers
   res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Application-Mode, X-Requested-With, Cache-Control, Pragma, Expires, x-request-started-at, X-Request-Started-At, request-started-at, X-Request-ID, x-auth-token, X-Client-Type, x-client-type, X-Client-Version, x-client-version');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Application-Mode, X-Requested-With, Cache-Control, Pragma, Expires, x-request-started-at, X-Request-Started-At, request-started-at, X-Request-ID, x-auth-token, X-Client-Type, x-client-type, X-Client-Version, x-client-version, Origin');
   res.set('Access-Control-Allow-Credentials', 'true');
+  res.set('Access-Control-Max-Age', '3600'); // Cache preflight request for 1 hour
 };

@@ -6,7 +6,6 @@
 
 import { onRequest } from 'firebase-functions/v2/https';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
-import { Request, Response } from 'express';
 
 export const getAvailableProjectRoles = onRequest(
   {
@@ -14,7 +13,7 @@ export const getAvailableProjectRoles = onRequest(
     timeoutSeconds: 30,
     cors: true
   },
-  async (req: Request, res: Response): Promise<void> => {
+  async (req: any, res: any): Promise<void> => {
     try {
       const { userRole, organizationRole, projectId } = req.body;
 
