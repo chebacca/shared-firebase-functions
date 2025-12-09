@@ -3,8 +3,8 @@
 ## Current Configuration
 
 Your Firebase Functions currently has these Google OAuth credentials configured:
-- **Client ID**: `YOUR_CLIENT_ID_HERE`
-- **Client Secret**: `YOUR_CLIENT_SECRET_HERE`
+- **Client ID**: `YOUR_CLIENT_ID_HERE` (configured in Firebase Functions config)
+- **Client Secret**: `YOUR_CLIENT_SECRET_HERE` (configured in Firebase Functions config)
 - **Redirect URI**: `https://backbone-client.web.app/auth/google/callback`
 
 ## Error
@@ -24,7 +24,7 @@ The error "Invalid OAuth client configuration" occurs during token refresh, whic
 
 2. **Navigate to OAuth Credentials**
    - Go to: **APIs & Services** → **Credentials**
-   - Find the OAuth 2.0 Client ID: `check Firebase Functions config`
+   - Find the OAuth 2.0 Client ID (check Firebase Functions config for the actual ID)
 
 3. **Verify Configuration**
    - Check that the client is **Enabled**
