@@ -31,9 +31,8 @@ export * from './settings/userSettings.js';
 
 // Export cloud integration functions - Google Drive only
 export {
-  initiateGoogleOAuth,
-  handleGoogleOAuthCallback,
-  exchangeGoogleCodeForTokens,
+  initiateGoogleOAuthHttp,
+  handleGoogleOAuthCallbackHttp,
   refreshGoogleAccessToken,
   listGoogleDriveFolders,
   getGoogleDriveFiles,
@@ -42,13 +41,13 @@ export {
   getGoogleIntegrationStatus
 } from './integrations/googleDrive';
 
-// Export Google Drive HTTP functions for CORS support
-export {
-  initiateGoogleOAuthHttp,
-  handleGoogleOAuthCallbackHttp,
-  getGoogleIntegrationStatusHttp,
-  listGoogleDriveFoldersHttp,
-  getGoogleDriveFilesHttp,
-  createGoogleDriveFolderHttp,
-  uploadToGoogleDriveHttp
-} from './integrations/googleDriveHttp';
+// Export Google Drive HTTP functions for CORS support (now in googleDrive.ts)
+// export {
+//   initiateGoogleOAuthHttp,
+//   handleGoogleOAuthCallbackHttp,
+//   getGoogleIntegrationStatusHttp,
+//   listGoogleDriveFoldersHttp,
+//   getGoogleDriveFilesHttp,
+//   createGoogleDriveFolderHttp,
+//   uploadToGoogleDriveHttp
+// } from './integrations/googleDriveHttp';

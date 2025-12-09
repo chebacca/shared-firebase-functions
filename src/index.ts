@@ -33,6 +33,11 @@ export {
   sendLicenseEmail
 } from './clipShowPro/sendLicenseEmail';
 
+// Export license sync trigger
+export {
+  onLicenseWrite
+} from './licensing';
+
 // Export transcript extraction function
 export {
   extractTranscript
@@ -89,26 +94,59 @@ export {
 // Export Slack integration functions
 export * from './slack';
 
-// Export Box OAuth functions (HTTP and callable)
+// Export Google Drive integration functions
+export * from './google';
+
+// Export App Role Definition Service
+export { appRoleDefinitionService, AppRoleDefinitionService } from './roles/AppRoleDefinitionService';
+
+// Export App Role Definitions HTTP API
+export { appRoleDefinitionsApi } from './roles/appRoleDefinitionsHttp';
+
+// Export Box integration functions (NEW MODULAR STRUCTURE - OAuth & Config)
+// OAuth functions: boxOAuthInitiate, boxOAuthRefresh, boxRevokeAccess, boxOAuthCallback
+// Config functions: saveBoxConfig, getBoxConfigStatus
+export * from './box';
+
+// Export Dropbox integration functions (NEW MODULAR STRUCTURE - OAuth & Config)
+// OAuth functions: dropboxOAuthInitiate, dropboxOAuthRefresh, dropboxRevokeAccess, dropboxOAuthCallback
+// Config functions: saveDropboxConfig, getDropboxConfigStatus
+export * from './dropbox';
+
+// Export Box API functions (LEGACY - still needed for file operations)
+// NOTE: OAuth functions (initiateBoxOAuthHttp, handleBoxOAuthCallback, saveBoxConfig) 
+// have been migrated to the new modular structure above. These are kept for backward compatibility
+// but should use the new functions: boxOAuthInitiate, boxOAuthCallback, saveBoxConfig (from box/config.ts)
 export {
-  initiateBoxOAuthHttp,
-  handleBoxOAuthCallback,
+  // DEPRECATED OAuth functions - use boxOAuthInitiate, boxOAuthCallback from './box' instead
+  // initiateBoxOAuthHttp,  // DEPRECATED - use boxOAuthInitiate from './box'
+  // handleBoxOAuthCallback, // DEPRECATED - use boxOAuthCallback from './box'
+  // saveBoxConfig,          // DEPRECATED - use saveBoxConfig from './box/config'
+
+  // API functions (still active)
   getBoxIntegrationStatus,
   getBoxAccessToken,
   listBoxFolders,
   getBoxFiles,
   createBoxFolder,
   indexBoxFolder,
-  // uploadToBox, // Temporarily excluded due to GCF gen1 CPU configuration issue
+  // uploadToBox, // Temporarily disabled due to GCF gen1 CPU configuration issue
+  uploadToBoxHttp,
   refreshBoxAccessToken,
-  saveBoxConfig,
   boxStream
 } from './box';
 
-// Export Dropbox OAuth functions (HTTP and callable)
+// Export Dropbox API functions (LEGACY - still needed for file operations)
+// NOTE: OAuth functions (initiateDropboxOAuthHttp, handleDropboxOAuthCallback, saveDropboxConfig)
+// have been migrated to the new modular structure above. These are kept for backward compatibility
+// but should use the new functions: dropboxOAuthInitiate, dropboxOAuthCallback, saveDropboxConfig (from dropbox/config.ts)
 export {
-  initiateDropboxOAuthHttp,
-  handleDropboxOAuthCallback,
+  // DEPRECATED OAuth functions - use dropboxOAuthInitiate, dropboxOAuthCallback from './dropbox' instead
+  // initiateDropboxOAuthHttp,  // DEPRECATED - use dropboxOAuthInitiate from './dropbox'
+  // handleDropboxOAuthCallback, // DEPRECATED - use dropboxOAuthCallback from './dropbox'
+  // saveDropboxConfig,          // DEPRECATED - use saveDropboxConfig from './dropbox/config'
+
+  // API functions (still active)
   getDropboxIntegrationStatus,
   getDropboxAccessToken,
   listDropboxFolders,
@@ -118,19 +156,16 @@ export {
   uploadToDropbox,
   indexDropboxFolder,
   refreshDropboxAccessToken,
-  saveDropboxConfig,
   setDropboxAccessToken,
   testDropboxConfig
 } from './dropbox';
 
-// Export Google Drive OAuth functions (HTTP and callable)
+// Export Google Drive OAuth functions (HTTP only - simplified)
 export {
-  initiateGoogleOAuth,
   initiateGoogleOAuthHttp, // HTTP version with CORS support for localhost
-  handleGoogleOAuthCallback,
   handleGoogleOAuthCallbackHttp, // HTTP version for frontend callbacks
-  refreshGoogleAccessToken,
-  refreshGoogleAccessTokenCallable,
+  refreshGoogleAccessTokenHttp, // HTTP version for token refresh
+  refreshGoogleAccessToken, // Internal function for token refresh
   listGoogleDriveFolders,
   getGoogleDriveFiles,
   createGoogleDriveFolder,
@@ -141,6 +176,7 @@ export {
 // Export unified user management functions
 export {
   getUserInfo,
+  getUserInfoHttp,
   findUserByEmail,
   ensureUserDocument,
   updateUserClaims,
@@ -164,6 +200,15 @@ export {
 
 // Export AI functions
 export * from './ai';
+
+// Export System Alerts
+export * from './utils/systemAlerts';
+
+// Export migration functions
+export {
+  migrateCloudIntegrations,
+  migrateCloudIntegrationsHttp
+} from './migrations/migrateCloudIntegrations';
 
 // Export main API function
 export { api } from './api';
@@ -209,6 +254,14 @@ export {
   getUserSettings,
   updateUserSettings
 } from './settings/userSettings';
+
+// Export DocuSign functions
+export { storeDocuSignConfig } from './clipShowPro/docusign/storeDocuSignConfig';
+export { testDocuSignConnection } from './clipShowPro/docusign/testDocuSignConnection';
+export { createDocuSignEnvelope } from './clipShowPro/docusign/createDocuSignEnvelope';
+export { getDocuSignEnvelopeStatus } from './clipShowPro/docusign/getDocuSignEnvelopeStatus';
+export { downloadDocuSignEnvelopeDocument } from './clipShowPro/docusign/downloadDocuSignEnvelopeDocument';
+export { docuSignWebhookHandler } from './clipShowPro/docusign/webhookHandler';
 
 // NOTE: Other functions commented out due to TypeScript errors
 

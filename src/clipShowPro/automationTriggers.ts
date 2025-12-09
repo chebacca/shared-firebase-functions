@@ -6,6 +6,7 @@
 
 import { onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import { getFirestore } from 'firebase-admin/firestore';
+import { executeAutomationLogic } from './automationService';
 
 const db = getFirestore();
 
@@ -39,7 +40,7 @@ export const onPitchStatusChange = onDocumentUpdated(
       };
 
       // Execute automation for updatePitchStatus function
-      await executeAutomation(
+      await executeAutomationLogic(
         'updatePitchStatus',
         'Update Pitch Status',
         context,
@@ -73,6 +74,12 @@ export const onStoryStatusChange = onDocumentUpdated(
 
       console.log(`🔄 [AutomationTrigger] Story ${storyId} status changed: ${before.status} → ${after.status}`);
 
+      // Collect assigned contacts
+      const assignedContacts = [];
+      if (after.producerId) assignedContacts.push({ id: after.producerId, role: 'PRODUCER' });
+      if (after.writerId) assignedContacts.push({ id: after.writerId, role: 'WRITER' });
+      if (after.associateProducerId) assignedContacts.push({ id: after.associateProducerId, role: 'ASSOCIATE_PRODUCER' });
+
       // Get story data for context
       const context = {
         storyId,
@@ -81,7 +88,8 @@ export const onStoryStatusChange = onDocumentUpdated(
         storyTitle: after.clipTitle,
         show: after.show,
         season: after.season,
-        organizationId: after.organizationId
+        organizationId: after.organizationId,
+        assignedContacts
       };
 
       // Determine which function to call based on context
@@ -104,7 +112,7 @@ export const onStoryStatusChange = onDocumentUpdated(
       }
 
       // Execute automation
-      await executeAutomation(
+      await executeAutomationLogic(
         functionId,
         functionName,
         context,
@@ -119,56 +127,3 @@ export const onStoryStatusChange = onDocumentUpdated(
     }
   }
 );
-
-/**
- * Generic automation execution helper
- */
-async function executeAutomation(
-  functionId: string,
-  functionName: string,
-  context: any,
-  organizationId: string,
-  performedBy: string,
-  performedByName?: string
-): Promise<void> {
-  try {
-    // Get active automation rules for this function
-    const rulesQuery = await db
-      .collection('automationRules')
-      .where('organizationId', '==', organizationId)
-      .where('functionId', '==', functionId)
-      .where('enabled', '==', true)
-      .get();
-
-    if (rulesQuery.empty) {
-      console.log(`⚠️ [AutomationTrigger] No active automation rules for ${functionName}`);
-      return;
-    }
-
-    console.log(`📋 [AutomationTrigger] Found ${rulesQuery.size} active rules for ${functionName}`);
-
-    // Import and call the executeAutomation Cloud Function
-    // Note: In a real implementation, you would call this as an HTTP Cloud Function
-    // For now, we'll process the rules directly here
-
-    // Log execution
-    await db.collection('automationLogs').add({
-      functionId,
-      functionName,
-      organizationId,
-      status: 'success',
-      context,
-      performedBy,
-      performedByName,
-      executedAt: admin.firestore.FieldValue.serverTimestamp()
-    });
-
-    console.log(`✅ [AutomationTrigger] Automation logged for ${functionName}`);
-  } catch (error) {
-    console.error(`❌ [AutomationTrigger] Error executing automation:`, error);
-  }
-}
-
-// Import admin for serverTimestamp
-import * as admin from 'firebase-admin';
-

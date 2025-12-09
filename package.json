@@ -29,7 +29,8 @@
     "long": "^5.2.3",
     "nodemailer": "^6.10.1",
     "openai": "^4.0.0",
-    "stripe": "^14.0.0"
+    "stripe": "^14.0.0",
+    "docusign-esign": "^7.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.10.5",

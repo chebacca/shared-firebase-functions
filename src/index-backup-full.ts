@@ -34,11 +34,9 @@ export * from './calendar/index';
 
 // Export cloud integration functions - Google Drive and Airtable
 export {
-  initiateGoogleOAuth,
-  handleGoogleOAuthCallback,
-  exchangeGoogleCodeForTokens,
+  initiateGoogleOAuthHttp,
+  handleGoogleOAuthCallbackHttp,
   refreshGoogleAccessToken,
-  refreshGoogleAccessTokenCallable,
   listGoogleDriveFolders,
   getGoogleDriveFiles,
   createGoogleDriveFolder,
@@ -68,16 +66,16 @@ export {
   cleanupSyncQueue
 } from './integrations';
 
-// Export Google Drive HTTP functions for CORS support
-export {
-  initiateGoogleOAuthHttp,
-  handleGoogleOAuthCallbackHttp,
-  getGoogleIntegrationStatusHttp,
-  listGoogleDriveFoldersHttp,
-  getGoogleDriveFilesHttp,
-  createGoogleDriveFolderHttp,
-  uploadToGoogleDriveHttp
-} from './integrations/googleDriveHttp';
+// Export Google Drive HTTP functions for CORS support (now in googleDrive.ts)
+// export {
+//   initiateGoogleOAuthHttp,
+//   handleGoogleOAuthCallbackHttp,
+//   getGoogleIntegrationStatusHttp,
+//   listGoogleDriveFoldersHttp,
+//   getGoogleDriveFilesHttp,
+//   createGoogleDriveFolderHttp,
+//   uploadToGoogleDriveHttp
+// } from './integrations/googleDriveHttp';
 
 // Export email notification functions
 export {

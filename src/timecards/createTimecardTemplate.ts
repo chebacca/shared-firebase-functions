@@ -20,7 +20,13 @@ export const createTimecardTemplate = onCall(
   },
   async (request) => {
     try {
-      const { templateData, organizationId, userId } = request.data;
+      // Verify authentication
+      if (!request.auth) {
+        throw new Error('User must be authenticated');
+      }
+
+      const { templateData, organizationId } = request.data;
+      const userId = request.auth.uid;
 
       if (!templateData) {
         throw new Error('Template data is required');
@@ -30,16 +36,26 @@ export const createTimecardTemplate = onCall(
         throw new Error('Organization ID is required');
       }
 
-      if (!userId) {
-        throw new Error('User ID is required');
+      // 🔒 SECURITY CHECK: Verify user belongs to the organization
+      // This prevents users from creating templates for organizations they don't belong to
+      const hasAccess = await import('../shared/utils').then(m => m.validateOrganizationAccess(userId, organizationId));
+      if (!hasAccess) {
+        // Also check if user is admin/owner via custom claims as a fallback/bypass
+        const token = request.auth.token;
+        const isAdmin = token.role === 'ADMIN' || token.role === 'OWNER' || token.isAdmin === true;
+
+        if (!isAdmin) {
+          console.warn(`🚨 [CREATE TIMECARD TEMPLATE] Security violation: User ${userId} attempted to create template for org ${organizationId} without access`);
+          throw new Error('Permission denied: You do not have access to this organization');
+        }
       }
 
-      console.log(`⏰ [CREATE TIMECARD TEMPLATE] Creating template for org: ${organizationId}`);
+      console.log(`⏰ [CREATE TIMECARD TEMPLATE] Creating template for org: ${organizationId} by user: ${userId}`);
 
       const template = {
         ...templateData,
         organizationId,
-        createdBy: userId,
+        createdBy: userId, // 🔒 Trust auth.uid, not request body
         createdAt: new Date(),
         updatedAt: new Date(),
         isActive: true

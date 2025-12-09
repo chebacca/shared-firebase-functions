@@ -182,6 +182,10 @@ async function verifyAuthToken(req: any): Promise<{ userId: string; organization
 }
 
 /**
+ * @deprecated This function has been migrated to the new modular structure.
+ * Use `dropboxOAuthInitiate` from './dropbox/oauth' instead.
+ * This function is kept for backward compatibility only.
+ * 
  * Initiate Dropbox OAuth flow - HTTP version with CORS support
  * Returns authorization URL for user to authenticate
  */
@@ -294,7 +298,7 @@ export const initiateDropboxOAuthHttp = functions.https.onRequest(async (req, re
       response_type: 'code',
       state: state,
       token_access_type: 'offline', // Request refresh token
-      scope: 'files.content.read' // files.content.read automatically includes files.metadata.read
+      scope: 'files.content.read files.content.write files.metadata.read files.metadata.write sharing.read sharing.write' // All required scopes for full functionality
     });
     const authUrl = `${dropboxAuthBaseUrl}?${authUrlParams.toString()}`;
     console.log(`[${requestId}] Step 6 complete: Auth URL generated`);
@@ -322,6 +326,10 @@ export const initiateDropboxOAuthHttp = functions.https.onRequest(async (req, re
 });
 
 /**
+ * @deprecated This function has been migrated to the new modular structure.
+ * Use `dropboxOAuthCallback` from './dropbox/oauth' instead.
+ * This function is kept for backward compatibility only.
+ * 
  * Handle Dropbox OAuth callback
  * Exchange authorization code for tokens
  */
@@ -825,6 +833,30 @@ export const handleDropboxOAuthCallback = functions.https.onCall(async (data, co
       const recordAccountEmail = String(userInfo.email || existingRecordData?.accountEmail || accountEmail || '');
       const recordAccountName = String(userInfo.name?.display_name || existingRecordData?.accountName || accountName || 'Dropbox User');
 
+      // Extract credentials if they were provided during OAuth (from stateData)
+      let credentialsToSave: Record<string, string> = {};
+      if (stateData?.oauthCredentials) {
+        try {
+          const storedCredentials = decryptTokens(stateData.oauthCredentials);
+          // Save credentials to integrationConfigs for UI display
+          if (storedCredentials.appKey) {
+            credentialsToSave.clientId = storedCredentials.appKey; // Store as clientId for consistency with UI
+          }
+          if (storedCredentials.appSecret) {
+            // Store app secret (it's already encrypted in state, but we store it plain in integrationConfigs for user visibility)
+            credentialsToSave.clientSecret = storedCredentials.appSecret; // Store as clientSecret for consistency with UI
+          }
+          console.log(`[DropboxOAuth] Saving credentials to integrationConfigs: appKey=${!!credentialsToSave.clientId}, appSecret=${!!credentialsToSave.clientSecret}`);
+        } catch (decryptError) {
+          console.warn(`[DropboxOAuth] Failed to decrypt credentials for integrationConfigs:`, decryptError);
+          // Preserve existing credentials if decryption fails
+          credentialsToSave = existingRecordData?.credentials || {};
+        }
+      } else {
+        // No credentials in state - preserve existing credentials if they exist
+        credentialsToSave = existingRecordData?.credentials || {};
+      }
+
       const integrationRecord = {
         id: 'dropbox-integration',
         name: 'Dropbox Integration',
@@ -833,8 +865,8 @@ export const handleDropboxOAuthCallback = functions.https.onCall(async (data, co
         organizationId: organizationId,
         accountEmail: recordAccountEmail,
         accountName: recordAccountName,
-        credentials: {},
-        settings: {},
+        credentials: credentialsToSave, // Save credentials if provided
+        settings: existingRecordData?.settings || {},
         testStatus: 'success',
         testMessage: `Connected to Dropbox as ${recordAccountEmail || 'Dropbox account'}`,
         createdAt: existingRecordData?.createdAt || admin.firestore.FieldValue.serverTimestamp(),
@@ -2073,6 +2105,11 @@ export const setDropboxAccessToken = functions.https.onCall(async (data, context
 /**
  * Save Dropbox configuration to Firestore
  * Similar to saveBoxConfig - stores organization-specific Dropbox credentials
+ */
+/**
+ * @deprecated This function has been migrated to the new modular structure.
+ * Use `saveDropboxConfig` from './dropbox/config' instead.
+ * This function is kept for backward compatibility only.
  */
 export const saveDropboxConfig = functions.https.onCall(async (data, context) => {
   try {

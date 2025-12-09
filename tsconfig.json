@@ -3,7 +3,9 @@
     "target": "ES2020",
     "module": "CommonJS",
     "moduleResolution": "node",
-    "lib": ["ES2020"],
+    "lib": [
+      "ES2020"
+    ],
     "allowJs": true,
     "outDir": "./lib",
     "rootDir": "./src",
@@ -16,7 +18,12 @@
     "sourceMap": true,
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
-    "noEmitOnError": false
+    "noEmitOnError": false,
+    "paths": {
+      "shared-firebase-models": [
+        "../shared-firebase-models"
+      ]
+    }
   },
   "include": [
     "src/**/*"

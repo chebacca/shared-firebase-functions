@@ -92,6 +92,81 @@ export const getUserInfo = onCall(async (request) => {
 });
 
 /**
+ * Get user information with unified data model (HTTP endpoint version)
+ * This is an HTTP endpoint that can be called with fetch
+ */
+export const getUserInfoHttp = onRequest(async (req, res) => {
+  try {
+    const { uid } = req.query;
+    
+    if (!uid) {
+      res.status(400).json({
+        success: false,
+        error: 'User ID is required'
+      });
+      return;
+    }
+
+    // Get user from Firebase Auth
+    const userRecord = await auth.getUser(uid as string);
+    const customClaims = userRecord.customClaims || {};
+
+    // Get user from Firestore
+    const userDoc = await db.collection('users').doc(uid as string).get();
+    const userData = userDoc.exists ? userDoc.data() : {};
+
+    // Create unified user object
+    const unifiedUser = {
+      id: uid,
+      firebaseUid: uid,
+      email: userRecord.email || '',
+      name: userRecord.displayName || (userData as any).name || userRecord.email?.split('@')[0] || 'User',
+      role: (customClaims as any).role || (userData as any).role || 'USER',
+      organizationId: (customClaims as any).organizationId || (userData as any).organizationId || '',
+      isTeamMember: (customClaims as any).isTeamMember || (userData as any).isTeamMember || false,
+      isOrganizationOwner: (customClaims as any).isOrganizationOwner || (userData as any).isOrganizationOwner || false,
+      licenseType: (customClaims as any).licenseType || (userData as any).licenseType || 'BASIC',
+      projectAccess: (customClaims as any).projectAccess || (userData as any).projectAccess || [],
+      permissions: (customClaims as any).permissions || (userData as any).permissions || [],
+      
+      // Hierarchy System Data
+      teamMemberRole: (customClaims as any).teamMemberRole || (userData as any).teamMemberRole,
+      dashboardRole: (customClaims as any).dashboardRole || (userData as any).dashboardRole,
+      clipShowProRole: (customClaims as any).clipShowProRole || (userData as any).clipShowProRole || null,
+      callSheetRole: (customClaims as any).callSheetRole || (userData as any).callSheetRole || null,
+      cuesheetRole: (customClaims as any).cuesheetRole || (userData as any).cuesheetRole || null,
+      teamMemberHierarchy: (customClaims as any).teamMemberHierarchy || (userData as any).teamMemberHierarchy || 0,
+      dashboardHierarchy: (customClaims as any).dashboardHierarchy || (userData as any).dashboardHierarchy || 0,
+      effectiveHierarchy: (customClaims as any).effectiveHierarchy || (userData as any).effectiveHierarchy || 0,
+      roleMapping: (customClaims as any).roleMapping || (userData as any).roleMapping,
+      projectAssignments: (customClaims as any).projectAssignments || (userData as any).projectAssignments || {},
+      
+      // Application-specific flags
+      isEDLConverter: (customClaims as any).isEDLConverter || (userData as any).isEDLConverter || false,
+      isCallSheetUser: (customClaims as any).isCallSheetUser || (userData as any).isCallSheetUser || false,
+      isStandaloneUser: (customClaims as any).isStandaloneUser || (userData as any).isStandaloneUser || false,
+      
+      // Metadata
+      createdAt: (userData as any).createdAt || new Date(),
+      updatedAt: new Date(),
+      lastLoginAt: new Date()
+    };
+
+    res.status(200).json({
+      success: true,
+      user: unifiedUser
+    });
+
+  } catch (error) {
+    console.error('Error getting user info:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to get user info'
+    });
+  }
+});
+
+/**
  * Find Firebase user by email and return UID
  */
 export const findUserByEmail = onCall(

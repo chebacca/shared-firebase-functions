@@ -6,12 +6,10 @@
 
 // Google Drive functions
 export {
-  initiateGoogleOAuth,
   initiateGoogleOAuthHttp, // HTTP version with CORS support for localhost
-  handleGoogleOAuthCallback,
   handleGoogleOAuthCallbackHttp, // HTTP version for frontend callbacks
-  refreshGoogleAccessToken,
-  refreshGoogleAccessTokenCallable,
+  refreshGoogleAccessTokenHttp, // HTTP version for token refresh
+  refreshGoogleAccessToken, // Internal function for token refresh
   listGoogleDriveFolders,
   getGoogleDriveFiles,
   createGoogleDriveFolder,

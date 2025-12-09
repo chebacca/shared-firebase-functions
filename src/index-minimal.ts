@@ -12,7 +12,7 @@ initializeApp();
 
 // Import Google Drive functions
 import {
-  handleGoogleOAuthCallback,
+  handleGoogleOAuthCallbackHttp,
   indexGoogleDriveFolder,
   getGoogleIntegrationStatus
 } from './integrations/googleDrive';
@@ -35,7 +35,7 @@ import {
 // Export all functions
 export {
   // Google Drive
-  handleGoogleOAuthCallback,
+  handleGoogleOAuthCallbackHttp,
   indexGoogleDriveFolder,
   getGoogleIntegrationStatus,
   // Automation

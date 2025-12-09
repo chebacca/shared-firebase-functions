@@ -67,7 +67,7 @@ export const timecardApprovalApi = onRequest(
       await handleMySubmissions(req, res, userOrgId, decodedToken.uid);
     } else if (path === '/history' && method === 'GET') {
       await handleApprovalHistory(req, res, userOrgId, decodedToken.uid);
-    } else if (path === '/direct-reports' && method === 'GET') {
+    } else if ((path === '/direct-reports' || path === '/direct-reports/all') && method === 'GET') {
       await handleDirectReports(req, res, userOrgId, decodedToken.uid);
     } else {
       res.status(404).json(createErrorResponse('Not found', 'Timecard approval endpoint not found'));

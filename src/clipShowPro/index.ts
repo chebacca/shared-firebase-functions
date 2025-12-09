@@ -533,3 +533,31 @@ export { cleanupTrashcan, cleanupTrashcanManual } from './cleanupTrashcan';
 
 // Export permissions matrix trigger
 export { onPermissionsMatrixUpdate } from './permissionsMatrixTrigger';
+
+// Export script version sync functions
+export { onScriptVersionCreated, onScriptVersionUpdated } from './scriptVersionSync';
+
+// ============================================================================
+// DOCUSIGN INTEGRATION
+// ============================================================================
+
+// Export DocuSign configuration functions
+export { storeDocuSignConfig } from './docusign/storeDocuSignConfig';
+export { testDocuSignConnection } from './docusign/testDocuSignConnection';
+
+// Export DocuSign envelope functions
+export { createDocuSignEnvelope } from './docusign/createDocuSignEnvelope';
+export { getDocuSignEnvelopeStatus } from './docusign/getDocuSignEnvelopeStatus';
+export { downloadDocuSignEnvelopeDocument } from './docusign/downloadDocuSignEnvelopeDocument';
+
+// Export DocuSign webhook handler
+export { docuSignWebhookHandler } from './docusign/webhookHandler';
+
+// Export license-pitch sync functions
+export { onLicenseCreated, onLicenseUpdated, syncAllPitchesWithLicenses } from './syncLicensePitch';
+
+// Export license fee backfill functions
+export { backfillLicenseFees, auditLicenseFees, onLicenseCreatedCheckFee } from './backfillLicenseFees';
+
+// Export workflow history backfill functions
+export { backfillWorkflowHistory, auditWorkflowHistory } from './backfillWorkflowHistory';

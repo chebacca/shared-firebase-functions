@@ -12,6 +12,7 @@ import * as crypto from 'crypto';
 const Airtable = require('airtable');
 import { onDocumentCreated } from 'firebase-functions/v2/firestore';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
+import { sendSystemAlert } from '../utils/systemAlerts';
 
 const db = getFirestore();
 
@@ -153,6 +154,22 @@ export const processAirtableSyncQueue = onDocumentCreated(
           processedAt: FieldValue.serverTimestamp(),
           error: error instanceof Error ? error.message : 'Unknown error'
         });
+
+        // Send system alert for final failure
+        await sendSystemAlert(
+          queueData.organizationId,
+          'Airtable Sync Failed',
+          `Sync item ${queueId} failed after ${queueData.maxRetries} retries.`,
+          {
+            queueId,
+            type: queueData.type,
+            collection: queueData.collection,
+            documentId: queueData.documentId,
+            error: error instanceof Error ? error.message : 'Unknown error',
+            baseId: queueData.airtableBaseId,
+            tableId: queueData.airtableTableId
+          }
+        );
       }
     }
   }

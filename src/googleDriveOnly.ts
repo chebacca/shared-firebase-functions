@@ -11,10 +11,10 @@ if (!admin.apps.length) {
   admin.initializeApp();
 }
 
-// Export only Google Drive functions
+// Export only Google Drive functions (HTTP only - simplified)
 export { 
-  initiateGoogleOAuth,
-  handleGoogleOAuthCallback,
+  initiateGoogleOAuthHttp,
+  handleGoogleOAuthCallbackHttp,
   refreshGoogleAccessToken,
   listGoogleDriveFolders,
   getGoogleDriveFiles,

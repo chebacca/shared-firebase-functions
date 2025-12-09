@@ -505,7 +505,10 @@ export const setCorsHeaders = (req: any, res: any): void => {
   if (process.env.NODE_ENV === 'development' || process.env.FUNCTIONS_EMULATOR === 'true') {
     res.set('Access-Control-Allow-Origin', origin || '*');
   } else if (origin && (allowedOrigins.includes(origin) || origin === 'null')) {
-    res.set('Access-Control-Allow-Origin', origin || '*');
+    res.set('Access-Control-Allow-Origin', origin);
+  } else if (origin && origin.includes('localhost')) {
+    // Always allow localhost origins (for development/testing)
+    res.set('Access-Control-Allow-Origin', origin);
   } else {
     // In production, be more restrictive but still allow the request to proceed
     res.set('Access-Control-Allow-Origin', 'https://backbone-client.web.app');

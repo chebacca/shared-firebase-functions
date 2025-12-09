@@ -5,14 +5,13 @@
 
 // Export Google Drive integration functions
 export {
-  exchangeGoogleCodeForTokens,
-  initiateGoogleOAuth,
+  initiateGoogleOAuthHttp,
   getGoogleIntegrationStatus
 } from './integrations/googleDrive';
 
-// Export Google Drive HTTP functions
-export {
-  initiateGoogleOAuthHttp,
-  handleGoogleOAuthCallbackHttp,
-  getGoogleIntegrationStatusHttp
-} from './integrations/googleDriveHttp';
+// Export Google Drive HTTP functions (now in googleDrive.ts)
+// export {
+//   initiateGoogleOAuthHttp,
+//   handleGoogleOAuthCallbackHttp,
+//   getGoogleIntegrationStatusHttp
+// } from './integrations/googleDriveHttp';

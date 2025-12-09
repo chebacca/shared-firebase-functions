@@ -9,6 +9,7 @@ import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { encryptTokens, decryptTokens, generateSecureState, verifyState, hashForLogging } from './integrations/encryption';
 import { createSuccessResponse, createErrorResponse, setCorsHeaders } from './shared/utils';
+import { sendSystemAlert } from './utils/systemAlerts';
 
 // Box OAuth configuration - lazy loaded to avoid initialization errors during Firebase analysis
 async function getBoxConfig(organizationId?: string): Promise<{
@@ -141,6 +142,10 @@ async function verifyAuthToken(req: any): Promise<{ userId: string; organization
 }
 
 /**
+ * @deprecated This function has been migrated to the new modular structure.
+ * Use `boxOAuthInitiate` from './box/oauth' instead.
+ * This function is kept for backward compatibility only.
+ * 
  * Initiate Box OAuth flow - HTTP version with CORS support
  * Returns authorization URL for user to authenticate
  */
@@ -302,6 +307,10 @@ export const initiateBoxOAuthHttp = functions.https.onRequest(async (req, res) =
 });
 
 /**
+ * @deprecated This function has been migrated to the new modular structure.
+ * Use `boxOAuthInitiate` from './box/oauth' instead.
+ * This function is kept for backward compatibility only.
+ * 
  * Initiate Box OAuth flow (Callable version - kept for backwards compatibility)
  * Returns authorization URL for user to authenticate
  */
@@ -358,6 +367,10 @@ export const initiateBoxOAuth = functions.https.onCall(async (data, context) => 
 });
 
 /**
+ * @deprecated This function has been migrated to the new modular structure.
+ * Use `boxOAuthCallback` from './box/oauth' instead.
+ * This function is kept for backward compatibility only.
+ * 
  * Handle Box OAuth callback
  * Exchange authorization code for tokens
  */
@@ -572,10 +585,14 @@ export const handleBoxOAuthCallback = functions.https.onCall(async (data, contex
     try {
       // Box SDK v3 requires redirectURI parameter (must match authorization URL EXACTLY)
       // The redirect URI must be identical to what was used in authorization URL
-      // Normalize redirect URI to ensure exact match (remove trailing slash, lowercase, etc.)
-      const normalizedRedirectUri = boxConfig.redirectUri.trim();
+      // USE THE REDIRECT URI FROM STATE IF AVAILABLE (critical for local dev support)
+      const redirectUriToUse = stateData?.redirectUri || boxConfig.redirectUri;
+      const normalizedRedirectUri = redirectUriToUse.trim();
       
-      console.log(`[BoxOAuth] Attempting token exchange with redirectURI: ${normalizedRedirectUri}`);
+      console.log(`[BoxOAuth] Attempting token exchange with redirectURI: ${normalizedRedirectUri}`, {
+        source: stateData?.redirectUri ? 'state (local/dynamic)' : 'config (static)',
+        originalConfig: boxConfig.redirectUri
+      });
       
       tokenInfo = await boxSDK.getTokensAuthorizationCodeGrant(code, {
         redirectURI: normalizedRedirectUri
@@ -837,6 +854,31 @@ export const handleBoxOAuthCallback = functions.https.onCall(async (data, contex
       const existingRecord = await integrationRecordRef.get();
       const existingData = existingRecord.data();
 
+      // Extract credentials if they were provided during OAuth (from stateData)
+      let credentialsToSave: Record<string, string> = {};
+      if (stateData?.oauthCredentials) {
+        try {
+          const storedCredentials = decryptTokens(stateData.oauthCredentials);
+          // Save credentials to integrationConfigs for UI display
+          if (storedCredentials.clientId) {
+            credentialsToSave.clientId = storedCredentials.clientId;
+          }
+          if (storedCredentials.clientSecret) {
+            // Store client secret (it's already encrypted in state, but we store it plain in integrationConfigs for user visibility)
+            // Note: This is less secure but allows users to see/edit their credentials
+            credentialsToSave.clientSecret = storedCredentials.clientSecret;
+          }
+          console.log(`[BoxOAuth] Saving credentials to integrationConfigs: clientId=${!!credentialsToSave.clientId}, clientSecret=${!!credentialsToSave.clientSecret}`);
+        } catch (decryptError) {
+          console.warn(`[BoxOAuth] Failed to decrypt credentials for integrationConfigs:`, decryptError);
+          // Preserve existing credentials if decryption fails
+          credentialsToSave = existingData?.credentials || {};
+        }
+      } else {
+        // No credentials in state - preserve existing credentials if they exist
+        credentialsToSave = existingData?.credentials || {};
+      }
+
       const integrationRecord = {
         id: 'box-integration',
         name: 'Box Integration',
@@ -845,8 +887,8 @@ export const handleBoxOAuthCallback = functions.https.onCall(async (data, contex
         organizationId: organizationId,
         accountEmail: String(userInfo.login || ''),
         accountName: String(userInfo.name || ''),
-        credentials: {},
-        settings: {},
+        credentials: credentialsToSave, // Save credentials if provided
+        settings: existingData?.settings || {},
         testStatus: 'success',
         testMessage: `Connected to Box as ${userInfo.login || 'Box account'}`,
         createdAt: existingData?.createdAt || admin.firestore.FieldValue.serverTimestamp(),
@@ -1042,6 +1084,17 @@ export async function refreshBoxAccessToken(userId: string, organizationId: stri
         } catch (updateError) {
           console.warn(`[BoxTokenRefresh] Failed to mark integration as inactive:`, updateError);
         }
+
+        // Send system alert
+        await sendSystemAlert(
+          organizationId,
+          'Box Integration Failed',
+          'The Box integration has been disconnected due to an expired refresh token. Please re-authenticate in Integration Settings.',
+          {
+            error: refreshError.message,
+            statusCode: refreshError.statusCode
+          }
+        );
         
         throw new Error('Box refresh token has expired. Please have an admin re-connect the Box account in Integration Settings.');
       }
@@ -1420,8 +1473,184 @@ export const createBoxFolder = functions.https.onCall(async (data, context) => {
 });
 
 /**
- * Upload file to Box
+ * Upload file to Box - HTTP version with CORS support
  */
+export const uploadToBoxHttp = functions.https.onRequest(async (req, res) => {
+  const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  console.log(`[${requestId}] Box upload HTTP request received:`, {
+    method: req.method,
+    hasAuth: !!req.headers.authorization,
+    origin: req.headers.origin,
+    timestamp: new Date().toISOString()
+  });
+
+  try {
+    // Handle preflight requests FIRST (before setting other headers)
+    if (req.method === 'OPTIONS') {
+      console.log(`[${requestId}] Handling OPTIONS preflight from origin: ${req.headers.origin}`);
+      // Set CORS headers for preflight
+      setCorsHeaders(req, res);
+      res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.set('Access-Control-Max-Age', '3600');
+      res.status(200).send('');
+      return;
+    }
+    
+    // Set CORS headers for actual request
+    setCorsHeaders(req, res);
+
+    // Only allow POST requests
+    if (req.method !== 'POST') {
+      console.log(`[${requestId}] Invalid method: ${req.method}`);
+      res.status(405).send('Method Not Allowed');
+      return;
+    }
+
+    console.log(`[${requestId}] Step 1: Verifying authentication token...`);
+    // Verify user authentication
+    const { userId, organizationId } = await verifyAuthToken(req);
+    console.log(`[${requestId}] Step 1 complete:`, {
+      userId: hashForLogging(userId),
+      organizationId,
+      hasUserId: !!userId,
+      hasOrgId: !!organizationId
+    });
+
+    const { fileName, fileContent, folderId = '0' } = req.body;
+
+    if (!fileName || !fileContent) {
+      console.log(`[${requestId}] Missing required fields:`, { hasFileName: !!fileName, hasFileContent: !!fileContent });
+      res.status(400).json(createErrorResponse('File name and content are required'));
+      return;
+    }
+
+    console.log(`[${requestId}] Step 2: Getting and refreshing Box tokens...`);
+    // Get and refresh tokens
+    const tokens = await refreshBoxAccessToken(userId, organizationId);
+    const boxSDK = await getBoxSDK(organizationId);
+    const client = boxSDK.getBasicClient(tokens.accessToken);
+
+    console.log(`[${requestId}] Step 3: Converting base64 to buffer and uploading...`);
+    // Convert base64 content to buffer
+    const fileBuffer = Buffer.from(fileContent, 'base64');
+    
+    console.log(`[${requestId}] Upload parameters:`, {
+      folderId,
+      fileName,
+      fileSize: fileBuffer.length,
+      bufferType: fileBuffer.constructor.name
+    });
+
+    // Upload file using Box SDK
+    // Box SDK v3 uploadFile signature: uploadFile(parentFolderId, fileName, fileContent, options?, callback?)
+    // The SDK returns a promise when no callback is provided
+    let uploadResponse;
+    try {
+      // Pass null for options to use defaults, SDK will return a promise
+      uploadResponse = await client.files.uploadFile(folderId, fileName, fileBuffer, null);
+      console.log(`[${requestId}] Box SDK uploadFile returned:`, {
+        type: typeof uploadResponse,
+        constructor: uploadResponse?.constructor?.name,
+        hasId: !!uploadResponse?.id,
+        hasEntries: !!uploadResponse?.entries,
+        keys: uploadResponse ? Object.keys(uploadResponse) : []
+      });
+    } catch (uploadError: any) {
+      console.error(`[${requestId}] Box SDK uploadFile error:`, {
+        message: uploadError?.message,
+        statusCode: uploadError?.statusCode,
+        response: uploadError?.response?.body || uploadError?.response,
+        stack: uploadError?.stack
+      });
+      throw uploadError;
+    }
+    
+    // Box SDK returns response with entries array containing the uploaded file
+    const uploadedFile = uploadResponse?.entries?.[0] || uploadResponse;
+    
+    console.log(`[${requestId}] Box API response structure:`, {
+      hasEntries: !!uploadResponse?.entries,
+      entriesLength: uploadResponse?.entries?.length,
+      directId: uploadResponse?.id,
+      entriesId: uploadResponse?.entries?.[0]?.id,
+      finalFileId: uploadedFile?.id,
+      fileName: uploadedFile?.name,
+      responseKeys: uploadResponse ? Object.keys(uploadResponse) : []
+    });
+
+    if (!uploadedFile || !uploadedFile.id) {
+      console.error(`[${requestId}] ❌ Box upload response missing file ID. Full response:`, JSON.stringify(uploadResponse, null, 2));
+      throw new Error('Box upload response missing file ID');
+    }
+
+    // Create a shared link for the file so it can be accessed
+    let sharedLink = uploadedFile.shared_link;
+    if (!sharedLink) {
+      try {
+        console.log(`[${requestId}] Creating shared link for file ${uploadedFile.id}...`);
+        const sharedLinkResponse = await client.files.update(uploadedFile.id, {
+          shared_link: {
+            access: 'open',
+            permissions: {
+              can_download: true,
+              can_preview: true
+            }
+          }
+        });
+        sharedLink = sharedLinkResponse.shared_link;
+        console.log(`[${requestId}] ✅ Created shared link:`, {
+          url: sharedLink?.url,
+          downloadUrl: sharedLink?.download_url
+        });
+      } catch (linkError) {
+        console.warn(`[${requestId}] ⚠️ Failed to create shared link (file still uploaded):`, linkError);
+        // Continue without shared link - file is still uploaded successfully
+      }
+    }
+
+    const file = {
+      id: String(uploadedFile.id),
+      name: uploadedFile.name,
+      type: uploadedFile.type,
+      size: uploadedFile.size,
+      createdTime: uploadedFile.created_at,
+      modifiedTime: uploadedFile.modified_at,
+      downloadUrl: sharedLink?.download_url || `https://app.box.com/file/${uploadedFile.id}`,
+      webViewLink: sharedLink?.url || `https://app.box.com/file/${uploadedFile.id}`
+    };
+
+    console.log(`[${requestId}] ✅ Upload successful:`, { 
+      fileId: file.id, 
+      fileName: file.name,
+      hasSharedLink: !!sharedLink,
+      downloadUrl: file.downloadUrl,
+      webViewLink: file.webViewLink
+    });
+    res.status(200).json(createSuccessResponse({ file }));
+
+  } catch (error: any) {
+    console.error(`[${requestId}] ❌ Failed to upload to Box:`, error);
+    
+    // Handle specific Box API errors
+    if (error?.statusCode === 409 || error?.status === 409) {
+      const errorMessage = error?.body?.message || error?.message || 'A file with this name already exists';
+      console.log(`[${requestId}] File already exists error:`, errorMessage);
+      res.status(409).json(createErrorResponse('File already exists', errorMessage));
+      return;
+    }
+    
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const statusCode = error?.statusCode || error?.status || 500;
+    res.status(statusCode).json(createErrorResponse('Failed to upload file', errorMessage));
+  }
+});
+
+/**
+ * Upload file to Box - Callable version (kept for backwards compatibility)
+ * TEMPORARILY DISABLED due to GCF gen1 CPU configuration issue
+ * Use uploadToBoxHttp instead
+ */
+/*
 export const uploadToBox = functions.https.onCall(async (data, context) => {
   try {
     if (!context.auth) {
@@ -1464,6 +1693,7 @@ export const uploadToBox = functions.https.onCall(async (data, context) => {
     return createErrorResponse('Failed to upload file', error instanceof Error ? error.message : 'Unknown error');
   }
 });
+*/
 
 /**
  * Index Box folder - List files and store metadata with shared links for organization-wide access
@@ -1753,6 +1983,11 @@ export const getBoxAccessToken = functions.https.onCall(async (data, context) =>
 /**
  * Save Box configuration to Firestore
  * Similar to saveSlackConfig - stores organization-specific Box credentials
+ */
+/**
+ * @deprecated This function has been migrated to the new modular structure.
+ * Use `saveBoxConfig` from './box/config' instead.
+ * This function is kept for backward compatibility only.
  */
 export const saveBoxConfig = functions.https.onCall(async (data, context) => {
   try {

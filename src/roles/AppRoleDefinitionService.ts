@@ -7,13 +7,128 @@
 
 import { db, createFieldValue } from '../shared/utils';
 
+// Type definitions
+export type AppName = 'dashboard' | 'clipShowPro' | 'callSheet' | 'cuesheet';
+
+export interface AppRoleDefinition {
+  id: string;
+  organizationId: string | null;
+  appName: AppName;
+  roleValue: string;
+  displayName: string;
+  description?: string;
+  permissions?: string[];
+  hierarchy?: number;
+  equivalentEnum?: string;
+  isSystemDefault: boolean;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  createdBy?: string;
+}
+
+// Role enum definitions for system defaults
+const DashboardRole = {
+  ADMIN: 'ADMIN',
+  EXEC: 'EXEC',
+  MANAGER: 'MANAGER',
+  POST_COORDINATOR: 'POST_COORDINATOR',
+  PRODUCER: 'PRODUCER',
+  ASSOCIATE_PRODUCER: 'ASSOCIATE_PRODUCER',
+  POST_PRODUCER: 'POST_PRODUCER',
+  LINE_PRODUCER: 'LINE_PRODUCER',
+  DIRECTOR: 'DIRECTOR',
+  EDITOR: 'EDITOR',
+  ASSISTANT_EDITOR: 'ASSISTANT_EDITOR',
+  WRITER: 'WRITER',
+  LICENSING_SPECIALIST: 'LICENSING_SPECIALIST',
+  MEDIA_MANAGER: 'MEDIA_MANAGER',
+  PRODUCTION_ASSISTANT: 'PRODUCTION_ASSISTANT',
+  VIEWER: 'VIEWER'
+} as const;
+
+const ClipShowProRole = {
+  PRODUCER: 'PRODUCER',
+  SUPERVISING_PRODUCER: 'SUPERVISING_PRODUCER',
+  SERIES_PRODUCER: 'SERIES_PRODUCER',
+  ASSOCIATE_PRODUCER: 'ASSOCIATE_PRODUCER',
+  DIRECTOR: 'DIRECTOR',
+  WRITER: 'WRITER',
+  EDITOR: 'EDITOR',
+  ASSISTANT_EDITOR: 'ASSISTANT_EDITOR',
+  ASSEMBLY_EDITOR: 'ASSEMBLY_EDITOR',
+  LICENSING_SPECIALIST: 'LICENSING_SPECIALIST',
+  CLEARANCE_COORDINATOR: 'CLEARANCE_COORDINATOR',
+  RESEARCHER: 'RESEARCHER',
+  POST_PRODUCER: 'POST_PRODUCER',
+  LINE_PRODUCER: 'LINE_PRODUCER',
+  PRODUCTION_ASSISTANT: 'PRODUCTION_ASSISTANT',
+  MEDIA_MANAGER: 'MEDIA_MANAGER'
+} as const;
+
+const CallSheetRole = {
+  ADMIN: 'ADMIN',
+  PRODUCER: 'PRODUCER',
+  COORDINATOR: 'COORDINATOR',
+  MEMBER: 'MEMBER'
+} as const;
+
+const CuesheetRole = {
+  PRODUCER: 'PRODUCER',
+  SUPERVISING_PRODUCER: 'SUPERVISING_PRODUCER',
+  SERIES_PRODUCER: 'SERIES_PRODUCER',
+  ASSOCIATE_PRODUCER: 'ASSOCIATE_PRODUCER',
+  DIRECTOR: 'DIRECTOR',
+  WRITER: 'WRITER',
+  EDITOR: 'EDITOR',
+  ASSISTANT_EDITOR: 'ASSISTANT_EDITOR',
+  ASSEMBLY_EDITOR: 'ASSEMBLY_EDITOR',
+  LICENSING_SPECIALIST: 'LICENSING_SPECIALIST',
+  CLEARANCE_COORDINATOR: 'CLEARANCE_COORDINATOR',
+  RESEARCHER: 'RESEARCHER',
+  POST_PRODUCER: 'POST_PRODUCER',
+  LINE_PRODUCER: 'LINE_PRODUCER',
+  PRODUCTION_ASSISTANT: 'PRODUCTION_ASSISTANT',
+  MEDIA_MANAGER: 'MEDIA_MANAGER',
+  ADMIN: 'ADMIN',
+  VIEWER: 'VIEWER'
+} as const;
+
 // System default enum maps for fast validation
-const SYSTEM_DEFAULT_ENUMS = {
-  dashboard: DashboardRole,
-  clipShowPro: ClipShowProRole,
-  callSheet: CallSheetRole,
-  cuesheet: CuesheetRole
+const SYSTEM_DEFAULT_ENUMS: Record<AppName, Record<string, string>> = {
+  dashboard: DashboardRole as any,
+  clipShowPro: ClipShowProRole as any,
+  callSheet: CallSheetRole as any,
+  cuesheet: CuesheetRole as any
 };
+
+// Validation function
+function validateAppRoleValue(roleValue: string): { valid: boolean; error?: string } {
+  const pattern = /^[A-Z][A-Z0-9_]*$/;
+  
+  if (!pattern.test(roleValue)) {
+    return {
+      valid: false,
+      error: 'Role value must be uppercase with underscores only (e.g., VFX_SUPERVISOR)'
+    };
+  }
+  
+  if (roleValue.length < 2) {
+    return {
+      valid: false,
+      error: 'Role value must be at least 2 characters'
+    };
+  }
+  
+  if (roleValue.length > 50) {
+    return {
+      valid: false,
+      error: 'Role value must be no more than 50 characters'
+    };
+  }
+  
+  return { valid: true };
+}
 
 export class AppRoleDefinitionService {
   private static instance: AppRoleDefinitionService;

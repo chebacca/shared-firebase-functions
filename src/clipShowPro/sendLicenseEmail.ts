@@ -31,6 +31,8 @@ interface SendLicenseEmailRequest {
   message?: string;
   attachmentType: 'template' | 'signed_document' | 'none';
   attachmentId?: string; // Template ID or document ID
+  signingMethod?: 'manual' | 'docusign'; // Signing method
+  docusignEnvelopeId?: string; // DocuSign envelope ID (if sent via DocuSign)
 }
 
 interface EmailSettings {
@@ -127,7 +129,9 @@ export const sendLicenseEmail = onRequest(
         subject,
         message,
         attachmentType,
-        attachmentId
+        attachmentId,
+        signingMethod,
+        docusignEnvelopeId
       } = req.body as SendLicenseEmailRequest;
 
       // Validate request
@@ -240,6 +244,21 @@ export const sendLicenseEmail = onRequest(
         // Continue without projectId - this is non-critical for email sending
       }
 
+      // Update license with DocuSign info if applicable
+      if (signingMethod === 'docusign' && docusignEnvelopeId) {
+        try {
+          const licenseRef = db.collection('clipShowLicenses').doc(licenseAgreementId);
+          await licenseRef.update({
+            signingMethod: 'docusign',
+            docusignEnvelopeId,
+            docusignStatus: 'sent',
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          });
+        } catch (docusignError) {
+          console.warn('⚠️ [sendLicenseEmail] Could not update license with DocuSign info:', docusignError);
+        }
+      }
+
       // Log email to history (remove undefined values)
       const emailHistoryData = removeUndefinedFields({
         organizationId,
@@ -255,7 +274,9 @@ export const sendLicenseEmail = onRequest(
         sentAt: admin.firestore.FieldValue.serverTimestamp(),
         success: true,
         messageId: result.messageId,
-        projectId: projectId || undefined // Include projectId for data tenancy
+        projectId: projectId || undefined, // Include projectId for data tenancy
+        signingMethod: signingMethod || 'manual',
+        docusignEnvelopeId: docusignEnvelopeId || undefined
       });
 
       const emailHistoryRef = await db

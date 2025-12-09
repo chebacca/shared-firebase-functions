@@ -7,7 +7,7 @@
  * This ensures all user types have proper claims to access the app.
  */
 
-export type ClipShowProRole = 
+export type ClipShowProRole =
   | 'ADMIN' | 'SUPERADMIN' | 'OWNER'
   | 'PRODUCER' | 'ASSOCIATE_PRODUCER' | 'SERIES_PRODUCER' | 'SUPERVISING_PRODUCER'
   | 'DIRECTOR'
@@ -16,12 +16,13 @@ export type ClipShowProRole =
   | 'TALENT'
   | 'CREW'
   | 'CLIENT'
+  | 'MEMBER'
   | 'VENDOR' | 'LICENSING_SPECIALIST'
   | 'LEGAL'
   | 'CONTACT';
 
-export type PageId = 
-  | 'projects' | 'pitching' | 'clearance' | 'stories' | 'scripts' | 'edit' 
+export type PageId =
+  | 'projects' | 'pitching' | 'clearance' | 'stories' | 'scripts' | 'edit'
   | 'clips-budget-tracker' | 'contacts' | 'messages' | 'calendar'
   | 'shows-management' | 'converter' | 'budget' | 'cuesheets' | 'indexed-files';
 
@@ -99,7 +100,7 @@ function selectivePages(
   noAccessPages: PageId[] = []
 ): Record<PageId, PagePermission> {
   const result: Record<PageId, PagePermission> = {} as any;
-  
+
   for (const page of ALL_PAGES) {
     if (readWritePages.includes(page)) {
       result[page] = { read: true, write: true };
@@ -111,7 +112,7 @@ function selectivePages(
       result[page] = { read: false, write: false };
     }
   }
-  
+
   return result;
 }
 
@@ -135,7 +136,7 @@ export const CLIPSHOWPRO_ROLE_DEFAULTS: Record<ClipShowProRole, RoleDefaults> = 
     permissions: ['admin:all', 'read:all', 'write:all', 'delete:all', 'manage:users', 'manage:organization', 'owner:all'],
     pagePermissions: allPagesFullAccess(),
   },
-  
+
   // Production Roles - High Access
   PRODUCER: {
     hierarchy: 50,
@@ -169,7 +170,7 @@ export const CLIPSHOWPRO_ROLE_DEFAULTS: Record<ClipShowProRole, RoleDefaults> = 
       ['edit', 'clips-budget-tracker', 'shows-management', 'converter', 'budget', 'cuesheets', 'indexed-files']
     ),
   },
-  
+
   // Creative Roles
   DIRECTOR: {
     hierarchy: 45,
@@ -188,7 +189,7 @@ export const CLIPSHOWPRO_ROLE_DEFAULTS: Record<ClipShowProRole, RoleDefaults> = 
       ['contacts', 'shows-management', 'clips-budget-tracker', 'converter', 'budget', 'cuesheets', 'indexed-files']
     ),
   },
-  
+
   // Editorial Roles
   EDITOR: {
     hierarchy: 35,
@@ -235,7 +236,7 @@ export const CLIPSHOWPRO_ROLE_DEFAULTS: Record<ClipShowProRole, RoleDefaults> = 
       ['pitching', 'clearance', 'contacts', 'shows-management', 'clips-budget-tracker', 'converter', 'budget', 'cuesheets', 'indexed-files']
     ),
   },
-  
+
   // Talent & Crew
   TALENT: {
     hierarchy: 30,
@@ -255,7 +256,7 @@ export const CLIPSHOWPRO_ROLE_DEFAULTS: Record<ClipShowProRole, RoleDefaults> = 
       ['pitching', 'clearance', 'stories', 'scripts', 'edit', 'contacts', 'shows-management', 'clips-budget-tracker', 'converter', 'budget', 'cuesheets', 'indexed-files']
     ),
   },
-  
+
   // Business Roles
   CLIENT: {
     hierarchy: 30,
@@ -293,7 +294,17 @@ export const CLIPSHOWPRO_ROLE_DEFAULTS: Record<ClipShowProRole, RoleDefaults> = 
       ['projects', 'edit', 'shows-management', 'clips-budget-tracker', 'calendar', 'converter', 'budget', 'cuesheets', 'indexed-files']
     ),
   },
-  
+
+  // Standard Team Member
+  MEMBER: {
+    hierarchy: 50,
+    permissions: ['read:projects', 'write:projects', 'read:pitching', 'read:stories', 'read:contacts'],
+    pagePermissions: selectivePages(
+      ['projects', 'pitching', 'clearance', 'stories', 'scripts', 'contacts', 'calendar', 'messages'],
+      ['edit', 'shows-management', 'clips-budget-tracker', 'converter', 'budget', 'cuesheets', 'indexed-files']
+    ),
+  },
+
   // Default/Other
   CONTACT: {
     hierarchy: 20,
@@ -338,9 +349,10 @@ export function mapContactRoleToClipShowRole(contactRole: string): ClipShowProRo
     'licensing-specialist': 'LICENSING_SPECIALIST',
     'legal': 'LEGAL',
     'admin': 'ADMIN',
+    'member': 'MEMBER',
     'other': 'CONTACT',
   };
-  
+
   const normalized = contactRole.toLowerCase().replace(/_/g, '-');
   return roleMapping[normalized] || 'CONTACT';
 }

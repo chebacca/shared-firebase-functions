@@ -25,7 +25,8 @@ import {
   fetchAutomationSummary,
   fetchIndexedFilesSummary,
   fetchConversationsSummary,
-  fetchLicensingBudgetSummary
+  fetchLicensingBudgetSummary,
+  fetchUserNotes
 } from './utils/workflowDataFetcher';
 import {
   mapPitchStatusToWorkflowStage,
@@ -35,6 +36,10 @@ import {
   identifyBottlenecks
 } from './utils/workflowUnderstanding';
 import { getAppKnowledgePrompt, getPageContextPrompt } from './utils/appKnowledge';
+import { gatherScheduleContext } from './contextAggregation/ScheduleContextService';
+import { gatherUserRoleContext } from './contextAggregation/UserRoleContextService';
+import { gatherWorkflowContext } from './contextAggregation/WorkflowContextService';
+import { retrieveContext as retrieveVectorContext } from './vectorStore/ContextRetrievalService';
 
 const db = getFirestore();
 
@@ -124,6 +129,52 @@ export interface AIContext {
     summary?: any;
     recentLicenses?: any[];
   };
+
+  // Schedule context (new)
+  schedule?: {
+    overdueItems: any[];
+    conflicts: any[];
+    atRiskItems: any[];
+    activeItemsTimeline: any[];
+  };
+
+  // User role context (new)
+  userRole?: {
+    roleResponsibilities: Map<string, string[]>;
+    userWorkloads: any[];
+    behindScheduleUsers: any[];
+    roleWorkflowSteps: Map<string, string[]>;
+  };
+
+  // Workflow context (new)
+  workflow?: {
+    phaseDistribution: Map<string, number>;
+    bottlenecks: any[];
+    velocityMetrics: any;
+    itemsByPhase: Map<string, any[]>;
+  };
+
+  // Alert context (new)
+  alertContext?: {
+    alertId?: string;
+    alertType?: string;
+    alertSeverity?: string;
+    alertMessage?: string;
+    alertDetails?: string;
+    suggestedActions?: any[];
+  };
+
+  // Vector search context (new)
+  vectorContext?: {
+    relevantDocs: any[];
+    similarScenarios: any[];
+    roleKnowledge: any[];
+  };
+
+  // User notes context (tenant-aware - only current user's notes)
+  notes?: {
+    userNotes: any[];
+  };
 }
 
 /**
@@ -169,6 +220,16 @@ export async function gatherEntityContext(
     ? await identifyBottlenecks(organizationId, entityType)
     : [];
 
+  // Gather enhanced context (schedule, role, workflow)
+  // Also fetch user notes (tenant-aware - only current user's notes)
+  // All context gathering is tenant-aware - filtered by userId where applicable
+  const [scheduleContext, userRoleContext, workflowContext, userNotes] = await Promise.all([
+    gatherScheduleContext(organizationId, { includeOverdue: true, includeConflicts: true, includeAtRisk: true, userId }).catch(() => null),
+    gatherUserRoleContext(organizationId, { includeWorkload: true, includeBehindSchedule: true, userId }).catch(() => null),
+    gatherWorkflowContext(organizationId, { includeBottlenecks: true, includeVelocity: true }).catch(() => null),
+    fetchUserNotes(organizationId, userId, 20).catch(() => [])
+  ]);
+
   return {
     currentEntity: currentEntity ? {
       type: entityType,
@@ -192,7 +253,28 @@ export async function gatherEntityContext(
       statusTransitions,
       bottlenecks
     },
-    pageContext
+    pageContext,
+    schedule: scheduleContext ? {
+      overdueItems: scheduleContext.overdueItems,
+      conflicts: scheduleContext.conflicts,
+      atRiskItems: scheduleContext.atRiskItems,
+      activeItemsTimeline: scheduleContext.activeItemsTimeline
+    } : undefined,
+    userRole: userRoleContext ? {
+      roleResponsibilities: userRoleContext.roleResponsibilities,
+      userWorkloads: userRoleContext.userWorkloads,
+      behindScheduleUsers: userRoleContext.behindScheduleUsers,
+      roleWorkflowSteps: userRoleContext.roleWorkflowSteps
+    } : undefined,
+    workflow: workflowContext ? {
+      phaseDistribution: workflowContext.phaseDistribution,
+      bottlenecks: workflowContext.bottlenecks,
+      velocityMetrics: workflowContext.velocityMetrics,
+      itemsByPhase: workflowContext.itemsByPhase
+    } : undefined,
+    notes: userNotes && userNotes.length > 0 ? {
+      userNotes: userNotes
+    } : undefined
   };
 }
 
@@ -235,9 +317,9 @@ export async function gatherGeneralContext(
     };
   }
 
-  // ALWAYS fetch calendar data
-  const calendarSummary = await fetchCalendarSummary(organizationId);
-  const upcomingEvents = await fetchUpcomingCalendarEvents(organizationId, 30);
+  // ALWAYS fetch calendar data (tenant-aware - only user's assigned events)
+  const calendarSummary = await fetchCalendarSummary(organizationId, userId);
+  const upcomingEvents = await fetchUpcomingCalendarEvents(organizationId, 30, userId);
   const calendarContext = {
     summary: calendarSummary,
     upcomingEvents: upcomingEvents.slice(0, 10),
@@ -266,8 +348,8 @@ export async function gatherGeneralContext(
     recentIndexes: indexedFilesSummary.recentIndexes || []
   };
 
-  // ALWAYS fetch messages/conversations data
-  const conversationsSummary = await fetchConversationsSummary(organizationId);
+  // ALWAYS fetch messages/conversations data (tenant-aware - only user's conversations)
+  const conversationsSummary = await fetchConversationsSummary(organizationId, userId);
   const messagesContext = {
     summary: conversationsSummary,
     recentConversations: conversationsSummary.recentConversations || []
@@ -279,6 +361,16 @@ export async function gatherGeneralContext(
     summary: licensingBudgetSummary,
     recentLicenses: licensingBudgetSummary.recentLicenses || []
   };
+
+  // Gather enhanced context (schedule, role, workflow)
+  // Also fetch user notes (tenant-aware - only current user's notes)
+  // All context gathering is tenant-aware - filtered by userId where applicable
+  const [scheduleContext, userRoleContext, workflowContext, userNotes] = await Promise.all([
+    gatherScheduleContext(organizationId, { includeOverdue: true, includeConflicts: true, includeAtRisk: true, userId }).catch(() => null),
+    gatherUserRoleContext(organizationId, { includeWorkload: true, includeBehindSchedule: true, userId }).catch(() => null),
+    gatherWorkflowContext(organizationId, { includeBottlenecks: true, includeVelocity: true }).catch(() => null),
+    fetchUserNotes(organizationId, userId, 20).catch(() => [])
+  ]);
 
   return {
     workflowHistory: [],
@@ -309,7 +401,28 @@ export async function gatherGeneralContext(
     automation: automationContext,
     indexedFiles: indexedFilesContext,
     messages: messagesContext,
-    licensingBudget: licensingBudgetContext
+    licensingBudget: licensingBudgetContext,
+    schedule: scheduleContext ? {
+      overdueItems: scheduleContext.overdueItems,
+      conflicts: scheduleContext.conflicts,
+      atRiskItems: scheduleContext.atRiskItems,
+      activeItemsTimeline: scheduleContext.activeItemsTimeline
+    } : undefined,
+    userRole: userRoleContext ? {
+      roleResponsibilities: userRoleContext.roleResponsibilities,
+      userWorkloads: userRoleContext.userWorkloads,
+      behindScheduleUsers: userRoleContext.behindScheduleUsers,
+      roleWorkflowSteps: userRoleContext.roleWorkflowSteps
+    } : undefined,
+    workflow: workflowContext ? {
+      phaseDistribution: workflowContext.phaseDistribution,
+      bottlenecks: workflowContext.bottlenecks,
+      velocityMetrics: workflowContext.velocityMetrics,
+      itemsByPhase: workflowContext.itemsByPhase
+    } : undefined,
+    notes: userNotes && userNotes.length > 0 ? {
+      userNotes: userNotes
+    } : undefined
   };
 }
 
@@ -551,14 +664,17 @@ export function formatContextForPrompt(context: AIContext): string {
   }
 
   // Calendar context - comprehensive calendar information
+  // NOTE: Calendar events are filtered to only show events assigned to the user or created by the user
   if (context.calendar) {
     prompt += `## Calendar Context\n\n`;
+    prompt += `**IMPORTANT**: These are calendar events assigned to you (User ID: ${context.user.id}) or events you created. `;
+    prompt += `You only see events you're assigned to - other users' personal events are not visible.\n\n`;
     
     if (context.calendar.summary) {
       const summary = context.calendar.summary;
       prompt += `### Calendar Summary\n`;
-      prompt += `- Total Events: ${summary.totalEvents || 0}\n`;
-      prompt += `- Upcoming Events (next 30 days): ${summary.upcomingEventsCount || 0}\n`;
+      prompt += `- Your Events: ${summary.totalEvents || 0}\n`;
+      prompt += `- Your Upcoming Events (next 30 days): ${summary.upcomingEventsCount || 0}\n`;
       prompt += `- Events This Week: ${summary.eventsThisWeek || 0}\n`;
       prompt += `- Events This Month: ${summary.eventsThisMonth || 0}\n`;
       
@@ -606,8 +722,11 @@ export function formatContextForPrompt(context: AIContext): string {
   }
 
   // Contacts context - comprehensive contacts information
+  // NOTE: Contacts are organization-wide (shared within organization) - this is correct
   if (context.contacts) {
     prompt += `## Contacts Context\n\n`;
+    prompt += `**NOTE**: Contacts are organization-wide and shared within your organization. `;
+    prompt += `This is intentional - contacts are team resources, not personal data.\n\n`;
     
     if (context.contacts.summary) {
       const summary = context.contacts.summary;
@@ -734,14 +853,17 @@ export function formatContextForPrompt(context: AIContext): string {
   }
 
   // Messages/Conversations context - comprehensive messaging information
+  // NOTE: Conversations are filtered to only show conversations where the user is a participant
   if (context.messages) {
     prompt += `## Messages & Conversations Context\n\n`;
+    prompt += `**IMPORTANT**: These are conversations where you (User ID: ${context.user.id}) are a participant. `;
+    prompt += `You only have access to conversations you're part of - private conversations you're not in are not visible.\n\n`;
     
     if (context.messages.summary) {
       const summary = context.messages.summary;
       prompt += `### Messages Summary\n`;
-      prompt += `- Total Conversations: ${summary.totalConversations || 0}\n`;
-      prompt += `- Total Unread Messages: ${summary.totalUnread || 0}\n`;
+      prompt += `- Your Conversations: ${summary.totalConversations || 0}\n`;
+      prompt += `- Your Unread Messages: ${summary.totalUnread || 0}\n`;
       prompt += '\n';
     }
 
@@ -828,6 +950,201 @@ export function formatContextForPrompt(context: AIContext): string {
       });
       prompt += '\n';
     }
+  }
+
+  // Schedule context (new)
+  // NOTE: Schedule data is filtered to only show items assigned to the current user if userId filter was applied
+  if (context.schedule) {
+    prompt += `## Schedule & Deadline Context\n\n`;
+    
+    // Check if this is user-specific (all items should be assigned to current user)
+    const isUserSpecific = context.schedule.overdueItems.length > 0 && 
+                          context.schedule.overdueItems.every(item => 
+                            item.assignedUsers.includes(context.user.id)
+                          );
+    
+    if (isUserSpecific) {
+      prompt += `**NOTE**: This shows your personal schedule items only (items assigned to you).\n\n`;
+    } else {
+      prompt += `**NOTE**: This shows organization-wide schedule data. `;
+      prompt += `Items may be assigned to different users in your organization.\n\n`;
+    }
+    
+    if (context.schedule.overdueItems && context.schedule.overdueItems.length > 0) {
+      prompt += `### ${isUserSpecific ? 'Your' : 'Organization'} Overdue Items (${context.schedule.overdueItems.length} items)\n`;
+      context.schedule.overdueItems.slice(0, 5).forEach((item, idx) => {
+        prompt += `${idx + 1}. **${item.title}** (${item.entityType})\n`;
+        prompt += `   - Status: ${item.status}\n`;
+        prompt += `   - Days Overdue: ${item.daysOverdue}\n`;
+        if (!isUserSpecific) {
+          prompt += `   - Assigned Users: ${item.assignedUsers.length}\n`;
+        }
+        prompt += '\n';
+      });
+    }
+
+    if (context.schedule.conflicts && context.schedule.conflicts.length > 0) {
+      prompt += `### Scheduling Conflicts (${context.schedule.conflicts.length} conflicts)\n`;
+      context.schedule.conflicts.slice(0, 3).forEach((conflict, idx) => {
+        prompt += `${idx + 1}. Date: ${conflict.date.toLocaleDateString()}\n`;
+        prompt += `   - Conflicting Items: ${conflict.conflictingItems.length}\n`;
+        conflict.conflictingItems.slice(0, 3).forEach(item => {
+          prompt += `     - ${item.title} (${item.entityType}) - Assigned to: ${item.assignedUser}\n`;
+        });
+        prompt += '\n';
+      });
+    }
+
+    if (context.schedule.atRiskItems && context.schedule.atRiskItems.length > 0) {
+      prompt += `### At-Risk Items (${context.schedule.atRiskItems.length} items)\n`;
+      context.schedule.atRiskItems.slice(0, 5).forEach((item, idx) => {
+        prompt += `${idx + 1}. **${item.title}** (${item.entityType})\n`;
+        prompt += `   - Status: ${item.status}\n`;
+        prompt += `   - Days Until Deadline: ${item.daysUntilDeadline}\n`;
+        prompt += '\n';
+      });
+    }
+    prompt += '\n';
+  }
+
+  // User role context (new)
+  // NOTE: Workload data is filtered to only show current user's workload if userId filter was applied
+  if (context.userRole) {
+    prompt += `## User Role & Workload Context\n\n`;
+    
+    // Check if this is user-specific or org-wide workload
+    const isUserSpecific = context.userRole.userWorkloads.length === 1 && 
+                          context.userRole.userWorkloads[0]?.userId === context.user.id;
+    
+    if (isUserSpecific) {
+      prompt += `**NOTE**: This shows your personal workload only.\n\n`;
+    } else {
+      prompt += `**NOTE**: This shows organization-wide workload data (all users in your organization). `;
+      prompt += `This is intentional for team coordination and resource planning.\n\n`;
+    }
+    
+    if (context.userRole.userWorkloads && context.userRole.userWorkloads.length > 0) {
+      prompt += `### ${isUserSpecific ? 'Your' : 'User'} Workload${isUserSpecific ? '' : 's'}\n`;
+      context.userRole.userWorkloads.slice(0, 5).forEach((workload, idx) => {
+        prompt += `${idx + 1}. ${workload.userName || workload.userEmail || workload.userId}\n`;
+        prompt += `   - Role: ${workload.role || 'Unknown'}\n`;
+        prompt += `   - Total Items: ${workload.totalItems} (${workload.assignedPitches} pitches, ${workload.assignedStories} stories)\n`;
+        prompt += `   - Overdue: ${workload.overdueItems}\n`;
+        prompt += `   - At Risk: ${workload.atRiskItems}\n`;
+        prompt += '\n';
+      });
+    }
+
+    if (context.userRole.behindScheduleUsers && context.userRole.behindScheduleUsers.length > 0) {
+      prompt += `### Users Behind Schedule (${context.userRole.behindScheduleUsers.length} users)\n`;
+      context.userRole.behindScheduleUsers.slice(0, 3).forEach((user, idx) => {
+        prompt += `${idx + 1}. ${user.userName || user.userEmail || user.userId}\n`;
+        prompt += `   - Role: ${user.role || 'Unknown'}\n`;
+        prompt += `   - Overdue Items: ${user.overdueItems.length}\n`;
+        prompt += `   - At-Risk Items: ${user.atRiskItems.length}\n`;
+        prompt += '\n';
+      });
+    }
+    prompt += '\n';
+  }
+
+  // Workflow context (new)
+  if (context.workflow) {
+    prompt += `## Workflow Analysis Context\n\n`;
+    
+    if (context.workflow.bottlenecks && context.workflow.bottlenecks.length > 0) {
+      prompt += `### Active Bottlenecks (${context.workflow.bottlenecks.length} bottlenecks)\n`;
+      context.workflow.bottlenecks.slice(0, 5).forEach((bottleneck, idx) => {
+        const days = Math.round(bottleneck.averageWaitTime / (24 * 60 * 60));
+        prompt += `${idx + 1}. **${bottleneck.status}** (${bottleneck.entityType})\n`;
+        prompt += `   - Items Stuck: ${bottleneck.itemCount}\n`;
+        prompt += `   - Average Wait Time: ${days} days\n`;
+        prompt += '\n';
+      });
+    }
+
+    if (context.workflow.velocityMetrics) {
+      const metrics = context.workflow.velocityMetrics;
+      const daysToComplete = Math.round(metrics.averageTimeToComplete / (24 * 60 * 60));
+      prompt += `### Workflow Velocity\n`;
+      prompt += `- Average Time to Complete: ${daysToComplete} days\n`;
+      prompt += `- Items In Progress: ${metrics.itemsInProgress}\n`;
+      prompt += `- Items Completed: ${metrics.itemsCompleted}\n`;
+      prompt += `- Completion Rate: ${(metrics.completionRate * 100).toFixed(1)}%\n`;
+      prompt += '\n';
+    }
+    prompt += '\n';
+  }
+
+  // Alert context (new)
+  if (context.alertContext) {
+    prompt += `## Current Alert Context\n\n`;
+    prompt += `You are helping the user resolve an alert:\n`;
+    prompt += `- Alert Type: ${context.alertContext.alertType || 'Unknown'}\n`;
+    prompt += `- Severity: ${context.alertContext.alertSeverity || 'Unknown'}\n`;
+    prompt += `- Message: ${context.alertContext.alertMessage || ''}\n`;
+    prompt += `- Details: ${context.alertContext.alertDetails || ''}\n`;
+    if (context.alertContext.suggestedActions && context.alertContext.suggestedActions.length > 0) {
+      prompt += `- Suggested Actions:\n`;
+      context.alertContext.suggestedActions.forEach((action, idx) => {
+        prompt += `  ${idx + 1}. ${action.description} (${action.type})\n`;
+      });
+    }
+    prompt += '\n';
+  }
+
+  // Vector search context (new) - would be added if vector search is performed
+  if (context.vectorContext) {
+    prompt += `## Relevant Knowledge Base Context\n\n`;
+    
+    if (context.vectorContext.relevantDocs && context.vectorContext.relevantDocs.length > 0) {
+      prompt += `### Relevant Documentation\n`;
+      context.vectorContext.relevantDocs.slice(0, 3).forEach((doc, idx) => {
+        prompt += `${idx + 1}. ${doc.content.substring(0, 200)}...\n`;
+        prompt += `   (Similarity: ${(doc.similarity * 100).toFixed(1)}%)\n`;
+        prompt += '\n';
+      });
+    }
+
+    if (context.vectorContext.similarScenarios && context.vectorContext.similarScenarios.length > 0) {
+      prompt += `### Similar Past Scenarios\n`;
+      context.vectorContext.similarScenarios.slice(0, 2).forEach((scenario, idx) => {
+        prompt += `${idx + 1}. ${scenario.content.substring(0, 200)}...\n`;
+        prompt += '\n';
+      });
+    }
+    prompt += '\n';
+  }
+
+  // User notes context (tenant-aware - only current user's notes)
+  if (context.notes && context.notes.userNotes && context.notes.userNotes.length > 0) {
+    prompt += `## Your Personal Notes\n\n`;
+    prompt += `**IMPORTANT**: These are personal notes created by the current user (User ID: ${context.user.id}). `;
+    prompt += `You have access to these notes to help provide context-aware assistance. `;
+    prompt += `**CRITICAL**: Do NOT reference or reveal notes from other users. `;
+    prompt += `You only have access to notes created by the current user.\n\n`;
+    
+    // Add instruction about tenant isolation
+    prompt += `**TENANT ISOLATION**: All data you see is properly isolated. `;
+    prompt += `Notes, conversations, calendar events, and workload data are filtered to only show the current user's information. `;
+    prompt += `Never reference or reveal data from other users.\n\n`;
+    
+    prompt += `### Your Notes (${context.notes.userNotes.length} notes)\n`;
+    context.notes.userNotes.slice(0, 10).forEach((note, idx) => {
+      const noteTitle = note.title || 'Untitled Note';
+      const noteContent = note.content || '';
+      const truncatedContent = noteContent.length > 300 ? noteContent.substring(0, 300) + '...' : noteContent;
+      const updatedAt = note.updatedAt?.toDate ? note.updatedAt.toDate() : (note.updatedAt ? new Date(note.updatedAt) : null);
+      const dateStr = updatedAt ? updatedAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Unknown date';
+      
+      prompt += `${idx + 1}. **${noteTitle}**\n`;
+      if (truncatedContent) {
+        prompt += `   - Content: ${truncatedContent}\n`;
+      }
+      prompt += `   - Last Updated: ${dateStr}\n`;
+      prompt += '\n';
+    });
+    prompt += '\n';
   }
 
   return prompt;

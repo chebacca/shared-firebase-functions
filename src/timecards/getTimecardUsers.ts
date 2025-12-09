@@ -32,12 +32,30 @@ export const getTimecardUsers = onCall(
       }
 
       const { organizationId } = request.data;
+      const callerId = request.auth.uid;
 
       if (!organizationId) {
         throw new Error('Organization ID is required');
       }
 
-      console.log(`⏰ [GET TIMECARD USERS] Getting users for org: ${organizationId} (user: ${request.auth.uid})`);
+      // 🔒 SECURITY CHECK: Verify user belongs to the organization
+      const hasAccess = await import('../shared/utils').then(m => m.validateOrganizationAccess(callerId, organizationId));
+      if (!hasAccess) {
+        // Also check if user is admin/owner via custom claims as a fallback/bypass
+        const token = request.auth.token;
+        const isAdmin = token.role === 'ADMIN' || token.role === 'OWNER' || token.isAdmin === true;
+
+        // Check for special enterprise access if applicable
+        const isEnterprise = token.email === 'enterprise.user@enterprisemedia.com' &&
+          (organizationId === 'enterprise-media-org' || organizationId === 'enterprise-org-001');
+
+        if (!isAdmin && !isEnterprise) {
+          console.warn(`🚨 [GET TIMECARD USERS] Security violation: User ${callerId} attempted to access org ${organizationId} without access`);
+          throw new Error('Permission denied: You do not have access to this organization');
+        }
+      }
+
+      console.log(`⏰ [GET TIMECARD USERS] Getting users for org: ${organizationId} (caller: ${callerId})`);
 
       // Get team members for the organization
       const teamMembersQuery = await db.collection('teamMembers')
@@ -46,13 +64,13 @@ export const getTimecardUsers = onCall(
         .get();
 
       const users = [];
-      
+
       for (const doc of teamMembersQuery.docs) {
         const teamMember = doc.data();
-        
+
         // Get user details from users collection
         const userDoc = await db.collection('users').doc(teamMember.userId).get();
-        
+
         if (userDoc.exists) {
           const userData = userDoc.data();
           if (userData) {
@@ -96,7 +114,7 @@ export const getTimecardUsersHttp = onRequest(
     try {
       // Set CORS headers
       setCorsHeaders(req, res);
-      
+
       if (req.method === 'OPTIONS') {
         res.status(204).send('');
         return;
@@ -118,13 +136,13 @@ export const getTimecardUsersHttp = onRequest(
         .get();
 
       const users = [];
-      
+
       for (const doc of teamMembersQuery.docs) {
         const teamMember = doc.data();
-        
+
         // Get user details from users collection
         const userDoc = await db.collection('users').doc(teamMember.userId).get();
-        
+
         if (userDoc.exists) {
           const userData = userDoc.data();
           if (userData) {

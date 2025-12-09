@@ -15,6 +15,7 @@ import { getValidNextStatuses } from './utils/workflowUnderstanding';
 import { getAIApiKey, callAIProvider } from './utils/aiHelpers';
 import { executeCreateOperation, CreateOperationRequest } from './utils/createOperationHandler';
 import { resolveEntity, extractEntityReference, EntityReference } from './utils/entityResolver';
+import { retrieveContext as retrieveVectorContext } from './vectorStore/ContextRetrievalService';
 
 // Define the encryption key secret (required for decrypting API keys)
 const encryptionKeySecret = defineSecret('INTEGRATIONS_ENCRYPTION_KEY');
@@ -38,6 +39,14 @@ interface ChatRequest {
     scriptContext?: any; // ClipsyScriptContext from frontend
     selectedText?: string; // Currently selected text in editor
     selectionRange?: { from: number; to: number } | null; // Selection range in editor
+    alertContext?: {
+      alertId?: string;
+      alertType?: string;
+      alertSeverity?: string;
+      alertMessage?: string;
+      alertDetails?: string;
+      suggestedActions?: any[];
+    };
   };
   preferredProvider?: 'openai' | 'claude' | 'gemini' | 'grok';
 }
@@ -692,6 +701,12 @@ export const aiChatAssistant = onCall(
       throw new HttpsError('invalid-argument', 'Message and organizationId are required');
     }
 
+    // Security validation: Ensure userId matches authenticated user
+    // This prevents any potential userId manipulation in the request
+    if (!userId || userId !== request.auth.uid) {
+      throw new HttpsError('permission-denied', 'Invalid user authentication');
+    }
+
     // Determine provider
     const provider = preferredProvider || 'openai';
 
@@ -720,6 +735,26 @@ export const aiChatAssistant = onCall(
         userId,
         { page: context?.page || '', selectedItems: context?.selectedItems }
       );
+    }
+
+    // Add alert context if provided
+    if (context?.alertContext) {
+      aiContext.alertContext = context.alertContext;
+    }
+
+    // Retrieve vector context if this is a general query (not script-specific)
+    if (!context?.scriptContext && message) {
+      try {
+        const vectorContext = await retrieveVectorContext(organizationId, message, {
+          includeSimilarScenarios: true,
+          includeRoleKnowledge: true,
+          limit: 3
+        });
+        aiContext.vectorContext = vectorContext;
+      } catch (error) {
+        console.warn('[aiChatAssistant] Error retrieving vector context:', error);
+        // Continue without vector context - not critical
+      }
     }
 
     // Format context for prompt
@@ -797,16 +832,50 @@ export const aiChatAssistant = onCall(
         const scriptTitle = scriptContext.story?.clipTitle || 'Unknown';
         const script = currentScriptTrimmed;
         const scriptFormat = scriptContext.scriptFormat || 'plain';
-        // Increased from 15,000 to 100,000 characters to support longer scripts
-        // Gemini 1.5 Pro supports 2M tokens (~8M characters), so 100k is well within limits
-        const maxLength = 100000;
-        const scriptPreview = script.length > maxLength 
-          ? script.substring(0, maxLength) + '\n\n[... script continues - ' + String(script.length - maxLength) + ' more characters ...]'
-          : script;
+        // Increased from 100,000 to 500,000 characters to support longer scripts
+        // Gemini 1.5 Pro supports 2M tokens (~8M characters), so 500k is well within limits
+        const maxLength = 500000;
+        let scriptPreview = script;
+        let scriptSummary = '';
+        
+        if (script.length > maxLength) {
+          // For very long scripts, create a summary of the full script + detailed preview
+          const previewLength = 250000; // First 250k characters for detailed context
+          const summaryLength = 50000;  // Last 50k characters for ending context
+          
+          scriptSummary = `**SCRIPT SUMMARY**: This is a very long script (${script.length} characters, ${script.split('\n').length} lines).
+The script has been truncated for context efficiency. Full detailed content is provided for the first ${previewLength.toLocaleString()} characters and last ${summaryLength.toLocaleString()} characters.
+
+**SCRIPT STRUCTURE**:
+- Total Length: ${script.length.toLocaleString()} characters
+- Total Lines: ${script.split('\n').length.toLocaleString()} lines
+${scriptContext.tableStructure?.totalPages ? `- Total Pages: ${scriptContext.tableStructure.totalPages}` : ''}
+- Preview Section: First ${previewLength.toLocaleString()} characters (detailed)
+- Summary Section: Middle section (${(script.length - previewLength - summaryLength).toLocaleString()} characters) summarized
+- Ending Section: Last ${summaryLength.toLocaleString()} characters (detailed)
+
+**MIDDLE SECTION SUMMARY** (characters ${previewLength.toLocaleString()} to ${(script.length - summaryLength).toLocaleString()}):
+[The middle section contains the bulk of the script content. When making suggestions, focus on the detailed sections provided below, or request specific page/coordinate context if needed.]
+
+`;
+          
+          scriptPreview = script.substring(0, previewLength) + 
+            '\n\n[... MIDDLE SECTION TRUNCATED FOR CONTEXT EFFICIENCY - ' + 
+            String(script.length - previewLength - summaryLength) + 
+            ' characters omitted ...]\n\n' +
+            script.substring(script.length - summaryLength);
+        }
         
         // Add coordinate map if available (for table format)
         const coordinateMapSection = scriptFormat === 'table' && scriptContext.coordinateMap 
           ? `\n\n${scriptContext.coordinateMap}\n`
+          : '';
+        
+        // Get page information from table structure if available
+        const totalPages = scriptContext.tableStructure?.totalPages;
+        const hasPages = totalPages && totalPages > 1;
+        const pageInfo = hasPages 
+          ? `\n**PAGINATION**: This script has ${totalPages} pages (industry standard: ~22 rows per page). Use page-aware coordinates for better accuracy.`
           : '';
         
         const formatNote = scriptFormat === 'table' 
@@ -814,13 +883,16 @@ export const aiChatAssistant = onCall(
 - **Column 1 (TIME | SCENE / ACTION)**: Contains timestamps, scene headings, action descriptions, and transitions
 - **Column 2 (CHARACTER | DIALOGUE)**: Contains character names and their dialogue
 - **Column 3 (NOTES / MUSIC / GRAPHICS)**: Contains production notes, music cues, graphics descriptions, and visual references
-${coordinateMapSection}
+${coordinateMapSection}${pageInfo}
 **CRITICAL FOR TABLE FORMAT:**
 - The script is read row-by-row, but EACH ROW contains THREE SEPARATE COLUMNS
 - When analyzing the script, you MUST look at ALL THREE COLUMNS in each row
 - When making suggestions, you should provide suggestions for ALL THREE COLUMNS, not just the first one
-- **USE COORDINATES**: When providing suggestions, specify the exact coordinate (e.g., "A1", "B2", "C3") to target the specific cell
-- Include the coordinate in your suggestion JSON: { "coordinate": "A1", "targetText": "...", "newText": "..." }
+- **USE COORDINATES**: When providing suggestions, specify the exact coordinate to target the specific cell
+${hasPages ? `- **PAGE-AWARE COORDINATES**: For scripts with multiple pages, use format "Page:Column:Row" (e.g., "1:A1", "2:B3") for better accuracy
+- You can also use simple format "A1", "B2" - the system will infer the page number
+- Page-aware coordinates help ensure suggestions target the correct cell in long scripts` : `- **COORDINATES**: Use format "ColumnRow" (e.g., "A1", "B2", "C3")`}
+- Include the coordinate in your suggestion JSON: { "coordinate": "${hasPages ? "1:A1" : "A1"}", "targetText": "...", "newText": "..." }
 - Extract targetText from the specific column you want to change (TIME/SCENE, CHARACTER/DIALOGUE, or NOTES/GRAPHICS)
 - Make suggestions for dialogue improvements in Column 2, action/scene improvements in Column 1, and notes/music/graphics in Column 3
 - The user expects suggestions across ALL columns, not just TIME/SCENE/ACTION`
@@ -833,6 +905,7 @@ SCRIPT TITLE: "${scriptTitle}"
 SCRIPT DURATION: 6 minutes (360 seconds) - This is the standard duration for all scripts
 SCRIPT LENGTH: ${script.length} characters, ${script.split('\n').length} lines
 SCRIPT FORMAT: ${scriptFormat.toUpperCase()}${scriptFormat === 'table' ? ' (3-COLUMN TABLE - DEFAULT FORMAT)' : ''}${formatNote}
+${scriptSummary ? scriptSummary : ''}
 ═══════════════════════════════════════════════════════════════════════════════
 
 **YOU HAVE THE COMPLETE ACTUAL SCRIPT CONTENT BELOW. THE USER IS WORKING ON THIS EXACT SCRIPT.**
@@ -993,6 +1066,16 @@ ${scriptContext.indexedVideoFiles?.length > 0
   ? scriptContext.indexedVideoFiles.slice(0, 5).map((f: any) => `- ${f.name || 'Unknown'} (${f.cloudProvider || 'local'})`).join('\n')
   : '- No indexed video files available'}
 
+${scriptContext.writingKnowledge?.techniques ? `
+═══════════════════════════════════════════════════════════════════════════════
+SCREENWRITING WRITING KNOWLEDGE & TECHNIQUES
+═══════════════════════════════════════════════════════════════════════════════
+
+${scriptContext.writingKnowledge.techniques}
+
+${scriptContext.writingKnowledge.contextualGuidance || ''}
+` : ''}
+
 ═══════════════════════════════════════════════════════════════════════════════
 YOUR ROLE AND RESPONSIBILITIES
 ═══════════════════════════════════════════════════════════════════════════════
@@ -1080,6 +1163,111 @@ When the user asks you to generate script content, provide it in the 3-COLUMN TA
 - **When creating new script content, ensure it spans the full 6 minutes with appropriate timestamps**
 
 Be creative but accurate, using the provided context to create compelling script content that matches the show's style.
+
+═══════════════════════════════════════════════════════════════════════════════
+✍️ SCREENWRITING WRITING EXPERTISE & BEST PRACTICES
+═══════════════════════════════════════════════════════════════════════════════
+
+**CRITICAL: You are an expert screenwriter. Apply these writing principles when analyzing scripts and making suggestions.**
+
+## DIALOGUE WRITING BEST PRACTICES
+
+1. **Subtext Over On-the-Nose**: Characters should reveal emotions through what they DON'T say. Avoid direct statements of feelings.
+   - Weak: "I am very angry with you because you lied."
+   - Strong: "You know what? Fine. Just... fine." [Character turns away]
+
+2. **Conflict in Every Exchange**: Every dialogue exchange should contain conflict, tension, or disagreement to maintain engagement.
+   - Weak: "How are you?" "I'm fine, thanks." "Good to hear."
+   - Strong: "How are you?" "Why do you care?" "I was just being polite." "Were you?"
+
+3. **Distinct Character Voice**: Each character should have a unique voice reflecting their background, education, and personality.
+   - Characters should be identifiable by their dialogue alone.
+
+4. **Natural Flow**: Dialogue should feel like real conversation with interruptions, incomplete thoughts, and natural rhythms.
+
+5. **Avoid On-the-Nose Dialogue**: Characters should not state emotions or motivations directly. Show through subtext and action.
+
+## ACTION LINE WRITING GUIDELINES
+
+1. **Visual Storytelling**: Describe what the audience SEES, not internal thoughts or feelings.
+   - Weak: "John feels nervous about the meeting."
+   - Strong: "John's hand trembles as he reaches for the doorknob. He takes a deep breath, then pulls his hand back."
+
+2. **Show Don't Tell**: Reveal character traits, emotions, and story information through actions rather than exposition.
+   - Weak: "Sarah is a caring person who loves her family."
+   - Strong: "Sarah sets three places at the table, carefully arranging each fork. She pauses at the empty chair, touches it gently."
+
+3. **Concise and Impactful**: Action lines should be brief, punchy, and visual. Every word should serve a purpose.
+   - Weak: "The car slowly drives down the long, winding road that goes through the forest."
+   - Strong: "The car snakes through towering pines. Shadows swallow the road ahead."
+
+4. **Active Voice**: Use active voice to create immediacy and energy. Avoid passive constructions.
+   - Weak: "The door was opened by John. The gun was fired by the assassin."
+   - Strong: "John kicks the door open. The assassin fires."
+
+## SCENE STRUCTURE PRINCIPLES
+
+1. **Scene Purpose**: Every scene must advance the story, develop character, or provide essential information. If it doesn't, it should be cut.
+
+2. **Setup, Conflict, Resolution**: Every scene should have a clear beginning (setup), middle (conflict), and end (resolution).
+
+3. **Story Advancement**: Each scene should move the story forward, not just maintain status quo.
+
+4. **Conflict Required**: Every scene needs conflict. Even friendly conversations should have underlying tension.
+
+## PACING AND RHYTHM AWARENESS
+
+1. **Rhythm and Variation**: Vary pacing between fast and slow sections. Use short scenes for urgency, longer scenes for depth.
+
+2. **Beat Placement**: Place story beats at appropriate intervals. Major beats should be spaced to maintain momentum.
+
+3. **Tension Building**: Build tension gradually. Start with small conflicts, escalate to major confrontations.
+
+## CHARACTER DEVELOPMENT TECHNIQUES
+
+1. **Voice Consistency**: Each character's voice should remain consistent throughout, reflecting their personality and background.
+
+2. **Clear Motivation**: Every character action should be driven by clear motivation. Characters act to achieve goals.
+
+3. **Character Arc**: Characters should change over the course of the story. Show growth, regression, or transformation.
+
+## NARRATIVE FLOW UNDERSTANDING
+
+1. **Scene Connections**: Each scene should connect to the next through cause and effect.
+
+2. **Story Momentum**: Maintain forward momentum. Every scene should advance the overall story arc.
+
+3. **Beat Spacing**: Space story beats at appropriate intervals to maintain momentum and prevent lulls.
+
+## CONTEXTUAL ANALYSIS CAPABILITIES
+
+When analyzing scripts and making suggestions, you should:
+
+1. **Scene Purpose Analysis**: Evaluate whether each scene advances the story, develops character, or provides essential information.
+
+2. **Dialogue Quality Analysis**: Assess subtext, conflict, and character voice consistency.
+
+3. **Action Line Effectiveness**: Evaluate whether action lines are visual, concise, and impactful.
+
+4. **Pacing Analysis**: Identify slow/fast sections and rhythm issues.
+
+5. **Narrative Flow Analysis**: Assess story progression, beat placement, and scene connections.
+
+6. **Character Consistency**: Evaluate voice consistency, motivation clarity, and character arc development.
+
+## ENHANCING SUGGESTION QUALITY
+
+When providing script suggestions:
+
+1. **Provide Reasoning**: Base suggestions on screenwriting writing principles. Reference specific techniques (e.g., "This dialogue could use more subtext to create tension").
+
+2. **Reference Techniques**: Mention specific writing techniques or best practices in your descriptions.
+
+3. **Explain Improvements**: Explain why the suggestion improves the script contextually and how it affects the overall story.
+
+4. **Consider Narrative Context**: Consider narrative flow and story structure when making suggestions. Ensure suggestions maintain or improve story momentum.
+
+5. **Writing Principle References**: In suggestion descriptions, reference the writing principle being applied (e.g., "Add subtext to avoid on-the-nose dialogue", "Enhance visual storytelling in action lines").
 
 ═══════════════════════════════════════════════════════════════════════════════
 🔥🔥🔥 SCRIPT SUGGESTIONS FORMAT - CRITICAL FOR USER EXPERIENCE 🔥🔥🔥
@@ -1617,6 +1805,44 @@ Each version follows the pattern: Edit → Notes → Notes Complete
 - When users ask "how do I...", provide step-by-step guidance referencing the workflow phases
 - When users ask "why can't I...", explain workflow rules and requirements (e.g., transcoding requirements for edit phase)
 - CREATE keywords: "create", "make", "add", "new", "generate", "build", "set up"
+
+**SCHEDULE AWARENESS:**
+You have access to calendar events and deadlines. You can:
+- Identify overdue items (items past their expected completion dates)
+- Detect scheduling conflicts (multiple items due same day for same user)
+- Predict delays based on historical patterns
+- Suggest deadline extensions or reassignments
+- Calculate time-to-deadline for active items
+- Identify at-risk items (approaching deadlines)
+
+**USER/CONTACT AWARENESS:**
+You understand user roles and assignments:
+- **Writers** write scripts and handle Script Development phase
+- **Editors** create edits (A Roll, v1-v5) and handle Edit Phase
+- **Producers** approve pitches, review scripts, and oversee production
+- **Clearance Coordinators** handle licensing and clearance
+- **Associate Producers** coordinate workflow and manage assignments
+- **Licensing Specialists** acquire licenses and finalize agreements
+- **Researchers** research clips and create initial pitches
+
+You can identify which user is responsible for each workflow step and detect when users are behind on their tasks.
+
+**PREDICTIVE INTELLIGENCE:**
+Based on historical data, you can:
+- Predict time to completion for current items
+- Identify at-risk items (likely to miss deadlines)
+- Suggest workflow optimizations
+- Recommend automation rules based on patterns
+- Identify bottlenecks in the workflow
+- Analyze user workload and suggest rebalancing
+
+**ALERT AWARENESS:**
+When helping with alerts, you understand:
+- Overdue items need immediate attention
+- Scheduling conflicts require prioritization or reassignment
+- At-risk items need proactive monitoring
+- Bottlenecks indicate systemic workflow issues
+- You can suggest actions to resolve alerts (status updates, reassignments, deadline extensions, notifications)
 
 ${contextPrompt}`;
     }

@@ -448,17 +448,34 @@ export async function fetchBudgetSummary(organizationId: string): Promise<any> {
 }
 
 /**
- * Fetch calendar events for organization
+ * Fetch calendar events for organization (tenant-aware)
+ * CRITICAL: Can filter by user assignment if userId is provided
+ * If userId is provided, only returns events where user is assigned or created the event
+ * If userId is not provided, returns all organization events (org-wide calendar)
  */
 export async function fetchCalendarEvents(
-  organizationId: string, 
+  organizationId: string,
   limit: number = 50,
   startDate?: Date,
-  endDate?: Date
+  endDate?: Date,
+  userId?: string
 ): Promise<any[]> {
   try {
-    const eventsRef = db.collection('calendarEvents');
+    // Try both collection names (calendarEvents and clipShowCalendarEvents)
+    let eventsRef = db.collection('calendarEvents');
     let query: admin.firestore.Query = eventsRef.where('organizationId', '==', organizationId);
+
+    // If userId provided, filter by user assignment (array-contains) OR createdBy
+    // This ensures user only sees events they're assigned to or created
+    if (userId) {
+      try {
+        // Try to filter by assignedContacts array-contains userId
+        query = query.where('assignedContacts', 'array-contains', userId) as any;
+      } catch (arrayError: any) {
+        // If array-contains query fails (missing index), we'll filter client-side
+        console.warn('[fetchCalendarEvents] Array-contains query failed, will filter client-side:', arrayError?.message);
+      }
+    }
 
     if (startDate) {
       query = query.where('startDate', '>=', admin.firestore.Timestamp.fromDate(startDate));
@@ -472,34 +489,60 @@ export async function fetchCalendarEvents(
     try {
       const snapshot = await query
         .orderBy('startDate', 'asc')
-        .limit(limit)
+        .limit(userId ? limit * 2 : limit) // Fetch more if filtering client-side
         .get();
 
-      const events = snapshot.docs.map(doc => ({
+      let events = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
-      } as { id: string; startDate?: any; [key: string]: any }));
+      } as { id: string; startDate?: any; assignedContacts?: string[]; createdBy?: string; [key: string]: any }));
       
-      // Sort client-side if we got results (as fallback)
-      return events.sort((a, b) => {
-        const dateA = a.startDate?.toDate ? a.startDate.toDate().getTime() : new Date(a.startDate).getTime();
-        const dateB = b.startDate?.toDate ? b.startDate.toDate().getTime() : new Date(b.startDate).getTime();
-        return dateA - dateB;
-      });
+      // If userId provided and array-contains query wasn't used, filter client-side
+      if (userId && events.length > 0) {
+        events = events.filter(event => {
+          const assignedContacts = event.assignedContacts || [];
+          const createdBy = event.createdBy;
+          // Include if user is assigned OR created the event
+          return (Array.isArray(assignedContacts) && assignedContacts.includes(userId)) || 
+                 createdBy === userId;
+        });
+      }
+      
+      // Sort client-side and limit
+      return events
+        .sort((a, b) => {
+          const dateA = a.startDate?.toDate ? a.startDate.toDate().getTime() : new Date(a.startDate).getTime();
+          const dateB = b.startDate?.toDate ? b.startDate.toDate().getTime() : new Date(b.startDate).getTime();
+          return dateA - dateB;
+        })
+        .slice(0, limit);
     } catch (orderError) {
       // If orderBy fails (likely missing index), fetch without ordering and sort client-side
       console.warn('Could not order by startDate, fetching and sorting client-side:', orderError);
-      const snapshot = await query.limit(limit).get();
-      const events = snapshot.docs.map(doc => ({
+      const snapshot = await query.limit(userId ? limit * 2 : limit).get();
+      let events = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
-      } as { id: string; startDate?: any; [key: string]: any }));
+      } as { id: string; startDate?: any; assignedContacts?: string[]; createdBy?: string; [key: string]: any }));
       
-      return events.sort((a, b) => {
-        const dateA = a.startDate?.toDate ? a.startDate.toDate().getTime() : new Date(a.startDate).getTime();
-        const dateB = b.startDate?.toDate ? b.startDate.toDate().getTime() : new Date(b.startDate).getTime();
-        return dateA - dateB;
-      });
+      // If userId provided, filter client-side
+      if (userId && events.length > 0) {
+        events = events.filter(event => {
+          const assignedContacts = event.assignedContacts || [];
+          const createdBy = event.createdBy;
+          // Include if user is assigned OR created the event
+          return (Array.isArray(assignedContacts) && assignedContacts.includes(userId)) || 
+                 createdBy === userId;
+        });
+      }
+      
+      return events
+        .sort((a, b) => {
+          const dateA = a.startDate?.toDate ? a.startDate.toDate().getTime() : new Date(a.startDate).getTime();
+          const dateB = b.startDate?.toDate ? b.startDate.toDate().getTime() : new Date(b.startDate).getTime();
+          return dateA - dateB;
+        })
+        .slice(0, limit);
     }
   } catch (error) {
     console.error('Error fetching calendar events:', error);
@@ -508,14 +551,19 @@ export async function fetchCalendarEvents(
 }
 
 /**
- * Fetch upcoming calendar events (next 30 days)
+ * Fetch upcoming calendar events (next 30 days) - tenant-aware
+ * CRITICAL: Can filter by user assignment if userId is provided
  */
-export async function fetchUpcomingCalendarEvents(organizationId: string, days: number = 30): Promise<any[]> {
+export async function fetchUpcomingCalendarEvents(
+  organizationId: string,
+  days: number = 30,
+  userId?: string
+): Promise<any[]> {
   const now = new Date();
   const futureDate = new Date();
   futureDate.setDate(now.getDate() + days);
   
-  return await fetchCalendarEvents(organizationId, 50, now, futureDate);
+  return await fetchCalendarEvents(organizationId, 50, now, futureDate, userId);
 }
 
 /**
@@ -586,12 +634,34 @@ export async function fetchContactsSummary(organizationId: string): Promise<any>
 
 /**
  * Fetch automation functions for organization
+ * NOTE: Automation functions are global/read-only (seeded by admin), but we verify organizationId if present
  */
 export async function fetchAutomationFunctions(organizationId: string): Promise<any[]> {
   try {
-    // Automation functions are typically stored in a global collection, but may be scoped to org
     const functionsRef = db.collection('automationFunctions');
-    const snapshot = await functionsRef.limit(50).get();
+    
+    // Try to filter by organizationId if functions are org-scoped, otherwise fetch all (global functions)
+    let query: admin.firestore.Query = functionsRef;
+    
+    // Check if functions have organizationId field - if so, filter by it
+    // Otherwise, functions are global and available to all organizations
+    try {
+      // First, try to get one function to check structure
+      const testSnapshot = await functionsRef.limit(1).get();
+      if (!testSnapshot.empty) {
+        const testData = testSnapshot.docs[0].data();
+        // If functions have organizationId field, filter by it
+        if (testData.organizationId !== undefined) {
+          query = functionsRef.where('organizationId', '==', organizationId);
+        }
+        // Otherwise, functions are global (no filter needed)
+      }
+    } catch (filterError) {
+      // If filtering fails, assume functions are global and fetch all
+      console.log('[fetchAutomationFunctions] Functions appear to be global, fetching all');
+    }
+    
+    const snapshot = await query.limit(50).get();
     
     return snapshot.docs.map(doc => ({
       id: doc.id,
@@ -690,15 +760,58 @@ export async function fetchIndexedFiles(organizationId: string, limit: number = 
 }
 
 /**
- * Fetch conversations for organization
+ * Fetch conversations for organization (tenant-aware)
+ * CRITICAL: Only fetches conversations where the user is a participant
+ * Must filter by BOTH organizationId AND user participation for proper tenant isolation
  */
-export async function fetchConversations(organizationId: string, limit: number = 50): Promise<any[]> {
+export async function fetchConversations(
+  organizationId: string,
+  userId: string,
+  limit: number = 50
+): Promise<any[]> {
   try {
-    const conversationsRef = db.collection('conversations');
-    const snapshot = await conversationsRef
-      .where('organizationId', '==', organizationId)
-      .limit(limit)
-      .get();
+    // Try both collection names (conversations and clipShowConversations)
+    let conversationsRef = db.collection('conversations');
+    let snapshot;
+    
+    try {
+      // Filter by organizationId AND user participation (array-contains)
+      let query = conversationsRef
+        .where('organizationId', '==', organizationId)
+        .where('participants', 'array-contains', userId)
+        .limit(limit);
+      
+      snapshot = await query.get();
+      
+      // If no results, try alternative collection name
+      if (snapshot.empty) {
+        conversationsRef = db.collection('clipShowConversations');
+        query = conversationsRef
+          .where('organizationId', '==', organizationId)
+          .where('participants', 'array-contains', userId)
+          .limit(limit);
+        snapshot = await query.get();
+      }
+    } catch (queryError: any) {
+      // If array-contains query fails (missing index), fetch all org conversations and filter client-side
+      console.warn('[fetchConversations] Array-contains query failed, filtering client-side:', queryError?.message);
+      const allSnapshot = await conversationsRef
+        .where('organizationId', '==', organizationId)
+        .limit(limit * 2) // Fetch more to account for filtering
+        .get();
+      
+      // Filter client-side to only include conversations where user is a participant
+      const filteredDocs = allSnapshot.docs.filter(doc => {
+        const data = doc.data();
+        const participants = data.participants || [];
+        return Array.isArray(participants) && participants.includes(userId);
+      });
+      
+      return filteredDocs.slice(0, limit).map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+    }
     
     return snapshot.docs.map(doc => ({
       id: doc.id,
@@ -863,20 +976,25 @@ export async function fetchLicensingBudgetSummary(organizationId: string): Promi
 }
 
 /**
- * Fetch conversations summary (counts, unread, etc.)
+ * Fetch conversations summary (counts, unread, etc.) - tenant-aware
+ * CRITICAL: Only includes conversations where the user is a participant
  */
-export async function fetchConversationsSummary(organizationId: string): Promise<any> {
+export async function fetchConversationsSummary(
+  organizationId: string,
+  userId: string
+): Promise<any> {
   try {
-    const conversations = await fetchConversations(organizationId, 100);
+    const conversations = await fetchConversations(organizationId, userId, 100);
     
     let totalUnread = 0;
     conversations.forEach(conv => {
       if (conv.unreadCount && typeof conv.unreadCount === 'object') {
-        const unreadCount = Object.values(conv.unreadCount).reduce((sum: number, count: unknown) => {
-          const numCount = typeof count === 'number' ? count : 0;
-          return sum + numCount;
-        }, 0) as number;
-        totalUnread += unreadCount;
+        // Get unread count for this specific user
+        const userUnread = conv.unreadCount[userId] || 0;
+        totalUnread += userUnread;
+      } else if (typeof conv.unreadCount === 'number') {
+        // Legacy format - single unread count
+        totalUnread += conv.unreadCount;
       }
     });
     
@@ -939,9 +1057,13 @@ export async function fetchIndexedFilesSummary(organizationId: string): Promise<
 }
 
 /**
- * Fetch calendar events summary (counts by type, upcoming events, etc.)
+ * Fetch calendar events summary (counts by type, upcoming events, etc.) - tenant-aware
+ * CRITICAL: Can filter by user assignment if userId is provided
  */
-export async function fetchCalendarSummary(organizationId: string): Promise<any> {
+export async function fetchCalendarSummary(
+  organizationId: string,
+  userId?: string
+): Promise<any> {
   try {
     const now = new Date();
     const nextWeek = new Date();
@@ -949,9 +1071,9 @@ export async function fetchCalendarSummary(organizationId: string): Promise<any>
     const nextMonth = new Date();
     nextMonth.setMonth(now.getMonth() + 1);
 
-    // Fetch all events (limited)
-    const allEvents = await fetchCalendarEvents(organizationId, 100);
-    const upcomingEvents = await fetchUpcomingCalendarEvents(organizationId, 30);
+    // Fetch all events (limited) - filtered by user if userId provided
+    const allEvents = await fetchCalendarEvents(organizationId, 100, undefined, undefined, userId);
+    const upcomingEvents = await fetchUpcomingCalendarEvents(organizationId, 30, userId);
 
     // Count by event type
     const eventsByType = new Map<string, number>();
@@ -994,6 +1116,40 @@ export async function fetchCalendarSummary(organizationId: string): Promise<any>
       eventsThisWeek: 0,
       eventsThisMonth: 0
     };
+  }
+}
+
+/**
+ * Fetch user notes for a specific user (tenant-aware)
+ * CRITICAL: Only fetches notes belonging to the requesting user
+ * Must filter by BOTH organizationId AND userId for proper tenant isolation
+ */
+export async function fetchUserNotes(
+  organizationId: string,
+  userId: string,
+  limit: number = 20
+): Promise<any[]> {
+  try {
+    // Query clipShowNotes collection with BOTH organizationId and userId filters
+    // This ensures strict tenant isolation - only the user's own notes are returned
+    const notesRef = db.collection('clipShowNotes');
+    
+    const query = notesRef
+      .where('organizationId', '==', organizationId)
+      .where('userId', '==', userId)
+      .orderBy('updatedAt', 'desc')
+      .limit(limit);
+    
+    const snapshot = await query.get();
+    
+    return snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+  } catch (error) {
+    console.error('Error fetching user notes:', error);
+    // Return empty array on error to prevent breaking the AI context
+    return [];
   }
 }
 

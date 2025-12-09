@@ -46,6 +46,7 @@ const corsOptions = {
       'https://dashboard-1c3a5.web.app',
       'http://localhost:3000',
       'http://localhost:3001',
+      'http://localhost:4001',
       'http://localhost:4002',
       'http://localhost:4003',
       'http://localhost:4010',
@@ -104,6 +105,7 @@ app.options('*', (req: express.Request, res: express.Response) => {
     'https://dashboard-1c3a5.web.app',
     'http://localhost:3000',
     'http://localhost:3001',
+    'http://localhost:4001',
     'http://localhost:4002',
     'http://localhost:4003',
     'http://localhost:4010',
@@ -288,6 +290,22 @@ app.get('/timecard-approval/history', authenticateToken, async (req: express.Req
 });
 
 app.get('/timecard-approval/direct-reports', authenticateToken, async (req: express.Request, res: express.Response) => {
+  try {
+    const userId = req.user?.uid;
+    const userOrgId = req.user?.organizationId;
+    if (!userId || !userOrgId) {
+      res.status(401).json({ error: 'User authentication required' });
+      return;
+    }
+    await handleDirectReports(req, res, userOrgId, userId);
+  } catch (error: any) {
+    console.error('❌ [TIMECARD APPROVAL API] Error:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+// Handle /direct-reports/all endpoint (alias for /direct-reports)
+app.get('/timecard-approval/direct-reports/all', authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     const userId = req.user?.uid;
     const userOrgId = req.user?.organizationId;
@@ -1823,6 +1841,7 @@ app.options('/sessions/tags', (req: express.Request, res: express.Response) => {
     'https://dashboard-1c3a5.web.app',
     'http://localhost:3000',
     'http://localhost:3001',
+    'http://localhost:4002',
     'http://localhost:4003',
     'http://localhost:4010',
     'http://localhost:5173'
@@ -3009,6 +3028,7 @@ app.options('/user-activity/update', (req: express.Request, res: express.Respons
     'https://dashboard-1c3a5.web.app',
     'http://localhost:3000',
     'http://localhost:3001',
+    'http://localhost:4001',
     'http://localhost:4002',
     'http://localhost:4003',
     'http://localhost:4010',
@@ -3048,6 +3068,32 @@ app.options('/user-activity/update', (req: express.Request, res: express.Respons
 
 // Update user activity tracking
 app.post('/user-activity/update', authenticateToken, async (req: express.Request, res: express.Response) => {
+  // Set CORS headers
+  const origin = req.headers.origin;
+  const allowedOrigins = [
+    'https://backbone-logic.web.app',
+    'https://backbone-client.web.app',
+    'https://dashboard-1c3a5.web.app',
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://localhost:4001',
+    'http://localhost:4002',
+    'http://localhost:4003',
+    'http://localhost:4010',
+    'http://localhost:5173'
+  ];
+  
+  // In development, allow all localhost origins
+  if (process.env.NODE_ENV === 'development' || process.env.FUNCTIONS_EMULATOR === 'true') {
+    if (origin && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
+      res.set('Access-Control-Allow-Origin', origin);
+      res.set('Access-Control-Allow-Credentials', 'true');
+    }
+  } else if (origin && allowedOrigins.includes(origin)) {
+    res.set('Access-Control-Allow-Origin', origin);
+    res.set('Access-Control-Allow-Credentials', 'true');
+  }
+  
   try {
     const { action, resource, metadata } = req.body;
     const userId = req.user?.uid;
