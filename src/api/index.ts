@@ -7,8 +7,9 @@
 import { onRequest } from 'firebase-functions/v2/https';
 import express from 'express';
 import cors from 'cors';
+import * as admin from 'firebase-admin';
 import { authenticateToken } from '../shared/middleware';
-import { db } from '../shared/utils';
+import { db, createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
 
 // Import all function modules
 // import * as auth from '../auth';
@@ -28,7 +29,8 @@ import {
   handlePendingApprovals,
   handleMySubmissions,
   handleApprovalHistory,
-  handleDirectReports
+  handleDirectReports,
+  handleMyManager
 } from '../timecards/timecardApprovalApiHandlers';
 
 // Import cloud integration functions - Commented out as they're separate Firebase Functions
@@ -90,7 +92,11 @@ const corsOptions = {
     'X-Client-Type',
     'x-client-type',
     'X-Client-Version',
-    'x-client-version'
+    'x-client-version',
+    'Cache-Control',
+    'cache-control',
+    'Pragma',
+    'Expires'
   ],
   preflightContinue: false,
   optionsSuccessStatus: 200
@@ -314,6 +320,21 @@ app.get('/timecard-approval/direct-reports/all', authenticateToken, async (req: 
       return;
     }
     await handleDirectReports(req, res, userOrgId, userId);
+  } catch (error: any) {
+    console.error('❌ [TIMECARD APPROVAL API] Error:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+app.get('/timecard-approval/my-manager', authenticateToken, async (req: express.Request, res: express.Response) => {
+  try {
+    const userId = req.user?.uid;
+    const userOrgId = req.user?.organizationId;
+    if (!userId || !userOrgId) {
+      res.status(401).json({ error: 'User authentication required' });
+      return;
+    }
+    await handleMyManager(req, res, userOrgId, userId);
   } catch (error: any) {
     console.error('❌ [TIMECARD APPROVAL API] Error:', error);
     res.status(500).json({ error: error.message || 'Internal server error' });
@@ -1081,6 +1102,86 @@ app.get('/sessions', authenticateToken, async (req: express.Request, res: expres
   }
 });
 
+// Get all session tags (MUST come before /sessions/:id to avoid route conflict)
+app.options('/sessions/tags', (req: express.Request, res: express.Response) => {
+  const origin = req.headers.origin;
+  const allowedOrigins = [
+    'https://backbone-logic.web.app',
+    'https://backbone-client.web.app',
+    'https://dashboard-1c3a5.web.app',
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://localhost:4002',
+    'http://localhost:4003',
+    'http://localhost:4010',
+    'http://localhost:5173'
+  ];
+  
+  if (origin && (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development')) {
+    res.set('Access-Control-Allow-Origin', origin);
+  } else {
+    res.set('Access-Control-Allow-Origin', '*');
+  }
+  
+  res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.set('Access-Control-Allow-Headers', corsOptions.allowedHeaders.join(', '));
+  res.set('Access-Control-Max-Age', '3600');
+  res.status(200).send('');
+});
+
+app.get('/sessions/tags', authenticateToken, async (req: express.Request, res: express.Response) => {
+  try {
+    console.log('🏷️ [SESSIONS TAGS API] Fetching all tags...');
+    
+    const organizationId = req.user?.organizationId;
+    
+    if (!organizationId) {
+      return res.status(403).json({
+        success: false,
+        error: 'User not associated with any organization'
+      });
+    }
+    
+    // Get tags for the organization
+    // Tags can be stored in a separate collection or as part of media files
+    // For now, we'll check if there's a mediaFileTags collection
+    let tagsQuery: any = db.collection('mediaFileTags');
+    tagsQuery = tagsQuery.where('organizationId', '==', organizationId);
+    
+    const tagsSnapshot = await tagsQuery.get();
+    const tags = tagsSnapshot.docs.map((doc: any) => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    
+    // If no tags collection exists, return empty array
+    // The frontend will handle this gracefully
+    console.log(`✅ [SESSIONS TAGS API] Found ${tags.length} tags`);
+    return res.status(200).json({
+      success: true,
+      data: tags,
+      total: tags.length
+    });
+  } catch (error: any) {
+    // If collection doesn't exist, return empty array
+    if (error.code === 'not-found' || error.message?.includes('not found')) {
+      console.log('ℹ️ [SESSIONS TAGS API] Tags collection not found, returning empty array');
+      return res.status(200).json({
+        success: true,
+        data: [],
+        total: 0
+      });
+    }
+    
+    console.error('❌ [SESSIONS TAGS API] Error fetching tags:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to fetch tags',
+      errorDetails: error.message || String(error)
+    });
+  }
+});
+
 // Get session by ID
 app.get('/sessions/:id', authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
@@ -1832,86 +1933,6 @@ app.get('/sessions/active-with-times', authenticateToken, async (req: express.Re
   }
 });
 
-// Handle OPTIONS for sessions tags endpoint
-app.options('/sessions/tags', (req: express.Request, res: express.Response) => {
-  const origin = req.headers.origin;
-  const allowedOrigins = [
-    'https://backbone-logic.web.app',
-    'https://backbone-client.web.app',
-    'https://dashboard-1c3a5.web.app',
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'http://localhost:4002',
-    'http://localhost:4003',
-    'http://localhost:4010',
-    'http://localhost:5173'
-  ];
-  
-  if (origin && (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development')) {
-    res.set('Access-Control-Allow-Origin', origin);
-  } else {
-    res.set('Access-Control-Allow-Origin', '*');
-  }
-  
-  res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
-  res.set('Access-Control-Max-Age', '3600');
-  res.status(200).send('');
-});
-
-// Get all session tags
-app.get('/sessions/tags', authenticateToken, async (req: express.Request, res: express.Response) => {
-  try {
-    console.log('🏷️ [SESSIONS TAGS API] Fetching all tags...');
-    
-    const organizationId = req.user?.organizationId;
-    
-    if (!organizationId) {
-      return res.status(403).json({
-        success: false,
-        error: 'User not associated with any organization'
-      });
-    }
-    
-    // Get tags for the organization
-    // Tags can be stored in a separate collection or as part of media files
-    // For now, we'll check if there's a mediaFileTags collection
-    let tagsQuery: any = db.collection('mediaFileTags');
-    tagsQuery = tagsQuery.where('organizationId', '==', organizationId);
-    
-    const tagsSnapshot = await tagsQuery.get();
-    const tags = tagsSnapshot.docs.map((doc: any) => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-    
-    // If no tags collection exists, return empty array
-    // The frontend will handle this gracefully
-    console.log(`✅ [SESSIONS TAGS API] Found ${tags.length} tags`);
-    return res.status(200).json({
-      success: true,
-      data: tags,
-      total: tags.length
-    });
-  } catch (error: any) {
-    // If collection doesn't exist, return empty array
-    if (error.code === 'not-found' || error.message?.includes('not found')) {
-      console.log('ℹ️ [SESSIONS TAGS API] Tags collection not found, returning empty array');
-      return res.status(200).json({
-        success: true,
-        data: [],
-        total: 0
-      });
-    }
-    
-    console.error('❌ [SESSIONS TAGS API] Error fetching tags:', error);
-    return res.status(500).json({
-      success: false,
-      error: 'Failed to fetch tags',
-      errorDetails: error.message || String(error)
-    });
-  }
-});
 
 // ====================
 // Timecard Admin API Endpoints
@@ -1938,7 +1959,7 @@ app.options('/timecard-admin', (req: express.Request, res: express.Response) => 
   }
   
   res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  res.set('Access-Control-Allow-Headers', corsOptions.allowedHeaders.join(', '));
   res.set('Access-Control-Max-Age', '3600');
   res.status(200).send('');
 });
@@ -1971,6 +1992,302 @@ app.get('/timecard-admin', authenticateToken, async (req: express.Request, res: 
       error: 'Failed to process request',
       errorDetails: error.message || String(error)
     });
+  }
+});
+
+// ====================
+// Timecard Clock Operations
+// ====================
+
+// Handle OPTIONS for timecard endpoints
+app.options('/timecard/clock-in', (req: express.Request, res: express.Response) => {
+  const origin = req.headers.origin;
+  if (origin && (corsOptions.origin as any)(origin, () => {})) {
+    res.set('Access-Control-Allow-Origin', origin);
+  } else {
+    res.set('Access-Control-Allow-Origin', '*');
+  }
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', corsOptions.allowedHeaders.join(', '));
+  res.set('Access-Control-Max-Age', '3600');
+  res.status(200).send('');
+});
+
+app.options('/timecard/clock-out', (req: express.Request, res: express.Response) => {
+  const origin = req.headers.origin;
+  if (origin && (corsOptions.origin as any)(origin, () => {})) {
+    res.set('Access-Control-Allow-Origin', origin);
+  } else {
+    res.set('Access-Control-Allow-Origin', '*');
+  }
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', corsOptions.allowedHeaders.join(', '));
+  res.set('Access-Control-Max-Age', '3600');
+  res.status(200).send('');
+});
+
+app.options('/timecard/status', (req: express.Request, res: express.Response) => {
+  const origin = req.headers.origin;
+  if (origin && (corsOptions.origin as any)(origin, () => {})) {
+    res.set('Access-Control-Allow-Origin', origin);
+  } else {
+    res.set('Access-Control-Allow-Origin', '*');
+  }
+  res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.set('Access-Control-Allow-Headers', corsOptions.allowedHeaders.join(', '));
+  res.set('Access-Control-Max-Age', '3600');
+  res.status(200).send('');
+});
+
+// Clock in endpoint
+app.post('/timecard/clock-in', authenticateToken, async (req: express.Request, res: express.Response) => {
+  try {
+    const userId = req.user?.uid;
+    const organizationId = req.user?.organizationId;
+
+    if (!userId || !organizationId) {
+      return res.status(401).json(createErrorResponse('Unauthorized', 'User authentication required'));
+    }
+
+    const { date, location, notes, role, hourlyRate, projectId } = req.body;
+
+    // Use provided date or today's date
+    const today = date || new Date().toISOString().split('T')[0];
+    const todayDate = new Date(today + 'T00:00:00');
+    const now = new Date();
+
+    // Check if already clocked in today
+    const entriesRef = db.collection('timecard_entries');
+    const activeEntryQuery = await entriesRef
+      .where('userId', '==', userId)
+      .where('organizationId', '==', organizationId)
+      .where('date', '==', admin.firestore.Timestamp.fromDate(todayDate))
+      .where('clockOutTime', '==', null)
+      .limit(1)
+      .get();
+
+    if (!activeEntryQuery.empty) {
+      const existingEntry = activeEntryQuery.docs[0];
+      const existingData: any = { id: existingEntry.id, ...existingEntry.data() };
+      const clockInTime = (existingData.clockInTime as admin.firestore.Timestamp)?.toDate();
+      
+      // Check if entry is stale (more than 12 hours old or from previous day)
+      const hoursSinceClockIn = (now.getTime() - clockInTime.getTime()) / (1000 * 60 * 60);
+      const clockInDate = clockInTime.toISOString().split('T')[0];
+      const isFromPreviousDay = clockInDate !== today;
+      const STALE_THRESHOLD_HOURS = 12;
+      
+      if (isFromPreviousDay || hoursSinceClockIn > STALE_THRESHOLD_HOURS) {
+        // Auto-clock out stale entry
+        const reason = isFromPreviousDay 
+          ? `Entry from previous day (${clockInDate})` 
+          : `Entry is ${hoursSinceClockIn.toFixed(1)} hours old`;
+        console.log(`⏰ [TIMECARD CLOCK-IN] Auto-clocking out stale entry: ${reason}`);
+        
+        // Calculate total hours (cap at 24 for safety)
+        const totalHours = Math.min(hoursSinceClockIn, 24);
+        const clockOutTime = isFromPreviousDay 
+          ? admin.firestore.Timestamp.fromDate(new Date(clockInDate + 'T23:59:59')) // End of previous day
+          : admin.firestore.Timestamp.fromDate(now); // Current time
+        
+        await existingEntry.ref.update({
+          clockOutTime: clockOutTime,
+          totalHours: totalHours,
+          status: 'COMPLETED',
+          notes: (existingData.notes || '') + ` [Auto-clocked out: ${reason}]`,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        
+        console.log(`✅ [TIMECARD CLOCK-IN] Stale entry auto-clocked out, proceeding with new clock-in`);
+        // Continue to create new entry below
+      } else {
+        // Entry is still active (recent clock-in today)
+        return res.status(400).json({
+          success: false,
+          error: 'Already clocked in',
+          errorDetails: `You are already clocked in since ${clockInTime.toLocaleTimeString()} (${hoursSinceClockIn.toFixed(1)} hours ago). Please clock out first.`,
+          data: {
+            existingEntry: {
+              id: existingData.id,
+              clockInTime: clockInTime.toISOString(),
+              location: existingData.location,
+              notes: existingData.notes,
+              date: today,
+              hoursSinceClockIn: hoursSinceClockIn.toFixed(1)
+            }
+          }
+        });
+      }
+    }
+
+    // Create new timecard entry
+    const entryData = {
+      organizationId,
+      userId,
+      date: admin.firestore.Timestamp.fromDate(todayDate),
+      clockInTime: admin.firestore.Timestamp.fromDate(now),
+      clockOutTime: null,
+      location: location || '',
+      notes: notes || '',
+      role: role || null,
+      hourlyRate: hourlyRate || null,
+      projectId: projectId || null,
+      status: 'PENDING',
+      totalHours: 0,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    const docRef = await entriesRef.add(entryData);
+    const createdDoc = await docRef.get();
+    const createdData: any = { id: createdDoc.id, ...createdDoc.data() };
+
+    console.log(`⏰ [TIMECARD CLOCK-IN] User ${userId} clocked in at ${now.toISOString()}`);
+
+    res.status(200).json(createSuccessResponse({
+      id: createdData.id,
+      userId: createdData.userId,
+      date: today,
+      clockInTime: (createdData.clockInTime as admin.firestore.Timestamp)?.toDate().toISOString(),
+      clockOutTime: null,
+      location: createdData.location,
+      notes: createdData.notes,
+      projectId: createdData.projectId,
+      organizationId: createdData.organizationId,
+      status: createdData.status,
+      totalHours: createdData.totalHours || 0,
+      createdAt: (createdData.createdAt as admin.firestore.Timestamp)?.toDate().toISOString(),
+      updatedAt: (createdData.updatedAt as admin.firestore.Timestamp)?.toDate().toISOString()
+    }, 'Clocked in successfully'));
+
+  } catch (error: any) {
+    console.error('❌ [TIMECARD CLOCK-IN] Error:', error);
+    res.status(500).json(handleError(error, 'clockIn'));
+  }
+});
+
+// Clock out endpoint
+app.post('/timecard/clock-out', authenticateToken, async (req: express.Request, res: express.Response) => {
+  try {
+    const userId = req.user?.uid;
+    const organizationId = req.user?.organizationId;
+
+    if (!userId || !organizationId) {
+      return res.status(401).json(createErrorResponse('Unauthorized', 'User authentication required'));
+    }
+
+    const { date, notes } = req.body;
+
+    // Use provided date or today's date
+    const today = date || new Date().toISOString().split('T')[0];
+    const todayDate = new Date(today + 'T00:00:00');
+    const now = new Date();
+
+    // Find active entry (clocked in but not clocked out)
+    const entriesRef = db.collection('timecard_entries');
+    const activeEntryQuery = await entriesRef
+      .where('userId', '==', userId)
+      .where('organizationId', '==', organizationId)
+      .where('date', '==', admin.firestore.Timestamp.fromDate(todayDate))
+      .where('clockOutTime', '==', null)
+      .limit(1)
+      .get();
+
+    if (activeEntryQuery.empty) {
+      return res.status(400).json(createErrorResponse('Not clocked in', 'You are not currently clocked in.'));
+    }
+
+    const activeEntry = activeEntryQuery.docs[0];
+    const entryData = activeEntry.data();
+
+    // Calculate total hours
+    const clockInTime = (entryData.clockInTime as admin.firestore.Timestamp)?.toDate();
+    const clockOutTime = now;
+    const totalHours = (clockOutTime.getTime() - clockInTime.getTime()) / (1000 * 60 * 60);
+
+    // Update entry with clock out time
+    // Set status to PENDING so it can be submitted for approval
+    await activeEntry.ref.update({
+      clockOutTime: admin.firestore.Timestamp.fromDate(clockOutTime),
+      notes: notes || entryData.notes || '',
+      totalHours: totalHours,
+      status: 'PENDING', // PENDING status allows submission for approval
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    const updatedDoc = await activeEntry.ref.get();
+    const updatedData: any = { id: updatedDoc.id, ...updatedDoc.data() };
+
+    console.log(`⏰ [TIMECARD CLOCK-OUT] User ${userId} clocked out at ${now.toISOString()}, total hours: ${totalHours.toFixed(2)}`);
+
+    res.status(200).json(createSuccessResponse({
+      id: updatedData.id,
+      userId: updatedData.userId,
+      date: today,
+      clockInTime: (updatedData.clockInTime as admin.firestore.Timestamp)?.toDate().toISOString(),
+      clockOutTime: (updatedData.clockOutTime as admin.firestore.Timestamp)?.toDate().toISOString(),
+      location: updatedData.location,
+      notes: updatedData.notes,
+      projectId: updatedData.projectId,
+      organizationId: updatedData.organizationId,
+      status: updatedData.status,
+      totalHours: updatedData.totalHours || 0,
+      createdAt: (updatedData.createdAt as admin.firestore.Timestamp)?.toDate().toISOString(),
+      updatedAt: (updatedData.updatedAt as admin.firestore.Timestamp)?.toDate().toISOString()
+    }, 'Clocked out successfully'));
+
+  } catch (error: any) {
+    console.error('❌ [TIMECARD CLOCK-OUT] Error:', error);
+    res.status(500).json(handleError(error, 'clockOut'));
+  }
+});
+
+// Clock status endpoint
+app.get('/timecard/status', authenticateToken, async (req: express.Request, res: express.Response) => {
+  try {
+    const userId = req.user?.uid;
+    const organizationId = req.user?.organizationId;
+
+    if (!userId || !organizationId) {
+      return res.status(401).json(createErrorResponse('Unauthorized', 'User authentication required'));
+    }
+
+    const { date } = req.query;
+    const today = (date as string) || new Date().toISOString().split('T')[0];
+    const todayDate = new Date(today + 'T00:00:00');
+
+    // Check for active entry (clocked in but not clocked out)
+    const entriesRef = db.collection('timecard_entries');
+    const activeEntryQuery = await entriesRef
+      .where('userId', '==', userId)
+      .where('organizationId', '==', organizationId)
+      .where('date', '==', admin.firestore.Timestamp.fromDate(todayDate))
+      .where('clockOutTime', '==', null)
+      .limit(1)
+      .get();
+
+    const isClockedIn = !activeEntryQuery.empty;
+    const currentEntry: any = isClockedIn ? {
+      id: activeEntryQuery.docs[0].id,
+      ...activeEntryQuery.docs[0].data()
+    } : null;
+
+    console.log(`⏰ [TIMECARD STATUS] User ${userId} clock status for ${today}: ${isClockedIn ? 'CLOCKED IN' : 'NOT CLOCKED IN'}`);
+
+    res.status(200).json(createSuccessResponse({
+      isClockedIn,
+      currentEntry: currentEntry ? {
+        id: currentEntry.id,
+        clockInTime: (currentEntry.clockInTime as admin.firestore.Timestamp)?.toDate().toISOString(),
+        location: currentEntry.location,
+        notes: currentEntry.notes
+      } : null,
+      date: today
+    }, 'Clock status retrieved successfully'));
+
+  } catch (error: any) {
+    console.error('❌ [TIMECARD STATUS] Error:', error);
+    res.status(500).json(handleError(error, 'getClockStatus'));
   }
 });
 

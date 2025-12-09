@@ -29,6 +29,7 @@ if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
 // Method 2: Try local service account files
 if (!initialized) {
   const possiblePaths = [
+    path.join(__dirname, '../../backbone-logic-firebase-adminsdk-fbsvc-3db30f4742.json'),
     path.join(__dirname, '../firebase-clipshow.json'),
     path.join(__dirname, '../serviceAccountKey.json'),
     path.join(__dirname, '../../serviceAccountKey.json')

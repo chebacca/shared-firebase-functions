@@ -491,8 +491,8 @@ export const setCorsHeaders = (req: any, res: any): void => {
     'https://clipshowpro.web.app', // Added Clip Show Pro origin
     'http://localhost:3000',
     'http://localhost:3001',
+    'http://localhost:4002', // Licensing website
     'http://localhost:4003',
-
     'http://localhost:4007', // Standalone Call Sheet App
     'http://localhost:4010',
     'http://localhost:5173',

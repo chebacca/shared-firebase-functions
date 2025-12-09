@@ -59,15 +59,36 @@ function decryptTokens(encryptedData) {
 
 // Initialize Firebase Admin
 if (!admin.apps.length) {
-  try {
-    // Try to load service account from file
-    const serviceAccount = require('../firebase-clipshow.json');
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-      projectId: serviceAccount.project_id || serviceAccount.projectId || 'backbone-logic'
-    });
-  } catch (error) {
-    // Fallback: Use Application Default Credentials (if running on GCP or with gcloud auth)
+  const path = require('path');
+  const fs = require('fs');
+  let initialized = false;
+  
+  // Try multiple service account file paths
+  const possiblePaths = [
+    path.join(__dirname, '../../backbone-logic-firebase-adminsdk-fbsvc-3db30f4742.json'),
+    path.join(__dirname, '../firebase-clipshow.json'),
+    path.join(__dirname, '../serviceAccountKey.json')
+  ];
+  
+  for (const serviceAccountPath of possiblePaths) {
+    if (fs.existsSync(serviceAccountPath)) {
+      try {
+        const serviceAccount = require(serviceAccountPath);
+        admin.initializeApp({
+          credential: admin.credential.cert(serviceAccount),
+          projectId: serviceAccount.project_id || serviceAccount.projectId || 'backbone-logic'
+        });
+        initialized = true;
+        console.log(`✅ [Admin] Using service account from: ${serviceAccountPath}`);
+        break;
+      } catch (error) {
+        console.warn(`⚠️ [Admin] Failed to load ${serviceAccountPath}:`, error.message);
+      }
+    }
+  }
+  
+  // Fallback: Use Application Default Credentials (if running on GCP or with gcloud auth)
+  if (!initialized) {
     console.log('⚠️ [Admin] Could not load service account file, trying Application Default Credentials...');
     admin.initializeApp({
       projectId: process.env.GCLOUD_PROJECT || process.env.FIREBASE_PROJECT_ID || 'backbone-logic'

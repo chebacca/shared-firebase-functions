@@ -17,6 +17,7 @@ export const getTimecardUsers = onCall(
     memory: '512MiB',
     timeoutSeconds: 60,
     cors: [
+      'http://localhost:4002',
       'http://localhost:4003',
       'http://localhost:3000',
       'http://localhost:3001',
@@ -68,22 +69,37 @@ export const getTimecardUsers = onCall(
       for (const doc of teamMembersQuery.docs) {
         const teamMember = doc.data();
 
-        // Get user details from users collection
-        const userDoc = await db.collection('users').doc(teamMember.userId).get();
+        // 🔧 CRITICAL FIX: Validate userId before accessing document
+        if (!teamMember.userId || typeof teamMember.userId !== 'string' || teamMember.userId.trim() === '') {
+          console.warn(`⚠️ [GET TIMECARD USERS] Skipping team member with invalid userId:`, { 
+            teamMemberId: doc.id, 
+            userId: teamMember.userId 
+          });
+          continue;
+        }
 
-        if (userDoc.exists) {
-          const userData = userDoc.data();
-          if (userData) {
-            users.push({
-              id: teamMember.userId,
-              email: userData.email,
-              displayName: userData.displayName || userData.name,
-              role: teamMember.role,
-              teamMemberRole: teamMember.teamMemberRole,
-              isActive: teamMember.isActive,
-              createdAt: teamMember.createdAt
-            });
+        // Get user details from users collection
+        try {
+          const userDoc = await db.collection('users').doc(teamMember.userId).get();
+
+          if (userDoc.exists) {
+            const userData = userDoc.data();
+            if (userData) {
+              users.push({
+                id: teamMember.userId,
+                email: userData.email,
+                displayName: userData.displayName || userData.name,
+                role: teamMember.role,
+                teamMemberRole: teamMember.teamMemberRole,
+                isActive: teamMember.isActive,
+                createdAt: teamMember.createdAt
+              });
+            }
           }
+        } catch (docError: any) {
+          console.error(`❌ [GET TIMECARD USERS] Error accessing user document for userId: ${teamMember.userId}`, docError);
+          // Continue with next team member
+          continue;
         }
       }
 
@@ -140,22 +156,37 @@ export const getTimecardUsersHttp = onRequest(
       for (const doc of teamMembersQuery.docs) {
         const teamMember = doc.data();
 
-        // Get user details from users collection
-        const userDoc = await db.collection('users').doc(teamMember.userId).get();
+        // 🔧 CRITICAL FIX: Validate userId before accessing document
+        if (!teamMember.userId || typeof teamMember.userId !== 'string' || teamMember.userId.trim() === '') {
+          console.warn(`⚠️ [GET TIMECARD USERS HTTP] Skipping team member with invalid userId:`, { 
+            teamMemberId: doc.id, 
+            userId: teamMember.userId 
+          });
+          continue;
+        }
 
-        if (userDoc.exists) {
-          const userData = userDoc.data();
-          if (userData) {
-            users.push({
-              id: teamMember.userId,
-              email: userData.email,
-              displayName: userData.displayName || userData.name,
-              role: teamMember.role,
-              teamMemberRole: teamMember.teamMemberRole,
-              isActive: teamMember.isActive,
-              createdAt: teamMember.createdAt
-            });
+        // Get user details from users collection
+        try {
+          const userDoc = await db.collection('users').doc(teamMember.userId).get();
+
+          if (userDoc.exists) {
+            const userData = userDoc.data();
+            if (userData) {
+              users.push({
+                id: teamMember.userId,
+                email: userData.email,
+                displayName: userData.displayName || userData.name,
+                role: teamMember.role,
+                teamMemberRole: teamMember.teamMemberRole,
+                isActive: teamMember.isActive,
+                createdAt: teamMember.createdAt
+              });
+            }
           }
+        } catch (docError: any) {
+          console.error(`❌ [GET TIMECARD USERS HTTP] Error accessing user document for userId: ${teamMember.userId}`, docError);
+          // Continue with next team member
+          continue;
         }
       }
 

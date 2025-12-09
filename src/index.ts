@@ -190,6 +190,7 @@ export {
   discoverCollectionsHttp,
   transferAuthToken,
   getSystemStats,
+  getParticipantDetails,
   healthCheck
 } from './unified';
 
@@ -243,6 +244,12 @@ export {
   authenticateTeamMemberHttp,  // 🔧 CRITICAL FIX: Export HTTP function for CORS support
   cleanupExpiredCallSheets
 } from './callSheets';
+
+// Export team management functions
+export {
+  getProjectTeamMembers,
+  getProjectTeamMembersCallable
+} from './team';
 
 // Export duplicate user cleanup function
 export {

@@ -9,7 +9,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import * as admin from 'firebase-admin';
 import { Request, Response } from 'express';
-import { createErrorResponse } from '../shared/utils';
+import { createErrorResponse, setCorsHeaders } from '../shared/utils';
 // Import helper functions for Clip Show Pro admin permissions
 import { 
   generateAdminPagePermissions, 
@@ -95,32 +95,77 @@ export const getUserInfo = onCall(async (request) => {
  * Get user information with unified data model (HTTP endpoint version)
  * This is an HTTP endpoint that can be called with fetch
  */
-export const getUserInfoHttp = onRequest(async (req, res) => {
-  try {
-    const { uid } = req.query;
+export const getUserInfoHttp = onRequest(
+  {
+    cors: true,
+    invoker: 'public'
+  },
+  async (req, res) => {
+    try {
+      // Set CORS headers
+      setCorsHeaders(req, res);
+
+      // Handle preflight requests
+      if (req.method === 'OPTIONS') {
+        res.status(204).send('');
+        return;
+      }
+
+      const { uid } = req.query;
+      
+      // Ensure uid is a string
+      const uidString = Array.isArray(uid) ? uid[0] : (typeof uid === 'string' ? uid : String(uid));
+      
+      if (!uidString) {
+        res.status(400).json({
+          success: false,
+          error: 'User ID is required'
+        });
+        return;
+      }
+
+    // First, try to get user from Firestore (source of truth)
+    const userDoc = await db.collection('users').doc(String(uidString)).get();
+    const userData = userDoc.exists ? userDoc.data() : {};
+
+    // Try to get user from Firebase Auth (for custom claims and email verification)
+    let userRecord = null;
+    let customClaims = {};
+    let firebaseUid: string = String(uidString); // Default to the provided UID
     
-    if (!uid) {
-      res.status(400).json({
+    try {
+      // If userData has a firebaseUid field, use that instead
+      if (userData && (userData as any).firebaseUid) {
+        firebaseUid = String((userData as any).firebaseUid);
+      }
+      
+      userRecord = await auth.getUser(firebaseUid);
+      customClaims = userRecord.customClaims || {};
+    } catch (error: any) {
+      // If user doesn't exist in Auth, that's okay - we'll use Firestore data
+      if (error.code === 'auth/user-not-found') {
+        console.log(`⚠️ [getUserInfoHttp] User ${firebaseUid} not found in Auth, using Firestore data only`);
+      } else {
+        console.error(`⚠️ [getUserInfoHttp] Error getting user from Auth:`, error);
+      }
+    }
+
+    // If user doesn't exist in either Auth or Firestore, return 404
+    if (!userDoc.exists && !userRecord) {
+      res.status(404).json({
         success: false,
-        error: 'User ID is required'
+        error: 'User not found'
       });
       return;
     }
 
-    // Get user from Firebase Auth
-    const userRecord = await auth.getUser(uid as string);
-    const customClaims = userRecord.customClaims || {};
-
-    // Get user from Firestore
-    const userDoc = await db.collection('users').doc(uid as string).get();
-    const userData = userDoc.exists ? userDoc.data() : {};
-
     // Create unified user object
+    // Prefer Auth data, but fall back to Firestore data
     const unifiedUser = {
-      id: uid,
-      firebaseUid: uid,
-      email: userRecord.email || '',
-      name: userRecord.displayName || (userData as any).name || userRecord.email?.split('@')[0] || 'User',
+      id: uidString,
+      firebaseUid: firebaseUid,
+      email: userRecord?.email || (userData as any).email || '',
+      name: userRecord?.displayName || (userData as any).name || (userData as any).displayName || userRecord?.email?.split('@')[0] || 'User',
       role: (customClaims as any).role || (userData as any).role || 'USER',
       organizationId: (customClaims as any).organizationId || (userData as any).organizationId || '',
       isTeamMember: (customClaims as any).isTeamMember || (userData as any).isTeamMember || false,
@@ -148,8 +193,8 @@ export const getUserInfoHttp = onRequest(async (req, res) => {
       
       // Metadata
       createdAt: (userData as any).createdAt || new Date(),
-      updatedAt: new Date(),
-      lastLoginAt: new Date()
+      updatedAt: (userData as any).updatedAt || new Date(),
+      lastLoginAt: (userData as any).lastLoginAt || new Date()
     };
 
     res.status(200).json({
@@ -157,14 +202,25 @@ export const getUserInfoHttp = onRequest(async (req, res) => {
       user: unifiedUser
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error getting user info:', error);
+    
+    // Handle specific Firebase Auth errors
+    if (error.code === 'auth/user-not-found') {
+      res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+      return;
+    }
+    
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to get user info'
     });
   }
-});
+  }
+);
 
 /**
  * Find Firebase user by email and return UID
@@ -1040,6 +1096,163 @@ export const getSystemStats = onCall(async (request) => {
     };
   }
 });
+
+// ============================================================================
+// MESSAGING - PARTICIPANT DETAILS
+// ============================================================================
+
+/**
+ * Get participant details for messaging conversations
+ * Batch lookup from users, contacts, and clipShowContacts collections
+ * This function handles permission checks server-side to avoid client-side permission errors
+ */
+export const getParticipantDetails = onCall(
+  {
+    cors: true,
+  },
+  async (request) => {
+    try {
+      const { participantIds, organizationId } = request.data;
+      
+      if (!participantIds || !Array.isArray(participantIds) || participantIds.length === 0) {
+        throw new Error('Participant IDs array is required');
+      }
+
+      if (!organizationId) {
+        throw new Error('Organization ID is required');
+      }
+
+      console.log(`🔍 [getParticipantDetails] Fetching details for ${participantIds.length} participants in org: ${organizationId}`);
+
+      const participantDetails: any[] = [];
+
+      // Process participants in parallel batches
+      const batchSize = 10;
+      for (let i = 0; i < participantIds.length; i += batchSize) {
+        const batch = participantIds.slice(i, i + batchSize);
+        const batchPromises = batch.map(async (participantId: string) => {
+          // Handle system users
+          if (participantId.startsWith('system-') || participantId === 'system-automation' || !participantId || participantId.length < 5) {
+            return {
+              id: participantId,
+              userId: participantId,
+              type: 'system',
+              name: participantId === 'system-automation' ? 'System Automation' : 'System',
+              email: '',
+              isSystem: true
+            };
+          }
+
+          // Try users collection first
+          try {
+            const userDoc = await db.collection('users').doc(participantId).get();
+            if (userDoc.exists) {
+              const userData = userDoc.data();
+              // Verify organizationId matches if present
+              if (userData?.organizationId && userData.organizationId !== organizationId) {
+                // User belongs to different org, skip
+                return null;
+              }
+              return {
+                id: participantId,
+                userId: participantId,
+                type: 'user',
+                name: userData?.name || userData?.displayName || 'Unknown User',
+                email: userData?.email || '',
+                avatar: userData?.photoURL || userData?.avatar || '',
+                isSystem: false
+              };
+            }
+          } catch (userError: any) {
+            // Continue to next collection
+            console.debug(`[getParticipantDetails] User ${participantId} not found in users collection`);
+          }
+
+          // Try contacts collection
+          try {
+            const contactDoc = await db.collection('contacts').doc(participantId).get();
+            if (contactDoc.exists) {
+              const contactData = contactDoc.data();
+              // Verify organizationId matches if present
+              if (contactData?.organizationId && contactData.organizationId !== organizationId) {
+                return null;
+              }
+              return {
+                id: participantId,
+                contactId: participantId,
+                type: 'contact',
+                firstName: contactData?.firstName || '',
+                lastName: contactData?.lastName || '',
+                name: `${contactData?.firstName || ''} ${contactData?.lastName || ''}`.trim() || contactData?.email || 'Unknown Contact',
+                email: contactData?.email || '',
+                avatar: contactData?.avatar || '',
+                isSystem: false
+              };
+            }
+          } catch (contactError: any) {
+            // Continue to next collection
+            console.debug(`[getParticipantDetails] Contact ${participantId} not found in contacts collection`);
+          }
+
+          // Try clipShowContacts collection
+          try {
+            const clipShowContactDoc = await db.collection('clipShowContacts').doc(participantId).get();
+            if (clipShowContactDoc.exists) {
+              const clipContactData = clipShowContactDoc.data();
+              // Verify organizationId matches if present
+              if (clipContactData?.organizationId && clipContactData.organizationId !== organizationId) {
+                return null;
+              }
+              return {
+                id: participantId,
+                contactId: participantId,
+                type: 'clipShowContact',
+                firstName: clipContactData?.firstName || '',
+                lastName: clipContactData?.lastName || '',
+                name: clipContactData?.name || clipContactData?.displayName || `${clipContactData?.firstName || ''} ${clipContactData?.lastName || ''}`.trim() || 'Unknown Contact',
+                email: clipContactData?.email || '',
+                avatar: clipContactData?.avatar || '',
+                isSystem: false
+              };
+            }
+          } catch (clipError: any) {
+            // Not found in any collection
+            console.debug(`[getParticipantDetails] Participant ${participantId} not found in any collection`);
+          }
+
+          // Fallback - return basic entry
+          return {
+            id: participantId,
+            userId: participantId,
+            type: 'unknown',
+            name: 'Unknown User',
+            email: '',
+            isSystem: false
+          };
+        });
+
+        const batchResults = await Promise.all(batchPromises);
+        // Filter out null results (participants from different orgs)
+        participantDetails.push(...batchResults.filter(result => result !== null));
+      }
+
+      console.log(`✅ [getParticipantDetails] Resolved ${participantDetails.length} participants`);
+
+      return {
+        success: true,
+        participants: participantDetails
+      };
+
+    } catch (error) {
+      console.error('❌ [getParticipantDetails] Error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to get participant details',
+        participants: []
+      };
+    }
+  }
+);
 
 // ============================================================================
 // HEALTH CHECK

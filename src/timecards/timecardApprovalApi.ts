@@ -69,6 +69,8 @@ export const timecardApprovalApi = onRequest(
       await handleApprovalHistory(req, res, userOrgId, decodedToken.uid);
     } else if ((path === '/direct-reports' || path === '/direct-reports/all') && method === 'GET') {
       await handleDirectReports(req, res, userOrgId, decodedToken.uid);
+    } else if (path === '/my-manager' && method === 'GET') {
+      await handleMyManager(req, res, userOrgId, decodedToken.uid);
     } else {
       res.status(404).json(createErrorResponse('Not found', 'Timecard approval endpoint not found'));
       return;
@@ -325,5 +327,94 @@ async function handleDirectReports(req: any, res: any, organizationId: string, u
   } catch (error: any) {
     console.error('❌ [DIRECT REPORTS] Error:', error);
     res.status(500).json(handleError(error, 'handleDirectReports'));
+  }
+}
+
+// ============================================================================
+// MY MANAGER OPERATIONS
+// ============================================================================
+
+async function handleMyManager(req: any, res: any, organizationId: string, userId: string) {
+  try {
+    console.log(`⏰ [MY MANAGER] Getting manager info for user: ${userId} in org: ${organizationId}`);
+
+    // Find team member record where this user is the employee
+    const teamMemberQuery = await db.collection('teamMembers')
+      .where('organizationId', '==', organizationId)
+      .where('userId', '==', userId)
+      .where('isActive', '==', true)
+      .limit(1)
+      .get();
+
+    if (teamMemberQuery.empty) {
+      console.log(`⏰ [MY MANAGER] No active team member record found for user: ${userId}`);
+      res.status(404).json(createErrorResponse(
+        'No active direct report relationship found',
+        'You do not have an active manager assigned for timecard approvals'
+      ));
+      return;
+    }
+
+    const teamMemberDoc = teamMemberQuery.docs[0];
+    const teamMember = teamMemberDoc.data();
+    const managerId = teamMember.managerId;
+
+    if (!managerId) {
+      console.log(`⏰ [MY MANAGER] No manager ID found for user: ${userId}`);
+      res.status(404).json(createErrorResponse(
+        'No manager assigned',
+        'You do not have a manager assigned for timecard approvals'
+      ));
+      return;
+    }
+
+    // Get manager's user details
+    const managerDoc = await db.collection('users').doc(managerId).get();
+    
+    if (!managerDoc.exists) {
+      console.log(`⏰ [MY MANAGER] Manager user not found: ${managerId}`);
+      res.status(404).json(createErrorResponse(
+        'Manager not found',
+        'Your assigned manager could not be found'
+      ));
+      return;
+    }
+
+    const managerData = managerDoc.data();
+    
+    // Build response matching the expected UserDirectReport type
+    const directReportInfo = {
+      id: teamMemberDoc.id,
+      employeeId: userId,
+      managerId: managerId,
+      isActive: teamMember.isActive,
+      canApproveTimecards: teamMember.canApproveTimecards !== false, // Default to true if not set
+      effectiveDate: teamMember.createdAt || new Date().toISOString(),
+      manager: {
+        id: managerId,
+        name: managerData.displayName || managerData.name || `${managerData.firstName || ''} ${managerData.lastName || ''}`.trim() || managerData.email,
+        firstName: managerData.firstName,
+        lastName: managerData.lastName,
+        email: managerData.email,
+        role: managerData.role,
+        department: managerData.department
+      },
+      assigner: teamMember.createdBy ? {
+        id: teamMember.createdBy,
+        name: 'System',
+        email: 'system@backbone.app'
+      } : undefined
+    };
+
+    console.log(`⏰ [MY MANAGER] Found manager for user ${userId}: ${managerData.email}`);
+
+    res.status(200).json(createSuccessResponse(
+      directReportInfo,
+      'Manager information retrieved successfully'
+    ));
+
+  } catch (error: any) {
+    console.error('❌ [MY MANAGER] Error:', error);
+    res.status(500).json(handleError(error, 'handleMyManager'));
   }
 }
