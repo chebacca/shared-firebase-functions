@@ -194,6 +194,12 @@ export {
   healthCheck
 } from './unified';
 
+// Export unified auth functions (refreshAuthClaims for all apps)
+export {
+  refreshAuthClaims,
+  onUserLoginTrigger
+} from './auth';
+
 // Export Web3 wallet management functions
 export {
   web3Api
@@ -230,6 +236,56 @@ export {
   getTimecardConfigurationsHttp,
   timecardApprovalApi
 } from './timecards';
+
+// Export FCM functions
+export {
+  registerFCMToken,
+  registerFCMTokenHttp,
+  subscribeToFCMTopic,
+  subscribeToFCMTopicHttp,
+  unsubscribeFromFCMTopic,
+  unsubscribeFromFCMTopicHttp
+} from './fcm';
+
+// Export messaging functions
+export {
+  getMessageSessions,
+  getMessageSessionsHttp,
+  createMessageSession,
+  createMessageSessionHttp,
+  sendMessage,
+  sendMessageHttp,
+  getMessages,
+  getMessagesHttp,
+  markMessagesAsRead,
+  markMessagesAsReadHttp,
+  deleteMessage,
+  deleteMessageHttp,
+  getParticipants,
+  getParticipantsHttp,
+  addParticipant,
+  addParticipantHttp,
+  removeParticipant,
+  removeParticipantHttp,
+  updateMessageSession,
+  updateMessageSessionHttp
+} from './messaging';
+
+// Export AI agent functions
+export {
+  callAIAgent,
+  callAIAgentHttp,
+  getAIAgentHealth,
+  getAIAgentHealthHttp,
+  getUserPreferences,
+  getUserPreferencesHttp
+} from './aiAgent';
+
+// Export WebRTC functions
+export {
+  getTURNCredentials,
+  getTURNCredentialsHttp
+} from './webrtc';
 
 // Export call sheet functions
 export {
