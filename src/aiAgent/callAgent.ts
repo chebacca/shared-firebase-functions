@@ -6,6 +6,8 @@
 import { onCall, onRequest } from 'firebase-functions/v2/https';
 import { getAuth } from 'firebase-admin/auth';
 import { createSuccessResponse, createErrorResponse, setCorsHeaders } from '../shared/utils';
+import { gatherGlobalContext } from '../ai/contextAggregation/GlobalContextService';
+import { createGeminiService, geminiApiKey } from '../ai/GeminiService';
 
 const auth = getAuth();
 
@@ -15,9 +17,11 @@ const auth = getAuth();
 export const callAIAgent = onCall(
   {
     cors: true,
+    secrets: [geminiApiKey], // Add Gemini API key as required secret
   },
   async (request) => {
     try {
+      console.log('🦄 UNICORN DEBUG: Real Gemini Service Active - Build Verified');
       const { agentId, message, context } = request.data;
       const uid = request.auth?.uid;
 
@@ -31,13 +35,40 @@ export const callAIAgent = onCall(
 
       console.log(`🤖 [AI AGENT] Calling agent: ${agentId} for user: ${uid}`);
 
-      // TODO: Implement actual AI agent call logic
-      // This is a placeholder - implement based on your AI agent service
-      // For now, return a mock response
+      // 1. Get User's Organization ID
+      const userRecord = await auth.getUser(uid);
+      const organizationId = userRecord.customClaims?.organizationId as string;
+
+      if (!organizationId) {
+        throw new Error('User does not belong to an organization');
+      }
+
+      // 2. Gather Global Context (Tenanted)
+      console.log(`📊 [AI AGENT] Gathering global context for org: ${organizationId}`);
+      const globalContext = await gatherGlobalContext(organizationId, uid);
+
+      // 3. Generate Intelligent Response using Gemini
+      console.log(`🧠 [AI AGENT] Generating intelligent response with Gemini...`);
+      const geminiService = createGeminiService();
+      const currentMode = context?.activeMode || 'none';
+
+      const agentResponse = await geminiService.generateAgentResponse(
+        message,
+        globalContext,
+        currentMode
+      );
+
+      console.log(`✅ [AI AGENT] Response generated. Suggested context: ${agentResponse.suggestedContext}`);
+
       const response = {
         agentId,
         message,
-        response: 'AI agent response (placeholder - implement actual logic)',
+        response: agentResponse.response,
+        suggestedContext: agentResponse.suggestedContext,
+        contextData: agentResponse.contextData,
+        followUpSuggestions: agentResponse.followUpSuggestions,
+        reasoning: agentResponse.reasoning,
+        data: globalContext, // Include full context for debugging
         timestamp: new Date().toISOString()
       };
 
@@ -59,7 +90,8 @@ export const callAIAgent = onCall(
 export const callAIAgentHttp = onRequest(
   {
     cors: true,
-    invoker: 'public'
+    invoker: 'public',
+    secrets: [geminiApiKey], // Add Gemini API key as required secret
   },
   async (req, res) => {
     try {
@@ -92,20 +124,50 @@ export const callAIAgentHttp = onRequest(
       }
 
       const { agentId, message, context } = req.body;
+      const uid = decodedToken.uid;
 
       if (!agentId || !message) {
         res.status(400).json(createErrorResponse('Invalid request', 'Agent ID and message are required'));
         return;
       }
 
-      console.log(`🤖 [AI AGENT HTTP] Calling agent: ${agentId} for user: ${decodedToken.uid}`);
+      console.log(`🤖 [AI AGENT HTTP] Calling agent: ${agentId} for user: ${uid}`);
 
-      // TODO: Implement actual AI agent call logic
-      // This is a placeholder - implement based on your AI agent service
+      // 1. Get User's Organization ID
+      const userRecord = await auth.getUser(uid);
+      const organizationId = userRecord.customClaims?.organizationId as string;
+
+      if (!organizationId) {
+        res.status(403).json(createErrorResponse('Forbidden', 'User does not belong to an organization'));
+        return;
+      }
+
+      // 2. Gather Global Context (Tenanted)
+      console.log(`📊 [AI AGENT HTTP] Gathering global context for org: ${organizationId}`);
+      const globalContext = await gatherGlobalContext(organizationId, uid);
+
+      // 3. Generate Intelligent Response using Gemini
+      console.log(`🧠 [AI AGENT HTTP] Generating intelligent response with Gemini...`);
+      const geminiService = createGeminiService();
+      const currentMode = context?.activeMode || 'none';
+
+      const agentResponse = await geminiService.generateAgentResponse(
+        message,
+        globalContext,
+        currentMode
+      );
+
+      console.log(`✅ [AI AGENT HTTP] Response generated. Suggested context: ${agentResponse.suggestedContext}`);
+
       const response = {
         agentId,
         message,
-        response: 'AI agent response (placeholder - implement actual logic)',
+        response: agentResponse.response,
+        suggestedContext: agentResponse.suggestedContext,
+        contextData: agentResponse.contextData,
+        followUpSuggestions: agentResponse.followUpSuggestions,
+        reasoning: agentResponse.reasoning,
+        data: globalContext,
         timestamp: new Date().toISOString()
       };
 
@@ -120,4 +182,3 @@ export const callAIAgentHttp = onRequest(
     }
   }
 );
-
