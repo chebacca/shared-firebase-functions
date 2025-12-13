@@ -25,6 +25,8 @@ export const callAIAgent = onCall(
       const { agentId, message, context } = request.data;
       const uid = request.auth?.uid;
 
+
+
       if (!uid) {
         throw new Error('User must be authenticated');
       }
@@ -39,6 +41,8 @@ export const callAIAgent = onCall(
       const userRecord = await auth.getUser(uid);
       const organizationId = userRecord.customClaims?.organizationId as string;
 
+
+
       if (!organizationId) {
         throw new Error('User does not belong to an organization');
       }
@@ -52,11 +56,15 @@ export const callAIAgent = onCall(
       const geminiService = createGeminiService();
       const currentMode = context?.activeMode || 'none';
 
+
+
       const agentResponse = await geminiService.generateAgentResponse(
         message,
         globalContext,
         currentMode
       );
+
+
 
       console.log(`✅ [AI AGENT] Response generated. Suggested context: ${agentResponse.suggestedContext}`);
 
@@ -68,9 +76,15 @@ export const callAIAgent = onCall(
         contextData: agentResponse.contextData,
         followUpSuggestions: agentResponse.followUpSuggestions,
         reasoning: agentResponse.reasoning,
+        // NEW: Dialog system fields
+        intent: agentResponse.intent,
+        suggestedDialog: agentResponse.suggestedDialog,
+        prefillData: agentResponse.prefillData,
         data: globalContext, // Include full context for debugging
         timestamp: new Date().toISOString()
       };
+
+
 
       return createSuccessResponse(response, 'AI agent called successfully');
 
@@ -167,6 +181,10 @@ export const callAIAgentHttp = onRequest(
         contextData: agentResponse.contextData,
         followUpSuggestions: agentResponse.followUpSuggestions,
         reasoning: agentResponse.reasoning,
+        // NEW: Dialog system fields
+        intent: agentResponse.intent,
+        suggestedDialog: agentResponse.suggestedDialog,
+        prefillData: agentResponse.prefillData,
         data: globalContext,
         timestamp: new Date().toISOString()
       };

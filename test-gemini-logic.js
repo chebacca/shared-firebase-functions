@@ -10,7 +10,12 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 async function testGeminiLogic() {
     console.log('🧪 Testing Gemini AI Logic (Same code as deployed function)...\n');
 
-    const apiKey = 'AIzaSyAyX4TSyuCI0ULhqrngdPcg5KNp__VOaNM';
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+        console.error('❌ Error: GEMINI_API_KEY environment variable not set');
+        console.error('   Set it with: export GEMINI_API_KEY=your_key_here');
+        process.exit(1);
+    }
 
     try {
         const genAI = new GoogleGenerativeAI(apiKey);

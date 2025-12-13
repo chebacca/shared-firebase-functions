@@ -36,8 +36,15 @@ async function testDeployedFunction() {
         const { initializeApp } = require('firebase/app');
         const { getAuth, signInWithCustomToken } = require('firebase/auth');
 
+        const apiKey = process.env.FIREBASE_WEB_API_KEY;
+        if (!apiKey) {
+            console.error('❌ Error: FIREBASE_WEB_API_KEY environment variable not set');
+            console.error('   Set it with: export FIREBASE_WEB_API_KEY=your_key_here');
+            process.exit(1);
+        }
+
         const app = initializeApp({
-            apiKey: 'AIzaSyAyX4TSyuCI0ULhqrngdPcg5KNp__VOaNM',
+            apiKey: apiKey,
             authDomain: 'backbone-logic.firebaseapp.com',
             projectId: 'backbone-logic'
         });

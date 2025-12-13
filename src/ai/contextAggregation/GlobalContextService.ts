@@ -19,11 +19,12 @@ import { gatherDashboardContext, DashboardContext } from './DashboardContextServ
 import { gatherLicensingContext, LicensingContext } from './LicensingContextService';
 import { gatherCallSheetContext, CallSheetContext } from './CallSheetContextService';
 import { gatherBridgeContext, BridgeContext } from './BridgeContextService';
+import { gatherTeamContext, TeamContext } from './TeamContextService';
 
 export interface GlobalContext {
   organizationId: string;
   timestamp: string;
-  
+
   // App-specific contexts (composed from existing services)
   dashboard: DashboardContext;
   licensing: LicensingContext;
@@ -31,6 +32,7 @@ export interface GlobalContext {
   bridge: BridgeContext;
   clipShow: WorkflowContext;
   schedule: ScheduleContext;
+  team: TeamContext;
 }
 
 /**
@@ -44,7 +46,7 @@ export async function gatherGlobalContext(
   userId?: string
 ): Promise<GlobalContext> {
   const now = new Date();
-  
+
   // Parallel fetch of all contexts using existing services
   // Each service follows the same patterns as its corresponding frontend app
   const [
@@ -53,14 +55,16 @@ export async function gatherGlobalContext(
     callSheetContext,
     bridgeContext,
     workflowContext,
-    scheduleContext
+    scheduleContext,
+    teamContext
   ] = await Promise.all([
     gatherDashboardContext(organizationId),
     gatherLicensingContext(organizationId),
     gatherCallSheetContext(organizationId),
     gatherBridgeContext(organizationId),
     gatherWorkflowContext(organizationId),
-    gatherScheduleContext(organizationId, { userId })
+    gatherScheduleContext(organizationId, { userId }),
+    gatherTeamContext(organizationId)
   ]);
 
   return {
@@ -71,6 +75,7 @@ export async function gatherGlobalContext(
     callSheet: callSheetContext,
     bridge: bridgeContext,
     clipShow: workflowContext,
-    schedule: scheduleContext
+    schedule: scheduleContext,
+    team: teamContext
   };
 }
