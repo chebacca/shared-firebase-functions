@@ -408,8 +408,11 @@ async function publishCallSheetLogic(data: any, context?: any): Promise<any> {
 
     console.log(`📋 [PUBLISH CALL SHEET] Call sheet published successfully: ${callSheetId}`);
 
-    // Construct uniqueLink from baseUrl if provided, otherwise use default
-    const baseUrl = data.baseUrl || 'https://backbone-callsheet.web.app';
+    // Construct uniqueLink from baseUrl (required from client)
+    if (!data.baseUrl) {
+      return createErrorResponse('baseUrl is required for publishing call sheets');
+    }
+    const baseUrl = data.baseUrl;
     const uniqueLink = `${baseUrl}/c/${publishedCallSheet.accessCode}`;
 
     return createSuccessResponse({
