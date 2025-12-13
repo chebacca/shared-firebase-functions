@@ -97,6 +97,12 @@ export * from './slack';
 // Export Google Drive integration functions
 export * from './google';
 
+// Export Webex integration functions
+export * from './webex';
+
+// Export Video Conferencing functions
+export * from './videoConferencing';
+
 // Export App Role Definition Service
 export { appRoleDefinitionService, AppRoleDefinitionService } from './roles/AppRoleDefinitionService';
 

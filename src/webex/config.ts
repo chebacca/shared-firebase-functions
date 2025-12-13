@@ -1,7 +1,7 @@
 /**
- * Google Drive Configuration Management
+ * Webex Configuration Management
  * 
- * Functions to save and retrieve Google Drive OAuth configuration from Firestore
+ * Functions to save and retrieve Webex OAuth configuration from Firestore
  */
 
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
@@ -52,82 +52,75 @@ function decryptToken(encryptedData: string): string {
 }
 
 /**
- * Get Google Drive configuration from Firestore
+ * Get Webex configuration from Firestore
  */
-export async function getGoogleConfig(organizationId: string) {
-  console.log(`🔍 [GoogleConfig] Fetching config for org: ${organizationId}`);
+export async function getWebexConfig(organizationId: string) {
+  console.log(`🔍 [WebexConfig] Fetching config for org: ${organizationId}`);
   
   const configDoc = await db
     .collection('organizations')
     .doc(organizationId)
     .collection('integrationSettings')
-    .doc('google')
+    .doc('webex')
     .get();
     
   if (!configDoc.exists) {
     // Fallback to environment variables for backward compatibility
-    const envClientId = process.env.GOOGLE_CLIENT_ID;
-    const envClientSecret = process.env.GOOGLE_CLIENT_SECRET;
-    const envRedirectUri = process.env.GOOGLE_REDIRECT_URI || 'https://backbone-client.web.app/integration-settings';
+    const envClientId = process.env.WEBEX_CLIENT_ID;
+    const envClientSecret = process.env.WEBEX_CLIENT_SECRET;
+    const envRedirectUri = process.env.WEBEX_REDIRECT_URI || 'https://backbone-logic.web.app/integration-settings';
     
     if (envClientId && envClientSecret) {
-      console.log(`⚠️ [GoogleConfig] Using environment variables (legacy mode) for org: ${organizationId}`);
+      console.log(`⚠️ [WebexConfig] Using environment variables (legacy mode) for org: ${organizationId}`);
       return {
         clientId: envClientId,
         clientSecret: envClientSecret,
         redirectUri: envRedirectUri,
         scopes: [
-          'https://www.googleapis.com/auth/drive.readonly',
-          'https://www.googleapis.com/auth/drive.file',
-          'https://www.googleapis.com/auth/documents',
-          'https://www.googleapis.com/auth/userinfo.email',
-          'https://www.googleapis.com/auth/userinfo.profile',
-          // Google Calendar and Meet scopes
-          'https://www.googleapis.com/auth/calendar',
-          'https://www.googleapis.com/auth/calendar.events',
-          'https://www.googleapis.com/auth/meetings.space.created',
-          'https://www.googleapis.com/auth/meetings.space.readonly'
+          'spark:all', // Webex meetings, messages, rooms
+          'spark:meetings_write',
+          'spark:meetings_read',
+          'spark:people_read'
         ],
       };
     }
     
-    console.warn(`⚠️ [GoogleConfig] No config found for org: ${organizationId}`);
+    console.warn(`⚠️ [WebexConfig] No config found for org: ${organizationId}`);
     throw new HttpsError(
       'failed-precondition', 
-      'Google Drive integration not configured. Please configure in Integration Settings.'
+      'Webex integration not configured. Please configure in Integration Settings.'
     );
   }
 
   const config = configDoc.data()!;
   
   if (!config.isConfigured) {
-    console.warn(`⚠️ [GoogleConfig] Config exists but not marked as configured for org: ${organizationId}`);
+    console.warn(`⚠️ [WebexConfig] Config exists but not marked as configured for org: ${organizationId}`);
     throw new HttpsError(
       'failed-precondition', 
-      'Google Drive integration not fully configured. Please complete setup in Integration Settings.'
+      'Webex integration not fully configured. Please complete setup in Integration Settings.'
     );
   }
   
-  console.log(`✅ [GoogleConfig] Config loaded for org: ${organizationId}`);
+  console.log(`✅ [WebexConfig] Config loaded for org: ${organizationId}`);
   
   return {
     clientId: config.clientId,
     clientSecret: decryptToken(config.clientSecret),
-    redirectUri: config.redirectUri || 'https://backbone-client.web.app/integration-settings',
+    redirectUri: config.redirectUri || 'https://backbone-logic.web.app/integration-settings',
     scopes: config.scopes || [
-      'https://www.googleapis.com/auth/drive.readonly',
-      'https://www.googleapis.com/auth/drive.file',
-      'https://www.googleapis.com/auth/documents',
-      'https://www.googleapis.com/auth/userinfo.email',
-      'https://www.googleapis.com/auth/userinfo.profile'
+      'spark:all',
+      'spark:meetings_write',
+      'spark:meetings_read',
+      'spark:people_read'
     ],
   };
 }
 
 /**
- * Save Google Drive configuration to Firestore
+ * Save Webex configuration to Firestore
  */
-export const saveGoogleConfig = onCall(
+export const saveWebexConfig = onCall(
   { 
     region: 'us-central1',
     cors: true,
@@ -147,7 +140,7 @@ export const saveGoogleConfig = onCall(
       throw new HttpsError('invalid-argument', 'Missing required configuration fields');
     }
 
-    console.log(`💾 [GoogleConfig] Saving config for org: ${organizationId} by user: ${auth.uid}`);
+    console.log(`💾 [WebexConfig] Saving config for org: ${organizationId} by user: ${auth.uid}`);
 
     try {
       // Verify user is admin of the organization
@@ -171,17 +164,16 @@ export const saveGoogleConfig = onCall(
         .collection('organizations')
         .doc(organizationId)
         .collection('integrationSettings')
-        .doc('google')
+        .doc('webex')
         .set({
           clientId,
           clientSecret: encryptedClientSecret,
-          redirectUri: redirectUri || 'https://backbone-client.web.app/integration-settings',
+          redirectUri: redirectUri || 'https://backbone-logic.web.app/integration-settings',
           scopes: [
-            'https://www.googleapis.com/auth/drive.readonly',
-            'https://www.googleapis.com/auth/drive.file',
-            'https://www.googleapis.com/auth/documents',
-            'https://www.googleapis.com/auth/userinfo.email',
-            'https://www.googleapis.com/auth/userinfo.profile'
+            'spark:all',
+            'spark:meetings_write',
+            'spark:meetings_read',
+            'spark:people_read'
           ],
           isConfigured: true,
           configuredBy: auth.uid,
@@ -189,29 +181,29 @@ export const saveGoogleConfig = onCall(
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         }, { merge: true });
 
-      console.log(`✅ [GoogleConfig] Config saved successfully for org: ${organizationId}`);
+      console.log(`✅ [WebexConfig] Config saved successfully for org: ${organizationId}`);
 
       return {
         success: true,
-        message: 'Google Drive configuration saved successfully',
+        message: 'Webex configuration saved successfully',
       };
 
     } catch (error) {
-      console.error(`❌ [GoogleConfig] Error saving config:`, error);
+      console.error(`❌ [WebexConfig] Error saving config:`, error);
       
       if (error instanceof HttpsError) {
         throw error;
       }
       
-      throw new HttpsError('internal', 'Failed to save Google Drive configuration');
+      throw new HttpsError('internal', 'Failed to save Webex configuration');
     }
   }
 );
 
 /**
- * Get Google Drive configuration status
+ * Get Webex configuration status
  */
-export const getGoogleConfigStatus = onCall(
+export const getWebexConfigStatus = onCall(
   { 
     region: 'us-central1',
     cors: true,
@@ -235,15 +227,15 @@ export const getGoogleConfigStatus = onCall(
         .collection('organizations')
         .doc(organizationId)
         .collection('integrationSettings')
-        .doc('google')
+        .doc('webex')
         .get();
 
       if (!configDoc.exists) {
         // Check environment variables as fallback
-        const hasEnvConfig = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+        const hasEnvConfig = !!(process.env.WEBEX_CLIENT_ID && process.env.WEBEX_CLIENT_SECRET);
         return {
           isConfigured: hasEnvConfig,
-          clientId: hasEnvConfig ? process.env.GOOGLE_CLIENT_ID?.substring(0, 20) + '...' : null,
+          clientId: hasEnvConfig ? process.env.WEBEX_CLIENT_ID?.substring(0, 20) + '...' : null,
           configuredAt: null,
           configuredBy: null,
           source: hasEnvConfig ? 'environment' : 'none',
@@ -261,8 +253,8 @@ export const getGoogleConfigStatus = onCall(
       };
 
     } catch (error) {
-      console.error(`❌ [GoogleConfig] Error fetching config status:`, error);
-      throw new HttpsError('internal', 'Failed to fetch Google Drive configuration status');
+      console.error(`❌ [WebexConfig] Error fetching config status:`, error);
+      throw new HttpsError('internal', 'Failed to fetch Webex configuration status');
     }
   }
 );

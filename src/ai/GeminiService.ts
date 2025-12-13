@@ -215,10 +215,11 @@ export class GeminiService {
             - Keywords: files, storage, documents, browser, assets, finder, explorer, cloud, local
         
         6. "graph" - GraphPreviewAdapter
-           - Purpose: Knowledge graph visualization of project ecosystem (Parser Brain)
-           - Use when: User wants to see relationships, connections, or project structure visualization
-           - Features: Interactive graph visualization, relationship mapping
-           - Keywords: graph, relationship, connection, backbone, structure, visualization
+           - Purpose: Knowledge graph visualization of project ecosystem AND relationship mapping for specific entities (Parser Brain)
+           - Use when: User wants to see relationships, connections, project structure visualization, OR asks about what a specific person/project is doing
+           - Features: Interactive graph visualization, relationship mapping, entity-centric views
+           - Keywords: graph, relationship, connection, backbone, structure, visualization, "up to", "doing", "working on", "show me what", "connections for"
+           - PRIORITY: When user asks "What is [Person] up to?" or "Show me [Project]'s connections", ALWAYS use "graph" with relationship mode, NOT "team"
         
         7. "none" - Idle State
            - Purpose: Hot Container idle/ready state
@@ -307,13 +308,14 @@ export class GeminiService {
             - Keywords: table, data, raw view, list
         
         RESPONSE GUIDELINES:
-        1. Always be helpful, concise, and professional.
-        2. IF changing context (view mode), explain WHY in the "reasoning" field.
-        3. AMBIGUITY HANDLING: If a user asks a general question (e.g., "Show me the project") that could apply to multiple apps (e.g., Backbone Pro Project vs. Clip Show Project), DO NOT GUESS. Ask a clarifying question to determine which specific app or context they are referring to.
-        4. CONTEXT SELECTION: Choose the most appropriate Hot Container context based on user intent:
+        1. **CRITICAL OVERRIDE FOR RELATIONSHIP QUERIES**: If the user asks about activity or connections for a SPECIFIC person or project (e.g., "What is [Person/Project] up to?", "Show me what [Entity] is doing", "[Entity] activity", "[Entity] connections"), you MUST IMMEDIATELY use the "graph" context with \`mode: "relationship"\` and the entity name as the \`query\`. DO NOT ask for clarification. COMPLETELY IGNORE the "team" or "contacts" context in these cases, even if a person's name is mentioned.
+        2. Always be helpful, concise, and professional.
+        3. IF changing context (view mode), explain WHY in the "reasoning" field.
+        4. AMBIGUITY HANDLING (for non-relationship queries): If a user asks a general question (e.g., "Show me the project") that could apply to multiple apps (e.g., Backbone Pro Project vs. Clip Show Project), DO NOT GUESS. Ask a clarifying question to determine which specific app or context they are referring to.
+        5. CONTEXT SELECTION: Choose the most appropriate Hot Container context based on user intent:
            - "media" for: assets, pitches, dailies, visual content (Clip Show Pro), AND any video/audio files from local/cloud storage
            - "script" for: screenplays, story documents, revisions (Clip Show Pro)
-           - "graph" for: relationships, connecting items, overview of project structure (Parser Brain)
+           - "graph" for: relationships, connecting items, overview of project structure (Parser Brain), AND queries about what someone/something is "up to" or "doing"
            - "callsheet" for: schedules, cast/crew lists (Call Sheet App)
            - "projects" for: high-level project folders (Backbone Pro)
            - "files" for: browsing folders, documents, or looking for files that are NOT video/audio media
@@ -321,8 +323,8 @@ export class GeminiService {
            - "sessions" for: studio sessions, recording bookings
            - "timecards" for: payroll, hours, time tracking
            - "budgets" for: financial data, costs, money
-           - "team" for: team members, organization staff
-           - "contacts" for: vendors, external talent
+           - "team" for: team members list, organization staff roster (ONLY when explicitly asking for team roster/list, NOT for individual activity/connections)
+           - "contacts" for: vendors, external talent list
            - "none" for: clearing the container or when no specific view is needed
         
         RESPONSE FORMAT:
@@ -622,6 +624,21 @@ export class GeminiService {
           "followUpSuggestions": ["Filter by project", "Expand relationships"]
         }
 
+        EXAMPLE 4.1 (Relationship Graph - Entity Specific):
+        User: "What is Sandra Smith up to?" or "Show me what the Storage Wars project is doing"
+        Response:
+        {
+          "response": "I'm generating a relationship graph for Sandra Smith to show you her recent activity and connections.",
+          "suggestedContext": "graph",
+          "contextData": {
+             "mode": "relationship",
+             "query": "Sandra Smith",
+             "entityType": "person" 
+          },
+          "reasoning": "User asked about a specific person's activity. The Relationship Graph is the best view for this.",
+          "followUpSuggestions": ["View Timecards", "View Assigned Projects"]
+        }
+        
         EXAMPLE 5 (Hot Container Context - Media View):
         User: "Show me the video pitches"
         Response:
