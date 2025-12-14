@@ -79,3 +79,68 @@ export async function gatherGlobalContext(
     team: teamContext
   };
 }
+
+/**
+ * Gather Minimal Context for Graph Requests
+ * 
+ * Only fetches team context needed for relationship graphs.
+ * This avoids unnecessary Firestore queries when user just wants graph view.
+ * 
+ * Returns a minimal GlobalContext with only team data populated.
+ * Other contexts are set to minimal defaults that won't affect the summary.
+ */
+export async function gatherMinimalContextForGraph(
+  organizationId: string,
+  userId?: string
+): Promise<GlobalContext> {
+  const now = new Date();
+
+  // Only fetch team context - needed for relationship graphs
+  const teamContext = await gatherTeamContext(organizationId);
+
+  // Return minimal context with empty/default values for other apps
+  // These defaults ensure buildContextSummary() still works correctly
+  return {
+    organizationId,
+    timestamp: now.toISOString(),
+    dashboard: {
+      activeProjects: 0,
+      totalProjects: 0,
+      projects: []
+    },
+    licensing: {
+      activeLicenses: 0,
+      totalLicenses: 0,
+      licenses: []
+    },
+    callSheet: {
+      activePersonnel: 0,
+      personnel: []
+    },
+    bridge: {
+      activeFolders: 0,
+      folders: []
+    },
+    clipShow: {
+      phaseDistribution: new Map(),
+      bottlenecks: [],
+      statusTransitions: [],
+      velocityMetrics: {
+        averageTimeToComplete: 0,
+        averageTimePerPhase: new Map(),
+        completionRate: 0,
+        itemsInProgress: 0,
+        itemsCompleted: 0
+      },
+      itemsByPhase: new Map()
+    },
+    schedule: {
+      linkedEvents: [],
+      overdueItems: [],
+      conflicts: [],
+      atRiskItems: [],
+      activeItemsTimeline: []
+    },
+    team: teamContext
+  };
+}

@@ -1933,6 +1933,122 @@ app.get('/sessions/active-with-times', authenticateToken, async (req: express.Re
   }
 });
 
+// Get session assignments for a specific session
+app.get('/sessions/:id/assignments', authenticateToken, async (req: express.Request, res: express.Response) => {
+  try {
+    const sessionId = req.params.id;
+    console.log(`📋 [SESSIONS API] Fetching assignments for session: ${sessionId}`);
+    
+    const organizationId = req.user?.organizationId;
+    
+    if (!organizationId) {
+      return res.status(403).json({
+        success: false,
+        error: 'User not associated with any organization'
+      });
+    }
+    
+    // Verify session exists and belongs to organization
+    const sessionDoc = await db.collection('sessions').doc(sessionId).get();
+    if (!sessionDoc.exists) {
+      return res.status(404).json({
+        success: false,
+        error: 'Session not found'
+      });
+    }
+    
+    const sessionData = sessionDoc.data();
+    if (sessionData?.organizationId !== organizationId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied to this session'
+      });
+    }
+    
+    // Get assignments for this session
+    const assignmentsQuery = db.collection('sessionAssignments')
+      .where('organizationId', '==', organizationId)
+      .where('sessionId', '==', sessionId);
+    
+    const assignmentsSnapshot = await assignmentsQuery.get();
+    const assignments = assignmentsSnapshot.docs.map((doc: any) => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    
+    console.log(`✅ [SESSIONS API] Found ${assignments.length} assignments for session ${sessionId}`);
+    return res.status(200).json({
+      success: true,
+      data: assignments,
+      total: assignments.length
+    });
+  } catch (error: any) {
+    console.error('❌ [SESSIONS API] Error fetching session assignments:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to fetch session assignments',
+      errorDetails: error.message || String(error)
+    });
+  }
+});
+
+// Get notifications for the current user
+app.get('/notifications', authenticateToken, async (req: express.Request, res: express.Response) => {
+  try {
+    console.log('🔔 [NOTIFICATIONS API] Fetching notifications...');
+    
+    const organizationId = req.user?.organizationId;
+    const userId = req.user?.uid;
+    
+    if (!organizationId || !userId) {
+      return res.status(403).json({
+        success: false,
+        error: 'User not associated with any organization'
+      });
+    }
+    
+    const { limit = 100, unreadOnly = false } = req.query;
+    
+    // Build query
+    let notificationsQuery: any = db.collection('notifications')
+      .where('organizationId', '==', organizationId)
+      .where('userId', '==', userId);
+    
+    if (unreadOnly === 'true') {
+      notificationsQuery = notificationsQuery.where('read', '==', false);
+    }
+    
+    notificationsQuery = notificationsQuery
+      .orderBy('createdAt', 'desc')
+      .limit(parseInt(limit as string) || 100);
+    
+    const notificationsSnapshot = await notificationsQuery.get();
+    const notifications = notificationsSnapshot.docs.map((doc: any) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt,
+        updatedAt: data.updatedAt?.toDate?.()?.toISOString() || data.updatedAt
+      };
+    });
+    
+    console.log(`✅ [NOTIFICATIONS API] Found ${notifications.length} notifications`);
+    return res.status(200).json({
+      success: true,
+      data: notifications,
+      total: notifications.length
+    });
+  } catch (error: any) {
+    console.error('❌ [NOTIFICATIONS API] Error fetching notifications:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to fetch notifications',
+      errorDetails: error.message || String(error)
+    });
+  }
+});
+
 
 // ====================
 // Timecard Admin API Endpoints

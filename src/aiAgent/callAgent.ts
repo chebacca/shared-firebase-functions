@@ -6,10 +6,51 @@
 import { onCall, onRequest } from 'firebase-functions/v2/https';
 import { getAuth } from 'firebase-admin/auth';
 import { createSuccessResponse, createErrorResponse, setCorsHeaders } from '../shared/utils';
-import { gatherGlobalContext } from '../ai/contextAggregation/GlobalContextService';
+import { gatherGlobalContext, gatherMinimalContextForGraph } from '../ai/contextAggregation/GlobalContextService';
 import { createGeminiService, geminiApiKey } from '../ai/GeminiService';
 
 const auth = getAuth();
+
+/**
+ * Quick Intent Detection
+ * 
+ * Lightweight detection of user intent before expensive context gathering.
+ * Returns 'graph' for graph-related queries, 'full' for everything else.
+ */
+function detectQuickIntent(message: string): 'graph' | 'full' {
+  const lower = message.toLowerCase().trim();
+  
+  // Graph-specific keywords
+  const graphKeywords = [
+    'graph',
+    'relationship',
+    'relationships',
+    'connection',
+    'connections',
+    'up to',
+    'doing',
+    'working on',
+    'what is',
+    'show me what',
+    'backbone graph',
+    'knowledge graph',
+    'visualization',
+    'structure',
+    'map',
+    'network'
+  ];
+  
+  // Check if message contains graph-related keywords
+  for (const keyword of graphKeywords) {
+    if (lower.includes(keyword)) {
+      console.log(`🎯 [Quick Intent] Detected graph intent from keyword: "${keyword}"`);
+      return 'graph';
+    }
+  }
+  
+  // Default to full context for ambiguous queries
+  return 'full';
+}
 
 /**
  * Call AI agent (Callable Function)
@@ -47,11 +88,21 @@ export const callAIAgent = onCall(
         throw new Error('User does not belong to an organization');
       }
 
-      // 2. Gather Global Context (Tenanted)
-      console.log(`📊 [AI AGENT] Gathering global context for org: ${organizationId}`);
-      const globalContext = await gatherGlobalContext(organizationId, uid);
+      // 2. Quick Intent Detection (Optimization)
+      const quickIntent = detectQuickIntent(message);
+      console.log(`🎯 [AI AGENT] Quick intent detected: ${quickIntent}`);
 
-      // 3. Generate Intelligent Response using Gemini
+      // 3. Gather Context (Optimized based on intent)
+      let globalContext;
+      if (quickIntent === 'graph') {
+        console.log(`⚡ [AI AGENT] Using minimal context for graph request (optimization)`);
+        globalContext = await gatherMinimalContextForGraph(organizationId, uid);
+      } else {
+        console.log(`📊 [AI AGENT] Gathering full global context for org: ${organizationId}`);
+        globalContext = await gatherGlobalContext(organizationId, uid);
+      }
+
+      // 4. Generate Intelligent Response using Gemini
       console.log(`🧠 [AI AGENT] Generating intelligent response with Gemini...`);
       const geminiService = createGeminiService();
       const currentMode = context?.activeMode || 'none';
@@ -156,11 +207,21 @@ export const callAIAgentHttp = onRequest(
         return;
       }
 
-      // 2. Gather Global Context (Tenanted)
-      console.log(`📊 [AI AGENT HTTP] Gathering global context for org: ${organizationId}`);
-      const globalContext = await gatherGlobalContext(organizationId, uid);
+      // 2. Quick Intent Detection (Optimization)
+      const quickIntent = detectQuickIntent(message);
+      console.log(`🎯 [AI AGENT HTTP] Quick intent detected: ${quickIntent}`);
 
-      // 3. Generate Intelligent Response using Gemini
+      // 3. Gather Context (Optimized based on intent)
+      let globalContext;
+      if (quickIntent === 'graph') {
+        console.log(`⚡ [AI AGENT HTTP] Using minimal context for graph request (optimization)`);
+        globalContext = await gatherMinimalContextForGraph(organizationId, uid);
+      } else {
+        console.log(`📊 [AI AGENT HTTP] Gathering full global context for org: ${organizationId}`);
+        globalContext = await gatherGlobalContext(organizationId, uid);
+      }
+
+      // 4. Generate Intelligent Response using Gemini
       console.log(`🧠 [AI AGENT HTTP] Generating intelligent response with Gemini...`);
       const geminiService = createGeminiService();
       const currentMode = context?.activeMode || 'none';
