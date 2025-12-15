@@ -25,7 +25,7 @@ import { db, createSuccessResponse, createErrorResponse, handleError } from '../
 // import * as debug from '../debug';
 
 // Import timecard approval handlers
-import { 
+import {
   handlePendingApprovals,
   handleMySubmissions,
   handleApprovalHistory,
@@ -54,19 +54,19 @@ const corsOptions = {
       'http://localhost:4010',
       'http://localhost:5173'
     ];
-    
+
     // Allow requests with no origin (like mobile apps, Postman, etc.)
     if (!origin) {
       return callback(null, true);
     }
-    
+
     // In development, allow all localhost origins
     if (process.env.NODE_ENV === 'development' || process.env.FUNCTIONS_EMULATOR === 'true') {
       if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
         return callback(null, true);
       }
     }
-    
+
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
@@ -76,8 +76,8 @@ const corsOptions = {
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: [
-    'Content-Type', 
-    'Authorization', 
+    'Content-Type',
+    'Authorization',
     'X-Requested-With',
     'X-Application-Mode',
     'X-Client-Type',
@@ -117,7 +117,7 @@ app.options('*', (req: express.Request, res: express.Response) => {
     'http://localhost:4010',
     'http://localhost:5173'
   ];
-  
+
   // In development, allow all localhost origins
   if (process.env.NODE_ENV === 'development' || process.env.FUNCTIONS_EMULATOR === 'true') {
     if (origin && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
@@ -129,7 +129,7 @@ app.options('*', (req: express.Request, res: express.Response) => {
       return res.status(200).send('');
     }
   }
-  
+
   // When credentials are required, we cannot use '*' - must specify exact origin
   if (origin && allowedOrigins.includes(origin)) {
     res.set('Access-Control-Allow-Origin', origin);
@@ -142,7 +142,7 @@ app.options('*', (req: express.Request, res: express.Response) => {
     res.set('Access-Control-Allow-Origin', '*');
     // Don't set credentials when using wildcard
   }
-  
+
   res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
   res.set('Access-Control-Allow-Headers', corsOptions.allowedHeaders.join(', '));
   res.set('Access-Control-Max-Age', '3600');
@@ -173,7 +173,7 @@ app.use((req: express.Request, res: express.Response, next: express.NextFunction
     'http://localhost:4010',
     'http://localhost:5173'
   ];
-  
+
   // In development, allow all localhost origins
   if (process.env.NODE_ENV === 'development' || process.env.FUNCTIONS_EMULATOR === 'true') {
     if (origin && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
@@ -182,13 +182,13 @@ app.use((req: express.Request, res: express.Response, next: express.NextFunction
       return next();
     }
   }
-  
+
   // When credentials are required, we cannot use '*' - must specify exact origin
   if (origin && allowedOrigins.includes(origin)) {
     res.set('Access-Control-Allow-Origin', origin);
     res.set('Access-Control-Allow-Credentials', 'true');
   }
-  
+
   next();
 });
 
@@ -205,13 +205,13 @@ app.options('/health', (req: express.Request, res: express.Response) => {
     'http://localhost:4010',
     'http://localhost:5173'
   ];
-  
+
   if (origin && (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development')) {
     res.set('Access-Control-Allow-Origin', origin);
   } else {
     res.set('Access-Control-Allow-Origin', '*');
   }
-  
+
   res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   res.set('Access-Control-Max-Age', '3600');
@@ -230,17 +230,17 @@ app.get('/health', (req: express.Request, res: express.Response) => {
     'http://localhost:4010',
     'http://localhost:5173'
   ];
-  
+
   // Set CORS headers explicitly
   if (origin && (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development')) {
     res.set('Access-Control-Allow-Origin', origin);
   } else {
     res.set('Access-Control-Allow-Origin', '*');
   }
-  
+
   res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
-  
+
   res.status(200).json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
@@ -456,7 +456,7 @@ app.options('/network-ip', (req: express.Request, res: express.Response) => {
     'http://localhost:4010',
     'http://localhost:5173'
   ];
-  
+
   // In development, allow all localhost origins
   if (process.env.NODE_ENV === 'development' || process.env.FUNCTIONS_EMULATOR === 'true') {
     if (origin && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
@@ -468,7 +468,7 @@ app.options('/network-ip', (req: express.Request, res: express.Response) => {
       return res.status(200).send('');
     }
   }
-  
+
   // When credentials are required, we cannot use '*' - must specify exact origin
   if (origin && allowedOrigins.includes(origin)) {
     res.set('Access-Control-Allow-Origin', origin);
@@ -481,7 +481,7 @@ app.options('/network-ip', (req: express.Request, res: express.Response) => {
     res.set('Access-Control-Allow-Origin', '*');
     // Don't set credentials when using wildcard
   }
-  
+
   res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
   res.set('Access-Control-Allow-Headers', corsOptions.allowedHeaders.join(', '));
   res.set('Access-Control-Max-Age', '3600');
@@ -492,28 +492,28 @@ app.options('/network-ip', (req: express.Request, res: express.Response) => {
 app.get('/network-ip', authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     console.log('🌐 [NETWORK IP API] Fetching all network IP assignments...');
-    
+
     const organizationId = req.user?.organizationId;
-    
+
     if (!organizationId) {
       return res.status(403).json({
         success: false,
         error: 'User not associated with any organization'
       });
     }
-    
+
     // Get network IP assignments for the organization
     let ipQuery: any = db.collection('networkIPAssignments');
     if (organizationId) {
       ipQuery = ipQuery.where('organizationId', '==', organizationId);
     }
-    
+
     const ipSnapshot = await ipQuery.get();
     const ipAssignments = ipSnapshot.docs.map((doc: any) => ({
       id: doc.id,
       ...doc.data()
     }));
-    
+
     console.log(`✅ [NETWORK IP API] Found ${ipAssignments.length} IP assignments`);
     return res.status(200).json({
       success: true,
@@ -547,13 +547,13 @@ app.options('/networks', (req: express.Request, res: express.Response) => {
     'http://localhost:4010',
     'http://localhost:5173'
   ];
-  
+
   if (origin && (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development')) {
     res.set('Access-Control-Allow-Origin', origin);
   } else {
     res.set('Access-Control-Allow-Origin', '*');
   }
-  
+
   res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   res.set('Access-Control-Max-Age', '3600');
@@ -564,11 +564,11 @@ app.options('/networks', (req: express.Request, res: express.Response) => {
 app.get('/networks', authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     console.log('🌐 [NETWORKS API] Fetching all networks...');
-    
+
     const userId = req.user?.uid;
     const userEmail = (req.user as any)?.email;
     const organizationId = req.user?.organizationId;
-    
+
     // Get user's organization ID if not in token
     let userData: any = null;
     if (!organizationId) {
@@ -587,28 +587,28 @@ app.get('/networks', authenticateToken, async (req: express.Request, res: expres
         }
       }
     }
-    
+
     const finalOrganizationId = organizationId || userData?.organizationId;
-    
+
     if (!finalOrganizationId) {
       return res.status(403).json({
         success: false,
         error: 'User not associated with any organization'
       });
     }
-    
+
     // Get networks for the organization
     let networksQuery: any = db.collection('networks');
     if (finalOrganizationId) {
       networksQuery = networksQuery.where('organizationId', '==', finalOrganizationId);
     }
-    
+
     const networksSnapshot = await networksQuery.get();
     const networks = networksSnapshot.docs.map((doc: any) => ({
       id: doc.id,
       ...doc.data()
     }));
-    
+
     console.log(`✅ [NETWORKS API] Found ${networks.length} networks`);
     return res.status(200).json({
       success: true,
@@ -642,13 +642,13 @@ app.options('/inventory', (req: express.Request, res: express.Response) => {
     'http://localhost:4010',
     'http://localhost:5173'
   ];
-  
+
   if (origin && (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development')) {
     res.set('Access-Control-Allow-Origin', origin);
   } else {
     res.set('Access-Control-Allow-Origin', '*');
   }
-  
+
   res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   res.set('Access-Control-Max-Age', '3600');
@@ -659,11 +659,11 @@ app.options('/inventory', (req: express.Request, res: express.Response) => {
 app.get('/inventory', authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     console.log('📦 [INVENTORY API] Fetching all inventory items...');
-    
+
     const userId = req.user?.uid;
     const userEmail = (req.user as any)?.email;
     const organizationId = req.user?.organizationId;
-    
+
     // Get user's organization ID if not in token
     let userData: any = null;
     if (!organizationId) {
@@ -682,33 +682,33 @@ app.get('/inventory', authenticateToken, async (req: express.Request, res: expre
         }
       }
     }
-    
+
     const finalOrganizationId = organizationId || userData?.organizationId;
-    
+
     if (!finalOrganizationId) {
       return res.status(403).json({
         success: false,
         error: 'User not associated with any organization'
       });
     }
-    
+
     // Get inventory items for the organization
     let inventoryQuery: any = db.collection('inventoryItems');
     if (finalOrganizationId) {
       inventoryQuery = inventoryQuery.where('organizationId', '==', finalOrganizationId);
     }
-    
+
     // Handle search query parameter
     // Note: Firestore has limitations on multiple where clauses
     // If search is needed, we'll filter in memory after fetching
     const searchQuery = req.query.search as string;
-    
+
     const inventorySnapshot = await inventoryQuery.get();
     let inventoryItems = inventorySnapshot.docs.map((doc: any) => ({
       id: doc.id,
       ...doc.data()
     }));
-    
+
     // Apply search filter if provided (filter in memory since Firestore has query limitations)
     if (searchQuery) {
       const searchLower = searchQuery.toLowerCase();
@@ -717,13 +717,13 @@ app.get('/inventory', authenticateToken, async (req: express.Request, res: expre
         const type = (item.type || '').toLowerCase();
         const status = (item.status || '').toLowerCase();
         const department = (item.department || '').toLowerCase();
-        return name.includes(searchLower) || 
-               type.includes(searchLower) || 
-               status.includes(searchLower) || 
-               department.includes(searchLower);
+        return name.includes(searchLower) ||
+          type.includes(searchLower) ||
+          status.includes(searchLower) ||
+          department.includes(searchLower);
       });
     }
-    
+
     console.log(`✅ [INVENTORY API] Found ${inventoryItems.length} inventory items`);
     return res.status(200).json({
       success: true,
@@ -745,7 +745,7 @@ app.get('/inventory/:id', authenticateToken, async (req: express.Request, res: e
   try {
     const { id } = req.params;
     const inventoryDoc = await db.collection('inventoryItems').doc(id).get();
-    
+
     if (!inventoryDoc.exists) {
       return res.status(404).json({
         success: false,
@@ -789,13 +789,13 @@ app.options('/contacts', (req: express.Request, res: express.Response) => {
     'http://localhost:4010',
     'http://localhost:5173'
   ];
-  
+
   if (origin && (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development')) {
     res.set('Access-Control-Allow-Origin', origin);
   } else {
     res.set('Access-Control-Allow-Origin', '*');
   }
-  
+
   res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   res.set('Access-Control-Max-Age', '3600');
@@ -806,10 +806,10 @@ app.options('/contacts', (req: express.Request, res: express.Response) => {
 app.get('/contacts', authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     console.log('👥 [CONTACTS API] Fetching all contacts...');
-    
+
     const userId = req.user?.uid;
     const userEmail = (req.user as any)?.email;
-    
+
     // Get user's organization ID
     let userData: any = null;
     const userDocByUid = await db.collection('users').doc(userId).get();
@@ -826,28 +826,28 @@ app.get('/contacts', authenticateToken, async (req: express.Request, res: expres
         }
       }
     }
-    
+
     if (!userData) {
       return res.status(404).json({
         success: false,
         error: 'User not found'
       });
     }
-    
+
     const organizationId = userData.organizationId;
-    
+
     // Get contacts for the organization
     let contactsQuery: any = db.collection('contacts');
     if (organizationId) {
       contactsQuery = contactsQuery.where('organizationId', '==', organizationId);
     }
-    
+
     const contactsSnapshot = await contactsQuery.get();
     const contacts = contactsSnapshot.docs.map((doc: any) => ({
       id: doc.id,
       ...doc.data()
     }));
-    
+
     console.log(`✅ [CONTACTS API] Found ${contacts.length} contacts`);
     return res.status(200).json({
       success: true,
@@ -869,7 +869,7 @@ app.get('/contacts/:id', authenticateToken, async (req: express.Request, res: ex
   try {
     const { id } = req.params;
     const contactDoc = await db.collection('contacts').doc(id).get();
-    
+
     if (!contactDoc.exists) {
       return res.status(404).json({
         success: false,
@@ -914,7 +914,7 @@ app.options('/schemas', (req: express.Request, res: express.Response) => {
     'http://localhost:4010',
     'http://localhost:5173'
   ];
-  
+
   // In development, allow all localhost origins
   if (process.env.NODE_ENV === 'development' || process.env.FUNCTIONS_EMULATOR === 'true') {
     if (origin && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
@@ -926,7 +926,7 @@ app.options('/schemas', (req: express.Request, res: express.Response) => {
       return res.status(200).send('');
     }
   }
-  
+
   // When credentials are required, we cannot use '*' - must specify exact origin
   if (origin && allowedOrigins.includes(origin)) {
     res.set('Access-Control-Allow-Origin', origin);
@@ -939,7 +939,7 @@ app.options('/schemas', (req: express.Request, res: express.Response) => {
     res.set('Access-Control-Allow-Origin', '*');
     // Don't set credentials when using wildcard
   }
-  
+
   res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
   res.set('Access-Control-Allow-Headers', corsOptions.allowedHeaders.join(', '));
   res.set('Access-Control-Max-Age', '3600');
@@ -950,28 +950,28 @@ app.options('/schemas', (req: express.Request, res: express.Response) => {
 app.get('/schemas', authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     console.log('📋 [SCHEMAS API] Fetching all schemas...');
-    
+
     const organizationId = req.user?.organizationId;
-    
+
     if (!organizationId) {
       return res.status(403).json({
         success: false,
         error: 'User not associated with any organization'
       });
     }
-    
+
     // Get schemas for the organization
     let schemasQuery: any = db.collection('schemas');
     if (organizationId) {
       schemasQuery = schemasQuery.where('organizationId', '==', organizationId);
     }
-    
+
     const schemasSnapshot = await schemasQuery.get();
     const schemas = schemasSnapshot.docs.map((doc: any) => ({
       id: doc.id,
       ...doc.data()
     }));
-    
+
     console.log(`✅ [SCHEMAS API] Found ${schemas.length} schemas`);
     return res.status(200).json({
       success: true,
@@ -1005,13 +1005,13 @@ app.options('/sessions', (req: express.Request, res: express.Response) => {
     'http://localhost:4010',
     'http://localhost:5173'
   ];
-  
+
   if (origin && (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development')) {
     res.set('Access-Control-Allow-Origin', origin);
   } else {
     res.set('Access-Control-Allow-Origin', '*');
   }
-  
+
   res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   res.set('Access-Control-Max-Age', '3600');
@@ -1030,13 +1030,13 @@ app.options('/sessions/:id', (req: express.Request, res: express.Response) => {
     'http://localhost:4010',
     'http://localhost:5173'
   ];
-  
+
   if (origin && (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development')) {
     res.set('Access-Control-Allow-Origin', origin);
   } else {
     res.set('Access-Control-Allow-Origin', '*');
   }
-  
+
   res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   res.set('Access-Control-Max-Age', '3600');
@@ -1054,38 +1054,38 @@ app.get('/sessions', authenticateToken, async (req: express.Request, res: expres
       query: req.query,
       hasUser: !!req.user
     });
-    
+
     const organizationId = req.user?.organizationId;
-    
+
     if (!organizationId) {
       return res.status(403).json({
         success: false,
         error: 'User not associated with any organization'
       });
     }
-    
+
     const { projectId, status, limit = 100 } = req.query;
-    
+
     // Build query
     let sessionsQuery: any = db.collection('sessions').where('organizationId', '==', organizationId);
-    
+
     if (projectId) {
       sessionsQuery = sessionsQuery.where('projectId', '==', projectId);
     }
-    
+
     if (status) {
       sessionsQuery = sessionsQuery.where('status', '==', status);
     }
-    
+
     sessionsQuery = sessionsQuery.limit(parseInt(limit as string) || 100);
-    
+
     const sessionsSnapshot = await sessionsQuery.get();
     const sessions = sessionsSnapshot.docs.map((doc: any) => ({
       id: doc.id,
       sessionId: doc.id,
       ...doc.data()
     }));
-    
+
     console.log(`✅ [SESSIONS API] Found ${sessions.length} sessions`);
     return res.status(200).json({
       success: true,
@@ -1116,13 +1116,13 @@ app.options('/sessions/tags', (req: express.Request, res: express.Response) => {
     'http://localhost:4010',
     'http://localhost:5173'
   ];
-  
+
   if (origin && (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development')) {
     res.set('Access-Control-Allow-Origin', origin);
   } else {
     res.set('Access-Control-Allow-Origin', '*');
   }
-  
+
   res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.set('Access-Control-Allow-Headers', corsOptions.allowedHeaders.join(', '));
   res.set('Access-Control-Max-Age', '3600');
@@ -1132,28 +1132,28 @@ app.options('/sessions/tags', (req: express.Request, res: express.Response) => {
 app.get('/sessions/tags', authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     console.log('🏷️ [SESSIONS TAGS API] Fetching all tags...');
-    
+
     const organizationId = req.user?.organizationId;
-    
+
     if (!organizationId) {
       return res.status(403).json({
         success: false,
         error: 'User not associated with any organization'
       });
     }
-    
+
     // Get tags for the organization
     // Tags can be stored in a separate collection or as part of media files
     // For now, we'll check if there's a mediaFileTags collection
     let tagsQuery: any = db.collection('mediaFileTags');
     tagsQuery = tagsQuery.where('organizationId', '==', organizationId);
-    
+
     const tagsSnapshot = await tagsQuery.get();
     const tags = tagsSnapshot.docs.map((doc: any) => ({
       id: doc.id,
       ...doc.data()
     }));
-    
+
     // If no tags collection exists, return empty array
     // The frontend will handle this gracefully
     console.log(`✅ [SESSIONS TAGS API] Found ${tags.length} tags`);
@@ -1172,7 +1172,7 @@ app.get('/sessions/tags', authenticateToken, async (req: express.Request, res: e
         total: 0
       });
     }
-    
+
     console.error('❌ [SESSIONS TAGS API] Error fetching tags:', error);
     return res.status(500).json({
       success: false,
@@ -1187,27 +1187,27 @@ app.get('/sessions/:id', authenticateToken, async (req: express.Request, res: ex
   try {
     const sessionId = req.params.id;
     console.log(`📋 [SESSIONS API] Fetching session: ${sessionId}`);
-    
+
     const organizationId = req.user?.organizationId;
-    
+
     if (!organizationId) {
       return res.status(403).json({
         success: false,
         error: 'User not associated with any organization'
       });
     }
-    
+
     const sessionDoc = await db.collection('sessions').doc(sessionId).get();
-    
+
     if (!sessionDoc.exists) {
       return res.status(404).json({
         success: false,
         error: 'Session not found'
       });
     }
-    
+
     const sessionData = sessionDoc.data();
-    
+
     // Verify organization access
     if (sessionData?.organizationId !== organizationId) {
       return res.status(403).json({
@@ -1215,7 +1215,7 @@ app.get('/sessions/:id', authenticateToken, async (req: express.Request, res: ex
         error: 'Access denied to session'
       });
     }
-    
+
     return res.status(200).json({
       success: true,
       data: {
@@ -1238,26 +1238,26 @@ app.get('/sessions/:id', authenticateToken, async (req: express.Request, res: ex
 app.post('/sessions', authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     console.log('📝 [SESSIONS API] Creating session...');
-    
+
     const organizationId = req.user?.organizationId;
     const userId = req.user?.uid;
-    
+
     if (!organizationId) {
       return res.status(403).json({
         success: false,
         error: 'User not associated with any organization'
       });
     }
-    
+
     const { name, projectId, description, startDate, endDate, status = 'draft' } = req.body;
-    
+
     if (!name || !projectId) {
       return res.status(400).json({
         success: false,
         error: 'Missing required fields: name and projectId are required'
       });
     }
-    
+
     const sessionData = {
       name,
       projectId,
@@ -1270,9 +1270,9 @@ app.post('/sessions', authenticateToken, async (req: express.Request, res: expre
       createdAt: new Date(),
       updatedAt: new Date()
     };
-    
+
     const sessionRef = await db.collection('sessions').add(sessionData);
-    
+
     console.log(`✅ [SESSIONS API] Created session: ${sessionRef.id}`);
     return res.status(200).json({
       success: true,
@@ -1297,43 +1297,43 @@ app.put('/sessions/:id', authenticateToken, async (req: express.Request, res: ex
   try {
     const sessionId = req.params.id;
     console.log(`✏️ [SESSIONS API] Updating session: ${sessionId}`);
-    
+
     const organizationId = req.user?.organizationId;
-    
+
     if (!organizationId) {
       return res.status(403).json({
         success: false,
         error: 'User not associated with any organization'
       });
     }
-    
+
     // Verify session exists and user has access
     const sessionDoc = await db.collection('sessions').doc(sessionId).get();
-    
+
     if (!sessionDoc.exists) {
       return res.status(404).json({
         success: false,
         error: 'Session not found'
       });
     }
-    
+
     const sessionData = sessionDoc.data();
-    
+
     if (sessionData?.organizationId !== organizationId) {
       return res.status(403).json({
         success: false,
         error: 'Access denied to session'
       });
     }
-    
+
     const updates = req.body;
     const updateData = {
       ...updates,
       updatedAt: new Date()
     };
-    
+
     await db.collection('sessions').doc(sessionId).update(updateData);
-    
+
     console.log(`✅ [SESSIONS API] Updated session: ${sessionId}`);
     return res.status(200).json({
       success: true,
@@ -1358,37 +1358,37 @@ app.delete('/sessions/:id', authenticateToken, async (req: express.Request, res:
   try {
     const sessionId = req.params.id;
     console.log(`🗑️ [SESSIONS API] Deleting session: ${sessionId}`);
-    
+
     const organizationId = req.user?.organizationId;
-    
+
     if (!organizationId) {
       return res.status(403).json({
         success: false,
         error: 'User not associated with any organization'
       });
     }
-    
+
     // Verify session exists and user has access
     const sessionDoc = await db.collection('sessions').doc(sessionId).get();
-    
+
     if (!sessionDoc.exists) {
       return res.status(404).json({
         success: false,
         error: 'Session not found'
       });
     }
-    
+
     const sessionData = sessionDoc.data();
-    
+
     if (sessionData?.organizationId !== organizationId) {
       return res.status(403).json({
         success: false,
         error: 'Access denied to session'
       });
     }
-    
+
     await db.collection('sessions').doc(sessionId).delete();
-    
+
     console.log(`✅ [SESSIONS API] Deleted session: ${sessionId}`);
     return res.status(200).json({
       success: true,
@@ -1421,13 +1421,13 @@ app.options('/workflow-templates', (req: express.Request, res: express.Response)
     'http://localhost:4010',
     'http://localhost:5173'
   ];
-  
+
   if (origin && (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development')) {
     res.set('Access-Control-Allow-Origin', origin);
   } else {
     res.set('Access-Control-Allow-Origin', '*');
   }
-  
+
   res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   res.set('Access-Control-Max-Age', '3600');
@@ -1438,26 +1438,26 @@ app.options('/workflow-templates', (req: express.Request, res: express.Response)
 app.get('/workflow-templates', authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     console.log('📋 [WORKFLOW TEMPLATES API] Fetching all workflow templates...');
-    
+
     const organizationId = req.user?.organizationId;
-    
+
     if (!organizationId) {
       return res.status(403).json({
         success: false,
         error: 'User not associated with any organization'
       });
     }
-    
+
     // Get workflow templates for the organization
     let templatesQuery: any = db.collection('workflowTemplates');
     templatesQuery = templatesQuery.where('organizationId', '==', organizationId);
-    
+
     const templatesSnapshot = await templatesQuery.get();
     const templates = templatesSnapshot.docs.map((doc: any) => ({
       id: doc.id,
       ...doc.data()
     }));
-    
+
     console.log(`✅ [WORKFLOW TEMPLATES API] Found ${templates.length} templates`);
     return res.status(200).json({
       success: true,
@@ -1487,13 +1487,13 @@ app.options('/workflow-instances', (req: express.Request, res: express.Response)
     'http://localhost:4010',
     'http://localhost:5173'
   ];
-  
+
   if (origin && (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development')) {
     res.set('Access-Control-Allow-Origin', origin);
   } else {
     res.set('Access-Control-Allow-Origin', '*');
   }
-  
+
   res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   res.set('Access-Control-Max-Age', '3600');
@@ -1504,26 +1504,26 @@ app.options('/workflow-instances', (req: express.Request, res: express.Response)
 app.get('/workflow-instances', authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     console.log('📋 [WORKFLOW INSTANCES API] Fetching all workflow instances...');
-    
+
     const organizationId = req.user?.organizationId;
-    
+
     if (!organizationId) {
       return res.status(403).json({
         success: false,
         error: 'User not associated with any organization'
       });
     }
-    
+
     // Get workflow instances for the organization
     let instancesQuery: any = db.collection('workflowInstances');
     instancesQuery = instancesQuery.where('organizationId', '==', organizationId);
-    
+
     const instancesSnapshot = await instancesQuery.get();
     const instances = instancesSnapshot.docs.map((doc: any) => ({
       id: doc.id,
       ...doc.data()
     }));
-    
+
     console.log(`✅ [WORKFLOW INSTANCES API] Found ${instances.length} instances`);
     return res.status(200).json({
       success: true,
@@ -1553,41 +1553,132 @@ app.options('/workflow/sessions/:sessionId/all', (req: express.Request, res: exp
     'http://localhost:4010',
     'http://localhost:5173'
   ];
-  
+
   if (origin && (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development')) {
     res.set('Access-Control-Allow-Origin', origin);
   } else {
     res.set('Access-Control-Allow-Origin', '*');
   }
-  
+
+  res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  res.set('Access-Control-Max-Age', '3600');
+  res.status(200).send('');
+});
+// Get workflow instance and steps for a session (primary endpoint for frontend)
+app.options('/workflow/sessions/:sessionId', (req: express.Request, res: express.Response) => {
+  const origin = req.headers.origin;
+  const allowedOrigins = [
+    'https://backbone-logic.web.app',
+    'https://backbone-client.web.app',
+    'https://dashboard-1c3a5.web.app',
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://localhost:4003',
+    'http://localhost:4010',
+    'http://localhost:5173'
+  ];
+
+  if (origin && (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development')) {
+    res.set('Access-Control-Allow-Origin', origin);
+  } else {
+    res.set('Access-Control-Allow-Origin', '*');
+  }
+
   res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   res.set('Access-Control-Max-Age', '3600');
   res.status(200).send('');
 });
 
-// Get all workflows for a session
-app.get('/workflow/sessions/:sessionId/all', authenticateToken, async (req: express.Request, res: express.Response) => {
+app.get('/workflow/sessions/:sessionId', authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     const sessionId = decodeURIComponent(req.params.sessionId);
-    console.log(`🔍 [WORKFLOW API] Getting all workflows for session ${sessionId}`);
-    console.log(`🔍 [WORKFLOW API] Request path: ${req.path}, originalUrl: ${req.originalUrl}`);
-    
+    console.log(`🔍 [WORKFLOW API] Getting workflow for session ${sessionId}`);
+
     const organizationId = req.user?.organizationId;
-    
+
     if (!organizationId) {
       return res.status(403).json({
         success: false,
         error: 'User not associated with any organization'
       });
     }
-    
+
+    // 1. Get workflow instance
+    const instanceSnapshot = await db.collection('workflowInstances')
+      .where('sessionId', '==', sessionId)
+      .where('organizationId', '==', organizationId)
+      .limit(1)
+      .get();
+
+    let workflowInstance = null;
+    if (!instanceSnapshot.empty) {
+      const doc = instanceSnapshot.docs[0];
+      const data = doc.data();
+      // Handle timestamps for JSON serialization
+      const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : data.createdAt;
+
+      workflowInstance = {
+        id: doc.id,
+        ...data,
+        createdAt
+      };
+    }
+
+    // 2. Get workflow steps
+    const stepsSnapshot = await db.collection('workflowSteps')
+      .where('sessionId', '==', sessionId)
+      .where('organizationId', '==', organizationId)
+      .orderBy('order', 'asc')
+      .get();
+
+    const steps = stepsSnapshot.docs.map((doc: any) => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    console.log(`✅ [WORKFLOW API] Found instance: ${!!workflowInstance}, steps: ${steps.length} for session ${sessionId}`);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        workflowInstance,
+        steps
+      }
+    });
+  } catch (error: any) {
+    console.error('❌ [WORKFLOW API] Error getting session workflow:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to get session workflow',
+      error: error.message || String(error)
+    });
+  }
+});
+
+
+app.get('/workflow/sessions/:sessionId/all', authenticateToken, async (req: express.Request, res: express.Response) => {
+  try {
+    const sessionId = decodeURIComponent(req.params.sessionId);
+    console.log(`🔍 [WORKFLOW API] Getting all workflows for session ${sessionId}`);
+    console.log(`🔍 [WORKFLOW API] Request path: ${req.path}, originalUrl: ${req.originalUrl}`);
+
+    const organizationId = req.user?.organizationId;
+
+    if (!organizationId) {
+      return res.status(403).json({
+        success: false,
+        error: 'User not associated with any organization'
+      });
+    }
+
     // Get all workflow instances for this session
     let workflowsQuery: any = db.collection('sessionWorkflows');
     workflowsQuery = workflowsQuery
       .where('organizationId', '==', organizationId)
       .where('sessionId', '==', sessionId);
-    
+
     const workflowsSnapshot = await workflowsQuery.get();
     const workflows = workflowsSnapshot.docs.map((doc: any) => {
       const data = doc.data();
@@ -1606,7 +1697,7 @@ app.get('/workflow/sessions/:sessionId/all', authenticateToken, async (req: expr
         ...data
       };
     });
-    
+
     console.log(`✅ [WORKFLOW API] Found ${workflows.length} workflows for session ${sessionId}`);
     return res.status(200).json({
       success: true,
@@ -1640,13 +1731,13 @@ app.options('/unified-workflow/sessions/:sessionId/analytics', (req: express.Req
     'http://localhost:4010',
     'http://localhost:5173'
   ];
-  
+
   if (origin && (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development')) {
     res.set('Access-Control-Allow-Origin', origin);
   } else {
     res.set('Access-Control-Allow-Origin', '*');
   }
-  
+
   res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   res.set('Access-Control-Max-Age', '3600');
@@ -1658,41 +1749,41 @@ app.get('/unified-workflow/sessions/:sessionId/analytics', authenticateToken, as
   try {
     const sessionId = decodeURIComponent(req.params.sessionId);
     console.log(`📊 [UNIFIED WORKFLOW ANALYTICS] Getting analytics for session ${sessionId}`);
-    
+
     const organizationId = req.user?.organizationId;
-    
+
     if (!organizationId) {
       return res.status(403).json({
         success: false,
         error: 'User not associated with any organization'
       });
     }
-    
+
     // Verify session exists and user has access
     const sessionDoc = await db.collection('sessions').doc(sessionId).get();
-    
+
     if (!sessionDoc.exists) {
       return res.status(404).json({
         success: false,
         error: 'Session not found'
       });
     }
-    
+
     const sessionData = sessionDoc.data();
-    
+
     if (sessionData?.organizationId !== organizationId) {
       return res.status(403).json({
         success: false,
         error: 'Access denied to session'
       });
     }
-    
+
     // Get workflow instances for this session
     const workflowsSnapshot = await db.collection('sessionWorkflows')
       .where('organizationId', '==', organizationId)
       .where('sessionId', '==', sessionId)
       .get();
-    
+
     const workflows = workflowsSnapshot.docs.map((doc: any) => {
       const data = doc.data();
       return {
@@ -1700,16 +1791,16 @@ app.get('/unified-workflow/sessions/:sessionId/analytics', authenticateToken, as
         ...data
       };
     });
-    
+
     // Calculate analytics
     const totalSteps = workflows.reduce((sum: number, wf: any) => sum + (wf.stepsCount || 0), 0);
     const completedSteps = workflows.reduce((sum: number, wf: any) => sum + (wf.completedSteps || 0), 0);
     const inProgressSteps = workflows.reduce((sum: number, wf: any) => sum + (wf.inProgressSteps || 0), 0);
     const blockedSteps = workflows.reduce((sum: number, wf: any) => sum + (wf.blockedSteps || 0), 0);
-    const overallProgress = workflows.length > 0 
-      ? workflows.reduce((sum: number, wf: any) => sum + (wf.progress || 0), 0) / workflows.length 
+    const overallProgress = workflows.length > 0
+      ? workflows.reduce((sum: number, wf: any) => sum + (wf.progress || 0), 0) / workflows.length
       : 0;
-    
+
     const analytics = {
       sessionId,
       overallProgress: Math.round(overallProgress * 100) / 100,
@@ -1727,7 +1818,7 @@ app.get('/unified-workflow/sessions/:sessionId/analytics', authenticateToken, as
         completedSteps: wf.completedSteps || 0
       }))
     };
-    
+
     console.log(`✅ [UNIFIED WORKFLOW ANALYTICS] Analytics calculated for session ${sessionId}`);
     return res.status(200).json({
       success: true,
@@ -1756,13 +1847,13 @@ app.options('/workflow/sessions/:sessionId/status', (req: express.Request, res: 
     'http://localhost:4010',
     'http://localhost:5173'
   ];
-  
+
   if (origin && (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development')) {
     res.set('Access-Control-Allow-Origin', origin);
   } else {
     res.set('Access-Control-Allow-Origin', '*');
   }
-  
+
   res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   res.set('Access-Control-Max-Age', '3600');
@@ -1774,42 +1865,42 @@ app.get('/workflow/sessions/:sessionId/status', authenticateToken, async (req: e
   try {
     const sessionId = decodeURIComponent(req.params.sessionId);
     console.log(`📊 [WORKFLOW STATUS] Getting status for session ${sessionId}`);
-    
+
     const organizationId = req.user?.organizationId;
-    
+
     if (!organizationId) {
       return res.status(403).json({
         success: false,
         error: 'User not associated with any organization'
       });
     }
-    
+
     // Verify session exists and user has access
     const sessionDoc = await db.collection('sessions').doc(sessionId).get();
-    
+
     if (!sessionDoc.exists) {
       return res.status(404).json({
         success: false,
         error: 'Session not found'
       });
     }
-    
+
     const sessionData = sessionDoc.data();
-    
+
     if (sessionData?.organizationId !== organizationId) {
       return res.status(403).json({
         success: false,
         error: 'Access denied to session'
       });
     }
-    
+
     // Get workflow instances for this session
     const workflowsSnapshot = await db.collection('sessionWorkflows')
       .where('organizationId', '==', organizationId)
       .where('sessionId', '==', sessionId)
       .limit(1)
       .get();
-    
+
     if (workflowsSnapshot.empty) {
       return res.status(200).json({
         success: true,
@@ -1823,9 +1914,9 @@ app.get('/workflow/sessions/:sessionId/status', authenticateToken, async (req: e
         }
       });
     }
-    
+
     const workflow = workflowsSnapshot.docs[0].data();
-    
+
     const statusData = {
       sessionId,
       status: workflow.status || null,
@@ -1835,7 +1926,7 @@ app.get('/workflow/sessions/:sessionId/status', authenticateToken, async (req: e
       inProgressSteps: workflow.inProgressSteps || 0,
       workflowId: workflowsSnapshot.docs[0].id
     };
-    
+
     console.log(`✅ [WORKFLOW STATUS] Status retrieved for session ${sessionId}`);
     return res.status(200).json({
       success: true,
@@ -1864,13 +1955,13 @@ app.options('/sessions/active-with-times', (req: express.Request, res: express.R
     'http://localhost:4010',
     'http://localhost:5173'
   ];
-  
+
   if (origin && (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development')) {
     res.set('Access-Control-Allow-Origin', origin);
   } else {
     res.set('Access-Control-Allow-Origin', '*');
   }
-  
+
   res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   res.set('Access-Control-Max-Age', '3600');
@@ -1881,25 +1972,25 @@ app.options('/sessions/active-with-times', (req: express.Request, res: express.R
 app.get('/sessions/active-with-times', authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     console.log('📋 [SESSIONS API] Fetching active sessions with times...');
-    
+
     const organizationId = req.user?.organizationId;
-    
+
     if (!organizationId) {
       return res.status(403).json({
         success: false,
         error: 'User not associated with any organization'
       });
     }
-    
+
     // Get active sessions with call times
     // Note: Firestore doesn't support != null queries, so we'll fetch all active sessions
     // and filter in memory for those with callTime
     const sessionsQuery = db.collection('sessions')
       .where('organizationId', '==', organizationId)
       .where('status', 'in', ['active', 'in_progress', 'scheduled', 'planned']);
-    
+
     const sessionsSnapshot = await sessionsQuery.get();
-    
+
     // Filter sessions that have callTime
     const sessionsWithTimes = sessionsSnapshot.docs.filter((doc: any) => {
       const data = doc.data();
@@ -1916,7 +2007,7 @@ app.get('/sessions/active-with-times', authenticateToken, async (req: express.Re
         ...data
       };
     });
-    
+
     console.log(`✅ [SESSIONS API] Found ${sessions.length} active sessions with times`);
     return res.status(200).json({
       success: true,
@@ -1938,16 +2029,16 @@ app.get('/sessions/:id/assignments', authenticateToken, async (req: express.Requ
   try {
     const sessionId = req.params.id;
     console.log(`📋 [SESSIONS API] Fetching assignments for session: ${sessionId}`);
-    
+
     const organizationId = req.user?.organizationId;
-    
+
     if (!organizationId) {
       return res.status(403).json({
         success: false,
         error: 'User not associated with any organization'
       });
     }
-    
+
     // Verify session exists and belongs to organization
     const sessionDoc = await db.collection('sessions').doc(sessionId).get();
     if (!sessionDoc.exists) {
@@ -1956,7 +2047,7 @@ app.get('/sessions/:id/assignments', authenticateToken, async (req: express.Requ
         error: 'Session not found'
       });
     }
-    
+
     const sessionData = sessionDoc.data();
     if (sessionData?.organizationId !== organizationId) {
       return res.status(403).json({
@@ -1964,18 +2055,18 @@ app.get('/sessions/:id/assignments', authenticateToken, async (req: express.Requ
         error: 'Access denied to this session'
       });
     }
-    
+
     // Get assignments for this session
     const assignmentsQuery = db.collection('sessionAssignments')
       .where('organizationId', '==', organizationId)
       .where('sessionId', '==', sessionId);
-    
+
     const assignmentsSnapshot = await assignmentsQuery.get();
     const assignments = assignmentsSnapshot.docs.map((doc: any) => ({
       id: doc.id,
       ...doc.data()
     }));
-    
+
     console.log(`✅ [SESSIONS API] Found ${assignments.length} assignments for session ${sessionId}`);
     return res.status(200).json({
       success: true,
@@ -1996,49 +2087,70 @@ app.get('/sessions/:id/assignments', authenticateToken, async (req: express.Requ
 app.get('/notifications', authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     console.log('🔔 [NOTIFICATIONS API] Fetching notifications...');
-    
+
     const organizationId = req.user?.organizationId;
     const userId = req.user?.uid;
-    
+
+    // 🔧 CRITICAL FIX: Return empty array instead of 403 if missing org/user
     if (!organizationId || !userId) {
-      return res.status(403).json({
-        success: false,
-        error: 'User not associated with any organization'
+      console.warn('⚠️ [NOTIFICATIONS API] Missing organizationId or userId in token, returning empty array');
+      return res.status(200).json({
+        success: true,
+        data: [],
+        total: 0,
+        warning: 'User not fully authenticated'
       });
     }
-    
+
     const { limit = 100, unreadOnly = false } = req.query;
-    
-    // Build query
-    let notificationsQuery: any = db.collection('notifications')
-      .where('organizationId', '==', organizationId)
-      .where('userId', '==', userId);
-    
-    if (unreadOnly === 'true') {
-      notificationsQuery = notificationsQuery.where('read', '==', false);
+
+    try {
+      // Build query
+      let notificationsQuery: any = db.collection('notifications')
+        .where('organizationId', '==', organizationId)
+        .where('userId', '==', userId);
+
+      if (unreadOnly === 'true') {
+        notificationsQuery = notificationsQuery.where('read', '==', false);
+      }
+
+      notificationsQuery = notificationsQuery
+        .orderBy('createdAt', 'desc')
+        .limit(parseInt(limit as string) || 100);
+
+      const notificationsSnapshot = await notificationsQuery.get();
+      const notifications = notificationsSnapshot.docs.map((doc: any) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt,
+          updatedAt: data.updatedAt?.toDate?.()?.toISOString() || data.updatedAt
+        };
+      });
+
+      console.log(`✅ [NOTIFICATIONS API] Found ${notifications.length} notifications`);
+      return res.status(200).json({
+        success: true,
+        data: notifications,
+        total: notifications.length
+      });
+    } catch (firestoreError: any) {
+      // Handle missing Firestore index error
+      if (firestoreError.code === 9 || firestoreError.message?.includes('index')) {
+        console.error(`❌ [NOTIFICATIONS API] Missing Firestore index. Please create the index in Firebase Console.`);
+        console.error(`🔗 Index creation link: https://console.firebase.google.com/project/_/firestore/indexes`);
+        
+        // Return empty array instead of error for better UX
+        return res.status(200).json({ 
+          success: true, 
+          data: [],
+          total: 0,
+          warning: 'Firestore index required. Notifications temporarily unavailable.' 
+        });
+      }
+      throw firestoreError;
     }
-    
-    notificationsQuery = notificationsQuery
-      .orderBy('createdAt', 'desc')
-      .limit(parseInt(limit as string) || 100);
-    
-    const notificationsSnapshot = await notificationsQuery.get();
-    const notifications = notificationsSnapshot.docs.map((doc: any) => {
-      const data = doc.data();
-      return {
-        id: doc.id,
-        ...data,
-        createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt,
-        updatedAt: data.updatedAt?.toDate?.()?.toISOString() || data.updatedAt
-      };
-    });
-    
-    console.log(`✅ [NOTIFICATIONS API] Found ${notifications.length} notifications`);
-    return res.status(200).json({
-      success: true,
-      data: notifications,
-      total: notifications.length
-    });
   } catch (error: any) {
     console.error('❌ [NOTIFICATIONS API] Error fetching notifications:', error);
     return res.status(500).json({
@@ -2067,13 +2179,13 @@ app.options('/timecard-admin', (req: express.Request, res: express.Response) => 
     'http://localhost:4010',
     'http://localhost:5173'
   ];
-  
+
   if (origin && (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development')) {
     res.set('Access-Control-Allow-Origin', origin);
   } else {
     res.set('Access-Control-Allow-Origin', '*');
   }
-  
+
   res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.set('Access-Control-Allow-Headers', corsOptions.allowedHeaders.join(', '));
   res.set('Access-Control-Max-Age', '3600');
@@ -2084,7 +2196,7 @@ app.options('/timecard-admin', (req: express.Request, res: express.Response) => 
 app.get('/timecard-admin', authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     console.log('📋 [TIMECARD ADMIN API] Timecard admin endpoint accessed');
-    
+
     res.status(200).json({
       success: true,
       message: 'Timecard Admin API - Use Firebase Callable Functions',
@@ -2118,7 +2230,7 @@ app.get('/timecard-admin', authenticateToken, async (req: express.Request, res: 
 // Handle OPTIONS for timecard endpoints
 app.options('/timecard/clock-in', (req: express.Request, res: express.Response) => {
   const origin = req.headers.origin;
-  if (origin && (corsOptions.origin as any)(origin, () => {})) {
+  if (origin && (corsOptions.origin as any)(origin, () => { })) {
     res.set('Access-Control-Allow-Origin', origin);
   } else {
     res.set('Access-Control-Allow-Origin', '*');
@@ -2131,7 +2243,7 @@ app.options('/timecard/clock-in', (req: express.Request, res: express.Response) 
 
 app.options('/timecard/clock-out', (req: express.Request, res: express.Response) => {
   const origin = req.headers.origin;
-  if (origin && (corsOptions.origin as any)(origin, () => {})) {
+  if (origin && (corsOptions.origin as any)(origin, () => { })) {
     res.set('Access-Control-Allow-Origin', origin);
   } else {
     res.set('Access-Control-Allow-Origin', '*');
@@ -2144,7 +2256,7 @@ app.options('/timecard/clock-out', (req: express.Request, res: express.Response)
 
 app.options('/timecard/status', (req: express.Request, res: express.Response) => {
   const origin = req.headers.origin;
-  if (origin && (corsOptions.origin as any)(origin, () => {})) {
+  if (origin && (corsOptions.origin as any)(origin, () => { })) {
     res.set('Access-Control-Allow-Origin', origin);
   } else {
     res.set('Access-Control-Allow-Origin', '*');
@@ -2186,26 +2298,26 @@ app.post('/timecard/clock-in', authenticateToken, async (req: express.Request, r
       const existingEntry = activeEntryQuery.docs[0];
       const existingData: any = { id: existingEntry.id, ...existingEntry.data() };
       const clockInTime = (existingData.clockInTime as admin.firestore.Timestamp)?.toDate();
-      
+
       // Check if entry is stale (more than 12 hours old or from previous day)
       const hoursSinceClockIn = (now.getTime() - clockInTime.getTime()) / (1000 * 60 * 60);
       const clockInDate = clockInTime.toISOString().split('T')[0];
       const isFromPreviousDay = clockInDate !== today;
       const STALE_THRESHOLD_HOURS = 12;
-      
+
       if (isFromPreviousDay || hoursSinceClockIn > STALE_THRESHOLD_HOURS) {
         // Auto-clock out stale entry
-        const reason = isFromPreviousDay 
-          ? `Entry from previous day (${clockInDate})` 
+        const reason = isFromPreviousDay
+          ? `Entry from previous day (${clockInDate})`
           : `Entry is ${hoursSinceClockIn.toFixed(1)} hours old`;
         console.log(`⏰ [TIMECARD CLOCK-IN] Auto-clocking out stale entry: ${reason}`);
-        
+
         // Calculate total hours (cap at 24 for safety)
         const totalHours = Math.min(hoursSinceClockIn, 24);
-        const clockOutTime = isFromPreviousDay 
+        const clockOutTime = isFromPreviousDay
           ? admin.firestore.Timestamp.fromDate(new Date(clockInDate + 'T23:59:59')) // End of previous day
           : admin.firestore.Timestamp.fromDate(now); // Current time
-        
+
         await existingEntry.ref.update({
           clockOutTime: clockOutTime,
           totalHours: totalHours,
@@ -2213,7 +2325,7 @@ app.post('/timecard/clock-in', authenticateToken, async (req: express.Request, r
           notes: (existingData.notes || '') + ` [Auto-clocked out: ${reason}]`,
           updatedAt: admin.firestore.FieldValue.serverTimestamp()
         });
-        
+
         console.log(`✅ [TIMECARD CLOCK-IN] Stale entry auto-clocked out, proceeding with new clock-in`);
         // Continue to create new entry below
       } else {
@@ -2424,13 +2536,13 @@ const brainHealthOptions = (req: express.Request, res: express.Response) => {
     'http://localhost:4010',
     'http://localhost:5173'
   ];
-  
+
   if (origin && (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development')) {
     res.set('Access-Control-Allow-Origin', origin);
   } else {
     res.set('Access-Control-Allow-Origin', '*');
   }
-  
+
   res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   res.set('Access-Control-Max-Age', '3600');
@@ -2444,7 +2556,7 @@ app.options('/api/brain/health', brainHealthOptions);
 app.get('/brain/health', authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     console.log('🧠 [BRAIN API] Health check requested');
-    
+
     res.status(200).json({
       status: 'ok',
       message: 'Brain service is operational',
@@ -2464,7 +2576,7 @@ app.get('/brain/health', authenticateToken, async (req: express.Request, res: ex
 app.get('/api/brain/health', authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     console.log('🧠 [BRAIN API] Health check requested');
-    
+
     res.status(200).json({
       status: 'ok',
       message: 'Brain service is operational',
@@ -2494,13 +2606,13 @@ const brainContextOptions = (req: express.Request, res: express.Response) => {
     'http://localhost:4010',
     'http://localhost:5173'
   ];
-  
+
   if (origin && (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development')) {
     res.set('Access-Control-Allow-Origin', origin);
   } else {
     res.set('Access-Control-Allow-Origin', '*');
   }
-  
+
   res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   res.set('Access-Control-Max-Age', '3600');
@@ -2514,22 +2626,22 @@ app.options('/api/brain/context', brainContextOptions);
 app.get('/brain/context', authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     console.log('🧠 [BRAIN API] Context requested');
-    
+
     const organizationId = req.user?.organizationId;
     const userId = req.user?.uid;
-    
+
     if (!organizationId) {
       return res.status(403).json({
         success: false,
         error: 'User not associated with any organization'
       });
     }
-    
+
     // Get basic system stats
     const usersSnapshot = await db.collection('users').where('organizationId', '==', organizationId).limit(10).get();
     const sessionsSnapshot = await db.collection('sessions').where('organizationId', '==', organizationId).limit(10).get();
     const inventorySnapshot = await db.collection('inventoryItems').where('organizationId', '==', organizationId).limit(10).get();
-    
+
     const context = {
       timestamp: new Date().toISOString(),
       server: {
@@ -2596,7 +2708,7 @@ app.get('/brain/context', authenticateToken, async (req: express.Request, res: e
         }
       }
     };
-    
+
     res.status(200).json({
       success: true,
       context,
@@ -2616,22 +2728,22 @@ app.get('/brain/context', authenticateToken, async (req: express.Request, res: e
 app.get('/api/brain/context', authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     console.log('🧠 [BRAIN API] Context requested');
-    
+
     const organizationId = req.user?.organizationId;
     const userId = req.user?.uid;
-    
+
     if (!organizationId) {
       return res.status(403).json({
         success: false,
         error: 'User not associated with any organization'
       });
     }
-    
+
     // Get basic system stats
     const usersSnapshot = await db.collection('users').where('organizationId', '==', organizationId).limit(10).get();
     const sessionsSnapshot = await db.collection('sessions').where('organizationId', '==', organizationId).limit(10).get();
     const inventorySnapshot = await db.collection('inventoryItems').where('organizationId', '==', organizationId).limit(10).get();
-    
+
     const context = {
       timestamp: new Date().toISOString(),
       server: {
@@ -2698,7 +2810,7 @@ app.get('/api/brain/context', authenticateToken, async (req: express.Request, re
         }
       }
     };
-    
+
     res.status(200).json({
       success: true,
       context,
@@ -2728,13 +2840,13 @@ const brainChatOptions = (req: express.Request, res: express.Response) => {
     'http://localhost:4010',
     'http://localhost:5173'
   ];
-  
+
   if (origin && (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development')) {
     res.set('Access-Control-Allow-Origin', origin);
   } else {
     res.set('Access-Control-Allow-Origin', '*');
   }
-  
+
   res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   res.set('Access-Control-Max-Age', '3600');
@@ -2748,16 +2860,16 @@ app.options('/api/brain/chat', brainChatOptions);
 app.post('/brain/chat', authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     console.log('🧠 [BRAIN API] Chat request received');
-    
+
     const { message, context, contextMode } = req.body;
-    
+
     if (!message) {
       return res.status(400).json({
         success: false,
         error: 'Message is required'
       });
     }
-    
+
     // TODO: Implement actual AI chat processing
     // For now, return a placeholder response
     res.status(200).json({
@@ -2793,16 +2905,16 @@ app.post('/brain/chat', authenticateToken, async (req: express.Request, res: exp
 app.post('/api/brain/chat', authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     console.log('🧠 [BRAIN API] Chat request received');
-    
+
     const { message, context, contextMode } = req.body;
-    
+
     if (!message) {
       return res.status(400).json({
         success: false,
         error: 'Message is required'
       });
     }
-    
+
     // TODO: Implement actual AI chat processing
     // For now, return a placeholder response
     res.status(200).json({
@@ -2848,13 +2960,13 @@ const brainSessionsOptions = (req: express.Request, res: express.Response) => {
     'http://localhost:4010',
     'http://localhost:5173'
   ];
-  
+
   if (origin && (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development')) {
     res.set('Access-Control-Allow-Origin', origin);
   } else {
     res.set('Access-Control-Allow-Origin', '*');
   }
-  
+
   res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   res.set('Access-Control-Max-Age', '3600');
@@ -2868,25 +2980,25 @@ app.options('/api/brain/sessions', brainSessionsOptions);
 app.post('/brain/sessions', authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     console.log('🧠 [BRAIN API] Creating chat session');
-    
+
     const userId = req.user?.uid;
     const organizationId = req.user?.organizationId;
     const { title, context } = req.body;
-    
+
     if (!userId) {
       return res.status(401).json({
         success: false,
         error: 'User not authenticated'
       });
     }
-    
+
     if (!organizationId) {
       return res.status(403).json({
         success: false,
         error: 'User not associated with any organization'
       });
     }
-    
+
     const sessionData = {
       userId,
       organizationId,
@@ -2897,11 +3009,11 @@ app.post('/brain/sessions', authenticateToken, async (req: express.Request, res:
       updatedAt: new Date(),
       messages: []
     };
-    
+
     const sessionRef = await db.collection('brainSessions').add(sessionData);
-    
+
     console.log(`✅ [BRAIN API] Created session: ${sessionRef.id}`);
-    
+
     res.status(200).json({
       id: sessionRef.id,
       ...sessionData
@@ -2919,25 +3031,25 @@ app.post('/brain/sessions', authenticateToken, async (req: express.Request, res:
 app.post('/api/brain/sessions', authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     console.log('🧠 [BRAIN API] Creating chat session');
-    
+
     const userId = req.user?.uid;
     const organizationId = req.user?.organizationId;
     const { title, context } = req.body;
-    
+
     if (!userId) {
       return res.status(401).json({
         success: false,
         error: 'User not authenticated'
       });
     }
-    
+
     if (!organizationId) {
       return res.status(403).json({
         success: false,
         error: 'User not associated with any organization'
       });
     }
-    
+
     const sessionData = {
       userId,
       organizationId,
@@ -2948,11 +3060,11 @@ app.post('/api/brain/sessions', authenticateToken, async (req: express.Request, 
       updatedAt: new Date(),
       messages: []
     };
-    
+
     const sessionRef = await db.collection('brainSessions').add(sessionData);
-    
+
     console.log(`✅ [BRAIN API] Created session: ${sessionRef.id}`);
-    
+
     res.status(200).json({
       id: sessionRef.id,
       ...sessionData
@@ -2971,24 +3083,24 @@ app.post('/api/brain/sessions', authenticateToken, async (req: express.Request, 
 app.get('/brain/sessions', authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     console.log('🧠 [BRAIN API] Getting user sessions');
-    
+
     const userId = req.user?.uid;
     const organizationId = req.user?.organizationId;
-    
+
     if (!userId) {
       return res.status(401).json({
         success: false,
         error: 'User not authenticated'
       });
     }
-    
+
     if (!organizationId) {
       return res.status(403).json({
         success: false,
         error: 'User not associated with any organization'
       });
     }
-    
+
     const sessionsSnapshot = await db.collection('brainSessions')
       .where('userId', '==', userId)
       .where('organizationId', '==', organizationId)
@@ -2996,12 +3108,12 @@ app.get('/brain/sessions', authenticateToken, async (req: express.Request, res: 
       .orderBy('updatedAt', 'desc')
       .limit(50)
       .get();
-    
+
     const sessions = sessionsSnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }));
-    
+
     res.status(200).json(sessions);
   } catch (error: any) {
     console.error('❌ [BRAIN API] Get sessions error:', error);
@@ -3016,24 +3128,24 @@ app.get('/brain/sessions', authenticateToken, async (req: express.Request, res: 
 app.get('/api/brain/sessions', authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     console.log('🧠 [BRAIN API] Getting user sessions');
-    
+
     const userId = req.user?.uid;
     const organizationId = req.user?.organizationId;
-    
+
     if (!userId) {
       return res.status(401).json({
         success: false,
         error: 'User not authenticated'
       });
     }
-    
+
     if (!organizationId) {
       return res.status(403).json({
         success: false,
         error: 'User not associated with any organization'
       });
     }
-    
+
     const sessionsSnapshot = await db.collection('brainSessions')
       .where('userId', '==', userId)
       .where('organizationId', '==', organizationId)
@@ -3041,12 +3153,12 @@ app.get('/api/brain/sessions', authenticateToken, async (req: express.Request, r
       .orderBy('updatedAt', 'desc')
       .limit(50)
       .get();
-    
+
     const sessions = sessionsSnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }));
-    
+
     res.status(200).json(sessions);
   } catch (error: any) {
     console.error('❌ [BRAIN API] Get sessions error:', error);
@@ -3075,13 +3187,13 @@ const projectsOptions = (req: express.Request, res: express.Response) => {
     'http://localhost:4010',
     'http://localhost:5173'
   ];
-  
+
   if (origin && (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development')) {
     res.set('Access-Control-Allow-Origin', origin);
   } else {
     res.set('Access-Control-Allow-Origin', '*');
   }
-  
+
   res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   res.set('Access-Control-Max-Age', '3600');
@@ -3103,13 +3215,13 @@ const projectsPublicOptions = (req: express.Request, res: express.Response) => {
     'http://localhost:4010',
     'http://localhost:5173'
   ];
-  
+
   if (origin && (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development')) {
     res.set('Access-Control-Allow-Origin', origin);
   } else {
     res.set('Access-Control-Allow-Origin', '*');
   }
-  
+
   res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   res.set('Access-Control-Max-Age', '3600');
@@ -3123,9 +3235,9 @@ app.options('/api/projects/public', projectsPublicOptions);
 app.get('/projects/public', async (req: express.Request, res: express.Response) => {
   try {
     console.log('📁 [PROJECTS API] Fetching public projects');
-    
+
     const { limit = 10, offset = 0 } = req.query;
-    
+
     // Get public projects from Firestore
     // Note: Firestore doesn't support offset, so we'll use limit only
     const limitNum = parseInt(limit as string);
@@ -3134,12 +3246,12 @@ app.get('/projects/public', async (req: express.Request, res: express.Response) 
       .where('isActive', '==', true)
       .limit(limitNum)
       .get();
-    
+
     const projects = projectsSnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }));
-    
+
     res.status(200).json({
       success: true,
       data: projects,
@@ -3163,9 +3275,9 @@ app.get('/projects/public', async (req: express.Request, res: express.Response) 
 app.get('/api/projects/public', async (req: express.Request, res: express.Response) => {
   try {
     console.log('📁 [PROJECTS API] Fetching public projects');
-    
+
     const { limit = 10, offset = 0 } = req.query;
-    
+
     // Get public projects from Firestore
     // Note: Firestore doesn't support offset, so we'll use limit only
     const limitNum = parseInt(limit as string);
@@ -3174,12 +3286,12 @@ app.get('/api/projects/public', async (req: express.Request, res: express.Respon
       .where('isActive', '==', true)
       .limit(limitNum)
       .get();
-    
+
     const projects = projectsSnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }));
-    
+
     res.status(200).json({
       success: true,
       data: projects,
@@ -3204,41 +3316,41 @@ app.get('/api/projects/public', async (req: express.Request, res: express.Respon
 app.get('/projects', authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     console.log('📁 [PROJECTS API] Fetching user projects');
-    
+
     const userId = req.user?.uid;
     const organizationId = req.user?.organizationId;
     const { limit = 50, offset = 0 } = req.query;
-    
+
     if (!userId) {
       return res.status(401).json({
         success: false,
         error: 'User not authenticated'
       });
     }
-    
+
     if (!organizationId) {
       return res.status(403).json({
         success: false,
         error: 'User not associated with any organization'
       });
     }
-    
+
     // Get projects for the user's organization
     // First try to get projects where user is owner or participant
     let projectsQuery: any = db.collection('projects')
       .where('organizationId', '==', organizationId)
       .where('isActive', '==', true);
-    
+
     const projectsSnapshot = await projectsQuery
       .limit(parseInt(limit as string))
       .get();
-    
+
     // Filter projects where user has access (owner or participant)
     const allProjects = projectsSnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }));
-    
+
     const userProjects = allProjects.filter((project: any) => {
       // User is owner
       if (project.ownerId === userId) return true;
@@ -3249,7 +3361,7 @@ app.get('/projects', authenticateToken, async (req: express.Request, res: expres
       // User has project assignment
       return false;
     });
-    
+
     res.status(200).json({
       success: true,
       data: userProjects,
@@ -3273,41 +3385,41 @@ app.get('/projects', authenticateToken, async (req: express.Request, res: expres
 app.get('/api/projects', authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     console.log('📁 [PROJECTS API] Fetching user projects');
-    
+
     const userId = req.user?.uid;
     const organizationId = req.user?.organizationId;
     const { limit = 50, offset = 0 } = req.query;
-    
+
     if (!userId) {
       return res.status(401).json({
         success: false,
         error: 'User not authenticated'
       });
     }
-    
+
     if (!organizationId) {
       return res.status(403).json({
         success: false,
         error: 'User not associated with any organization'
       });
     }
-    
+
     // Get projects for the user's organization
     // First try to get projects where user is owner or participant
     let projectsQuery: any = db.collection('projects')
       .where('organizationId', '==', organizationId)
       .where('isActive', '==', true);
-    
+
     const projectsSnapshot = await projectsQuery
       .limit(parseInt(limit as string))
       .get();
-    
+
     // Filter projects where user has access (owner or participant)
     const allProjects = projectsSnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }));
-    
+
     const userProjects = allProjects.filter((project: any) => {
       // User is owner
       if (project.ownerId === userId) return true;
@@ -3318,7 +3430,7 @@ app.get('/api/projects', authenticateToken, async (req: express.Request, res: ex
       // User has project assignment
       return false;
     });
-    
+
     res.status(200).json({
       success: true,
       data: userProjects,
@@ -3357,7 +3469,7 @@ app.options('/settings/user', (req: express.Request, res: express.Response) => {
     'http://localhost:4010',
     'http://localhost:5173'
   ];
-  
+
   // In development, allow all localhost origins
   if (process.env.NODE_ENV === 'development' || process.env.FUNCTIONS_EMULATOR === 'true') {
     if (origin && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
@@ -3369,7 +3481,7 @@ app.options('/settings/user', (req: express.Request, res: express.Response) => {
       return res.status(200).send('');
     }
   }
-  
+
   // When credentials are required, we cannot use '*' - must specify exact origin
   if (origin && allowedOrigins.includes(origin)) {
     res.set('Access-Control-Allow-Origin', origin);
@@ -3382,7 +3494,7 @@ app.options('/settings/user', (req: express.Request, res: express.Response) => {
     res.set('Access-Control-Allow-Origin', '*');
     // Don't set credentials when using wildcard
   }
-  
+
   res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
   res.set('Access-Control-Allow-Headers', corsOptions.allowedHeaders.join(', '));
   res.set('Access-Control-Max-Age', '3600');
@@ -3393,24 +3505,24 @@ app.options('/settings/user', (req: express.Request, res: express.Response) => {
 app.get('/settings/user', authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
     console.log('⚙️ [SETTINGS API] Fetching user settings...');
-    
+
     const userId = req.user?.uid;
     const organizationId = req.user?.organizationId;
-    
+
     if (!userId) {
       return res.status(401).json({
         success: false,
         error: 'User not authenticated'
       });
     }
-    
+
     if (!organizationId) {
       return res.status(403).json({
         success: false,
         error: 'User not associated with any organization'
       });
     }
-    
+
     // Get user settings from settings collection
     const settingsQuery = await db.collection('settings')
       .where('userId', '==', userId)
@@ -3467,7 +3579,7 @@ app.options('/user-activity/update', (req: express.Request, res: express.Respons
     'http://localhost:4010',
     'http://localhost:5173'
   ];
-  
+
   // In development, allow all localhost origins
   if (process.env.NODE_ENV === 'development' || process.env.FUNCTIONS_EMULATOR === 'true') {
     if (origin && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
@@ -3479,7 +3591,7 @@ app.options('/user-activity/update', (req: express.Request, res: express.Respons
       return res.status(200).send('');
     }
   }
-  
+
   // When credentials are required, we cannot use '*' - must specify exact origin
   if (origin && allowedOrigins.includes(origin)) {
     res.set('Access-Control-Allow-Origin', origin);
@@ -3492,7 +3604,7 @@ app.options('/user-activity/update', (req: express.Request, res: express.Respons
     res.set('Access-Control-Allow-Origin', '*');
     // Don't set credentials when using wildcard
   }
-  
+
   res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
   res.set('Access-Control-Allow-Headers', corsOptions.allowedHeaders.join(', '));
   res.set('Access-Control-Max-Age', '3600');
@@ -3515,7 +3627,7 @@ app.post('/user-activity/update', authenticateToken, async (req: express.Request
     'http://localhost:4010',
     'http://localhost:5173'
   ];
-  
+
   // In development, allow all localhost origins
   if (process.env.NODE_ENV === 'development' || process.env.FUNCTIONS_EMULATOR === 'true') {
     if (origin && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
@@ -3526,7 +3638,7 @@ app.post('/user-activity/update', authenticateToken, async (req: express.Request
     res.set('Access-Control-Allow-Origin', origin);
     res.set('Access-Control-Allow-Credentials', 'true');
   }
-  
+
   try {
     const { action, resource, metadata } = req.body;
     const userId = req.user?.uid;
