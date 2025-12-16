@@ -12,8 +12,34 @@ import { GlobalContext } from './contextAggregation/GlobalContextService';
 // Define secret for Gemini API key
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
 
-// Preview context modes
-export type PreviewContextMode = 'none' | 'script' | 'projects' | 'callsheet' | 'media' | 'pdf' | 'graph' | 'team' | 'contacts' | 'users' | 'files' | 'sessions' | 'timecards' | 'tasks' | 'roles' | 'locations' | 'scenes' | 'cuesheets' | 'budgets' | 'music' | 'stories' | 'analytics' | 'table';
+// Preview context modes - Complete list including all God Mode integrations
+export type PreviewContextMode = 
+    // Core
+    | 'none' | 'script' | 'projects' | 'callsheet' | 'media' | 'pdf' | 'graph'
+    // Phase 1: Shared Resources
+    | 'team' | 'contacts' | 'users' | 'files'
+    // Phase 2: Production Management
+    | 'sessions' | 'timecards' | 'tasks' | 'roles' | 'locations' | 'scenes'
+    // Phase 3: Financial & Music
+    | 'cuesheets' | 'budgets' | 'music'
+    // Phase 4: Additional
+    | 'stories' | 'table'
+    // Phase 5: High-Level Dashboards
+    | 'inventory' | 'cuemusic' | 'calendarevents' | 'scripting'
+    // Phase 1: Licensing & Billing
+    | 'licenses' | 'subscriptions' | 'invoices' | 'billing'
+    // Phase 2: Integrations
+    | 'integrations' | 'cloud-storage' | 'communications' | 'airtable'
+    // Phase 3: Workflow & Automation
+    | 'workflows' | 'automation'
+    // Phase 4: Network & Media Processing
+    | 'network-delivery' | 'edl' | 'transcription' | 'unified-files'
+    // Phase 5: Messaging & Collaboration
+    | 'conversations' | 'collaboration'
+    // Phase 6: AI & Analytics
+    | 'ai-analytics' | 'ai-training'
+    // Phase 7: System & Monitoring
+    | 'system-health' | 'notifications' | 'reports';
 
 export interface AgentResponse {
   response: string;
@@ -306,6 +332,104 @@ export class GeminiService {
             - Purpose: Generic data table viewer
             - Use when: User asks for raw data or a generic table view not covered above
             - Keywords: table, data, raw view, list
+
+        PHASE 1: LICENSING & BILLING:
+        24. "licenses" - LicensesManagementWrapper
+            - Purpose: View and manage all app licenses across the organization
+            - Use when: User asks about licenses, license management, or who has access to what
+            - Keywords: licenses, license keys, access, permissions, app access
+        25. "subscriptions" - SubscriptionsWrapper
+            - Purpose: Active subscriptions and billing cycles
+            - Use when: User asks about subscriptions, billing plans, or subscription status
+            - Keywords: subscriptions, billing, plans, seats, pricing
+        26. "invoices" - InvoicesWrapper
+            - Purpose: Billing invoices and payment history
+            - Use when: User asks about invoices, billing, or payment records
+            - Keywords: invoices, billing, receipts, payment history
+        27. "billing" - PaymentsWrapper
+            - Purpose: Payment transactions and billing records
+            - Use when: User asks about payments, transactions, or billing details
+            - Keywords: payments, transactions, billing, charges
+
+        PHASE 2: INTEGRATIONS:
+        28. "integrations" - IntegrationsOverviewWrapper
+            - Purpose: All connected services and integrations at a glance
+            - Use when: User asks about integrations, connected services, or what's connected
+            - Keywords: integrations, connected services, connections, linked accounts
+        29. "cloud-storage" - CloudStorageWrapper
+            - Purpose: Dropbox, Box, and Google Drive connections
+            - Use when: User asks about cloud storage, Dropbox, Box, or Google Drive
+            - Keywords: cloud storage, dropbox, box, google drive, file sync
+        30. "communications" - CommunicationToolsWrapper
+            - Purpose: Slack and Webex integration status
+            - Use when: User asks about Slack, Webex, or communication tools
+            - Keywords: slack, webex, communication, messaging tools
+        31. "airtable" - AirtableIntegrationWrapper
+            - Purpose: Airtable sync status and configuration
+            - Use when: User asks about Airtable, data sync, or Airtable integration
+            - Keywords: airtable, sync, integration, data sync
+
+        PHASE 3: WORKFLOW & AUTOMATION:
+        32. "workflows" - WorkflowsOverviewWrapper
+            - Purpose: Workflow templates and active instances
+            - Use when: User asks about workflows, workflow status, or workflow management
+            - Keywords: workflows, workflow status, pipeline, process
+        33. "automation" - AutomationDashboardWrapper
+            - Purpose: Automation rules and execution logs
+            - Use when: User asks about automation, automated tasks, or automation rules
+            - Keywords: automation, automated, rules, scheduled tasks
+
+        PHASE 4: NETWORK & MEDIA PROCESSING:
+        34. "network-delivery" - NetworkDeliveryWrapper
+            - Purpose: Network delivery bibles and specifications
+            - Use when: User asks about network delivery, delivery specs, or network requirements
+            - Keywords: network delivery, delivery bible, network specs, delivery requirements
+        35. "edl" - EDLProjectsWrapper
+            - Purpose: EDL conversion projects and files
+            - Use when: User asks about EDL, EDL projects, or EDL conversion
+            - Keywords: edl, edit decision list, conversion, projects
+        36. "transcription" - TranscriptionTasksWrapper
+            - Purpose: Transcription processing queue and status
+            - Use when: User asks about transcriptions, transcription status, or transcription queue
+            - Keywords: transcription, transcript, transcribe, audio to text
+        37. "unified-files" - UnifiedFilesWrapper
+            - Purpose: All indexed files from all sources
+            - Use when: User asks about all files, unified file view, or files from all sources
+            - Keywords: all files, unified files, indexed files, file sources
+
+        PHASE 5: MESSAGING & COLLABORATION:
+        38. "conversations" - ConversationsWrapper
+            - Purpose: Multi-user message conversations
+            - Use when: User asks about conversations, message threads, or chat history
+            - Keywords: conversations, messages, chat, threads
+        39. "collaboration" - CollaborationRoomsWrapper
+            - Purpose: Real-time collaboration sessions
+            - Use when: User asks about collaboration, collaboration rooms, or active sessions
+            - Keywords: collaboration, rooms, active sessions, real-time
+
+        PHASE 6: AI & ANALYTICS:
+        40. "ai-analytics" - AIAnalyticsWrapper
+            - Purpose: AI usage analytics and embeddings
+            - Use when: User asks about AI usage, AI analytics, or AI performance
+            - Keywords: ai analytics, ai usage, embeddings, ai performance
+        41. "ai-training" - AITrainingDataWrapper
+            - Purpose: AI training datasets and management
+            - Use when: User asks about AI training, training data, or AI datasets
+            - Keywords: ai training, training data, datasets, machine learning
+
+        PHASE 7: SYSTEM & MONITORING:
+        42. "system-health" - SystemHealthWrapper
+            - Purpose: System health monitoring and status
+            - Use when: User asks about system health, system status, or system monitoring
+            - Keywords: system health, system status, monitoring, health check
+        43. "notifications" - NotificationsManagementWrapper
+            - Purpose: User notifications and alerts
+            - Use when: User asks about notifications, alerts, or notification settings
+            - Keywords: notifications, alerts, notification settings, messages
+        44. "reports" - ReportsWrapper
+            - Purpose: Generated reports and analytics
+            - Use when: User asks about reports, generated reports, or report history
+            - Keywords: reports, report history, generated reports, analytics reports
         
         RESPONSE GUIDELINES:
         1. **CRITICAL OVERRIDE FOR RELATIONSHIP QUERIES**: If the user asks about activity or connections for a SPECIFIC person or project (e.g., "What is [Person/Project] up to?", "Show me what [Entity] is doing", "[Entity] activity", "[Entity] connections"), you MUST IMMEDIATELY use the "graph" context with \`mode: "relationship"\` and the entity name as the \`query\`. DO NOT ask for clarification. COMPLETELY IGNORE the "team" or "contacts" context in these cases, even if a person's name is mentioned.
@@ -325,13 +449,32 @@ export class GeminiService {
            - "budgets" for: financial data, costs, money
            - "team" for: team members list, organization staff roster (ONLY when explicitly asking for team roster/list, NOT for individual activity/connections)
            - "contacts" for: vendors, external talent list
+           - "licenses" for: license management, who has access to what apps
+           - "subscriptions" for: subscription plans, billing cycles, seats
+           - "invoices" for: billing invoices, payment history
+           - "billing" for: payment transactions, billing records
+           - "integrations" for: all connected services overview
+           - "cloud-storage" for: Dropbox, Box, Google Drive connections
+           - "communications" for: Slack, Webex integration status
+           - "workflows" for: workflow status, workflow management
+           - "automation" for: automation rules, automated tasks
+           - "network-delivery" for: network delivery specifications
+           - "edl" for: EDL projects and conversion status
+           - "transcription" for: transcription queue and status
+           - "conversations" for: message conversations and threads
+           - "collaboration" for: real-time collaboration rooms
+           - "ai-analytics" for: AI usage and performance metrics
+           - "ai-training" for: AI training data management
+           - "system-health" for: system monitoring and health checks
+           - "notifications" for: user notifications and alerts
+           - "reports" for: generated reports and analytics
            - "none" for: clearing the container or when no specific view is needed
         
         RESPONSE FORMAT:
         You must respond with a JSON object containing:
         {
           "response": "Your natural language response to the user",
-          "suggestedContext": "none" | "media" | "script" | "graph" | "projects" | "callsheet" | "pdf" | "team" | "contacts" | "users" | "files" | "sessions" | "timecards" | "tasks" | "roles" | "locations" | "scenes" | "cuesheets" | "budgets" | "music" | "stories" | "analytics" | "table",
+          "suggestedContext": "none" | "script" | "projects" | "callsheet" | "media" | "pdf" | "graph" | "team" | "contacts" | "users" | "files" | "sessions" | "timecards" | "tasks" | "roles" | "locations" | "scenes" | "cuesheets" | "budgets" | "music" | "stories" | "table" | "inventory" | "cuemusic" | "calendarevents" | "scripting" | "licenses" | "subscriptions" | "invoices" | "billing" | "integrations" | "cloud-storage" | "communications" | "airtable" | "workflows" | "automation" | "network-delivery" | "edl" | "transcription" | "unified-files" | "conversations" | "collaboration" | "ai-analytics" | "ai-training" | "system-health" | "notifications" | "reports",
           "contextData": { ...any specific data IDs to filter by... },
           "followUpSuggestions": ["suggestion 1", "suggestion 2"],
           "reasoning": "Brief explanation of why you chose this view",
@@ -730,11 +873,32 @@ export class GeminiService {
    */
   private validateContextMode(mode: string): PreviewContextMode {
     const validModes: PreviewContextMode[] = [
+      // Core
       'none', 'script', 'projects', 'callsheet', 'media', 'pdf', 'graph',
+      // Phase 1: Shared Resources
       'team', 'contacts', 'users', 'files',
+      // Phase 2: Production Management
       'sessions', 'timecards', 'tasks', 'roles', 'locations', 'scenes',
+      // Phase 3: Financial & Music
       'cuesheets', 'budgets', 'music',
-      'stories', 'analytics', 'table'
+      // Phase 4: Additional
+      'stories', 'table',
+      // Phase 5: High-Level Dashboards
+      'inventory', 'cuemusic', 'calendarevents', 'scripting',
+      // Phase 1: Licensing & Billing
+      'licenses', 'subscriptions', 'invoices', 'billing',
+      // Phase 2: Integrations
+      'integrations', 'cloud-storage', 'communications', 'airtable',
+      // Phase 3: Workflow & Automation
+      'workflows', 'automation',
+      // Phase 4: Network & Media Processing
+      'network-delivery', 'edl', 'transcription', 'unified-files',
+      // Phase 5: Messaging & Collaboration
+      'conversations', 'collaboration',
+      // Phase 6: AI & Analytics
+      'ai-analytics', 'ai-training',
+      // Phase 7: System & Monitoring
+      'system-health', 'notifications', 'reports'
     ];
     return validModes.includes(mode as PreviewContextMode) ? mode as PreviewContextMode : 'none';
   }
