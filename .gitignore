@@ -135,3 +135,7 @@ coverage/
 
 # Environment files (but keep .env.example for documentation)
 !.env.example
+
+# Firebase Service Account Keys (NEVER commit these!)
+*firebase*.json
+backbone-logic-*.json

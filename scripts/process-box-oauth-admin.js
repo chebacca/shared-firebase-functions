@@ -65,6 +65,8 @@ if (!admin.apps.length) {
   
   // Try multiple service account file paths
   const possiblePaths = [
+    path.join(__dirname, '../backbone-logic-6fe5ca549914.json'),
+    path.join(__dirname, '../../backbone-logic-6fe5ca549914.json'),
     path.join(__dirname, '../../backbone-logic-firebase-adminsdk-fbsvc-3db30f4742.json'),
     path.join(__dirname, '../firebase-clipshow.json'),
     path.join(__dirname, '../serviceAccountKey.json')
