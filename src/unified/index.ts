@@ -1014,7 +1014,7 @@ export const transferAuthToken = onCall(async (request) => {
       case 'call-sheet':
         hasAccess = Boolean(customClaims.isCallSheetUser);
         break;
-      case 'parser-brain':
+      case 'cns':
         hasAccess = Boolean(customClaims.isParserBrainUser) || 
                     ['SUPERADMIN', 'ADMIN'].includes(customClaims.role);
         break;
