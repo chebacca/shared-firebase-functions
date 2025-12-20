@@ -26459,33 +26459,56 @@ app.get('/workflow/sessions/:sessionId', authenticateToken, async (req: express.
       });
     }
 
-    // Get workflow instance
-    const instanceSnapshot = await db.collection('workflowInstances')
+    // 🔥 CRITICAL FIX: Support phase filtering via query parameter
+    const phaseFilter = req.query.phase as string | undefined;
+    console.log(`🔍 [WORKFLOW API] Getting workflow for session ${sessionId}, phase filter: ${phaseFilter || 'none'}`);
+
+    // Build query for workflow instance
+    let instanceQuery: any = db.collection('workflowInstances')
       .where('sessionId', '==', sessionId)
-      .where('organizationId', '==', organizationId)
-      .limit(1)
-      .get();
+      .where('organizationId', '==', organizationId);
+
+    // Filter by phase if provided
+    if (phaseFilter) {
+      instanceQuery = instanceQuery.where('phase', '==', phaseFilter);
+    }
+
+    const instanceSnapshot = await instanceQuery.limit(1).get();
 
     let workflowInstance = null;
+    let workflowInstanceId = null;
     if (!instanceSnapshot.empty) {
       const doc = instanceSnapshot.docs[0];
       workflowInstance = {
         id: doc.id,
         ...doc.data()
       };
+      workflowInstanceId = doc.id;
+      console.log(`✅ [WORKFLOW API] Found workflow instance ${workflowInstanceId} for phase ${phaseFilter || 'any'}`);
+    } else {
+      console.log(`📭 [WORKFLOW API] No workflow instance found for session ${sessionId}${phaseFilter ? ` with phase ${phaseFilter}` : ''}`);
     }
 
-    // Get workflow steps
-    const stepsSnapshot = await db.collection('workflowSteps')
-      .where('sessionId', '==', sessionId)
-      .where('organizationId', '==', organizationId)
-      .orderBy('order', 'asc')
-      .get();
+    // Get workflow steps - filter by workflowInstanceId if available, otherwise by sessionId
+    let stepsQuery: any = db.collection('workflowSteps')
+      .where('organizationId', '==', organizationId);
+
+    if (workflowInstanceId) {
+      // If we have a specific workflow instance, get steps for that instance
+      stepsQuery = stepsQuery.where('workflowInstanceId', '==', workflowInstanceId);
+    } else {
+      // Fallback: get steps by sessionId (for backward compatibility)
+      stepsQuery = stepsQuery.where('sessionId', '==', sessionId);
+    }
+
+    const stepsSnapshot = await stepsQuery.orderBy('order', 'asc').get();
 
     const steps = stepsSnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }));
+
+    console.log(`✅ [WORKFLOW API] Found ${steps.length} steps for workflow instance ${workflowInstanceId || 'none'}`);
 
     return res.status(200).json({
       success: true,
@@ -26499,6 +26522,92 @@ app.get('/workflow/sessions/:sessionId', authenticateToken, async (req: express.
     return res.status(500).json({
       success: false,
       error: 'Failed to get session workflow',
+      errorDetails: error.message || String(error)
+    });
+  }
+});
+
+// GET /workflow/sessions/:sessionId/reviews - Get reviews for workflow steps
+app.get('/workflow/sessions/:sessionId/reviews', authenticateToken, async (req: express.Request, res: express.Response) => {
+  try {
+    const sessionId = decodeURIComponent(req.params.sessionId);
+    const organizationId = req.user?.organizationId;
+
+    if (!organizationId) {
+      return res.status(403).json({
+        success: false,
+        error: 'User not associated with any organization'
+      });
+    }
+
+    // Verify session exists
+    const sessionDoc = await db.collection('sessions').doc(sessionId).get();
+    if (!sessionDoc.exists) {
+      return res.status(404).json({
+        success: false,
+        error: 'Session not found'
+      });
+    }
+
+    const sessionData = sessionDoc.data();
+    if (sessionData?.organizationId !== organizationId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied to session'
+      });
+    }
+
+    console.log(`🔍 [WORKFLOW API] Getting reviews for session ${sessionId}`);
+
+    // Query reviewSessions where sessionId matches
+    const reviewsQuery = db.collection('reviewSessions')
+      .where('sessionId', '==', sessionId)
+      .where('organizationId', '==', organizationId);
+
+    const reviewsSnapshot = await reviewsQuery.get();
+
+    // Map reviews by stepId
+    const reviewsByStepId: Record<string, any[]> = {};
+
+    reviewsSnapshot.docs.forEach(doc => {
+      const reviewData = doc.data();
+      
+      // Check for workflow step link in metadata or direct property
+      let stepId: string | null = null;
+      if (reviewData.metadata && reviewData.metadata.workflowStepId) {
+        stepId = reviewData.metadata.workflowStepId;
+      } else if (reviewData.workflowStepId) {
+        stepId = reviewData.workflowStepId;
+      } else if (reviewData.reviewType === 'workflow') {
+        // Review is workflow-related but no step link
+        stepId = 'UNLINKED';
+      }
+
+      if (stepId) {
+        if (!reviewsByStepId[stepId]) {
+          reviewsByStepId[stepId] = [];
+        }
+        reviewsByStepId[stepId].push({
+          id: doc.id,
+          ...reviewData,
+          createdAt: reviewData.createdAt?.toDate ? reviewData.createdAt.toDate().toISOString() : reviewData.createdAt,
+          updatedAt: reviewData.updatedAt?.toDate ? reviewData.updatedAt.toDate().toISOString() : reviewData.updatedAt
+        });
+      }
+    });
+
+    console.log(`✅ [WORKFLOW API] Found ${reviewsSnapshot.size} reviews for session ${sessionId}, mapped to ${Object.keys(reviewsByStepId).length} steps`);
+
+    return res.status(200).json({
+      success: true,
+      data: reviewsByStepId,
+      count: reviewsSnapshot.size
+    });
+  } catch (error: any) {
+    console.error('❌ [WORKFLOW API] Error getting workflow reviews:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to get workflow reviews',
       errorDetails: error.message || String(error)
     });
   }
