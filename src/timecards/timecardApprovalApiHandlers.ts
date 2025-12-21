@@ -16,16 +16,24 @@ export async function handlePendingApprovals(req: any, res: any, organizationId:
 
     console.log(`⏰ [PENDING APPROVALS] Getting pending approvals for org: ${organizationId}`);
 
-    let query = db.collection('timecards')
+    // 🔧 FIX: Use timecard_entries collection instead of timecards
+    let query = db.collection('timecard_entries')
       .where('organizationId', '==', organizationId)
-      .where('status', '==', 'submitted');
+      .where('status', '==', 'SUBMITTED');
 
     // Apply additional filters
     if (projectId) {
       query = query.where('projectId', '==', projectId);
     }
 
-    query = query.orderBy('submittedAt', 'desc');
+    // Order by submittedAt if available, otherwise by createdAt
+    try {
+      query = query.orderBy('submittedAt', 'desc');
+    } catch (error) {
+      // Fallback to createdAt if submittedAt index doesn't exist
+      console.warn('⚠️ [PENDING APPROVALS] submittedAt index not available, using createdAt');
+      query = query.orderBy('createdAt', 'desc');
+    }
 
     const timecardsSnapshot = await query.get();
     const timecards = timecardsSnapshot.docs.map(doc => ({

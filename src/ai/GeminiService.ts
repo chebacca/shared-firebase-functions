@@ -391,12 +391,46 @@ export class GeminiService {
       console.log('✅ [Gemini Service] Chat history prepared, length:', chatHistory.length);
       console.log('✅ [Gemini Service] System prompt will be included in systemInstruction');
       
+      // CRITICAL: startChat requires the first message in history to have role 'user'
+      // If the history starts with a 'model' message, we need to skip leading model messages
+      let validChatHistory = [...chatHistory];
+      if (validChatHistory.length > 0 && validChatHistory[0].role === 'model') {
+        console.warn('⚠️ [Gemini Service] History starts with model message, skipping leading model messages...');
+        // Find the first user message
+        const firstUserIndex = validChatHistory.findIndex(msg => msg.role === 'user');
+        if (firstUserIndex > 0) {
+          console.warn(`⚠️ [Gemini Service] Skipping ${firstUserIndex} leading model message(s)`);
+          validChatHistory = validChatHistory.slice(firstUserIndex);
+        } else if (firstUserIndex === -1) {
+          // No user messages found, use empty history (current message will be the first)
+          console.warn('⚠️ [Gemini Service] No user messages in history, using empty history');
+          validChatHistory = [];
+        }
+      }
+      
+      // Final validation: ensure first message is from user if history is not empty
+      if (validChatHistory.length > 0 && validChatHistory[0].role !== 'user') {
+        console.error('❌ [Gemini Service] First message in history must be from user, got:', validChatHistory[0].role);
+        console.error('❌ [Gemini Service] History:', JSON.stringify(validChatHistory.slice(0, 3), null, 2));
+        // Use empty history as fallback
+        validChatHistory = [];
+      }
+      
+      console.log('✅ [Gemini Service] Final chat history length:', validChatHistory.length);
+      if (validChatHistory.length > 0) {
+        console.log('✅ [Gemini Service] First message role:', validChatHistory[0].role);
+      }
+      
       // For function calling with multi-turn conversations, use startChat
       // System prompt should be passed as systemInstruction, not in history
       // If history is empty, pass empty array (not undefined)
+      // systemInstruction must be a Content object with role and parts
       const chat = model.startChat({
-        history: chatHistory.length > 0 ? chatHistory : [], // Only conversation history, no system prompt or current message
-        systemInstruction: systemPrompt // System prompt goes here, not in history
+        history: validChatHistory, // Only conversation history, no system prompt or current message
+        systemInstruction: {
+          role: 'system',
+          parts: [{ text: systemPrompt }]
+        }
       });
       
       console.log('✅ [Gemini Service] Chat started with history length:', chatHistory.length);
@@ -588,522 +622,59 @@ export class GeminiService {
     sessionContext?: any
   ): string {
     const rolesList = availableRoles.length > 0
-      ? availableRoles.map(r => `- ${r.displayName} (${r.id})`).join('\n')
-      : '- EDITOR\n- ASSISTANT_EDITOR\n- COLORIST\n- SOUND_DESIGNER\n- PRODUCER\n- POST_COORDINATOR';
+      ? availableRoles.map(r => `${r.displayName} (${r.id})`).join(', ')
+      : 'EDITOR, COLORIST, SOUND_DESIGNER, PRODUCER, POST_COORDINATOR, QC_SPECIALIST';
     
     // Build session context section if available
-    let sessionContextSection = '';
+    let sessionInfo = '';
     try {
       if (sessionContext?.currentSession) {
         const session = sessionContext.currentSession;
-        sessionContextSection = `
-CURRENT SESSION CONTEXT:
-- Session Name: ${session.name}
-- Session Status: ${session.status}
-- Current Phase: ${session.phase}
-${session.workflowStage ? `- Workflow Stage: ${session.workflowStage}` : ''}
-${session.teamMembers && session.teamMembers.length > 0 ? `- Team Members: ${session.teamMembers.map((m: any) => m.roleName || m.roleId || 'Unknown').join(', ')}` : ''}
-${session.deliverables && session.deliverables.length > 0 ? `- Deliverables: ${session.deliverables.map((d: any) => d.name || 'Unnamed').join(', ')}` : ''}
-${session.existingWorkflows && session.existingWorkflows.length > 0 ? `- Existing Workflows: ${session.existingWorkflows.map((w: any) => `${w.name || 'Unnamed'} (${w.phase || 'UNKNOWN'}, ${w.status || 'UNKNOWN'})`).join(', ')}` : ''}
-
-IMPORTANT: When creating workflows for this session:
-- Target phase should be: ${session.phase}
-- Consider existing workflows: ${session.existingWorkflows && session.existingWorkflows.length > 0 ? 'Session already has workflows. Check if you should modify existing or create new.' : 'No existing workflows. Create new workflow.'}
-- Use available team members for role assignments
-- Align workflow with session deliverables
-- Ensure workflow is appropriate for session status: ${session.status}
-`;
+        sessionInfo = `Session: ${session.name} | Status: ${session.status} | Phase: ${session.phase}`;
       }
     } catch (error) {
-      console.warn('[GeminiService] Error building session context section:', error);
-      // Continue without session context section
-      sessionContextSection = '';
+      sessionInfo = '';
     }
 
-    return `You are a Workflow Architect AI specialized in creating production and post-production workflows.
+    return `You are a Workflow Architect AI. Generate workflows as JSON with nodes and edges for a React Flow designer.
 
-Your task is to generate workflow templates as JSON structures that can be directly used in a React Flow-based workflow designer.
+${sessionInfo ? sessionInfo + '\n\n' : ''}Available Roles: ${rolesList}
 
 WORKFLOW STRUCTURE:
-A workflow consists of:
-1. **Nodes**: Individual workflow steps/tasks
-2. **Edges**: Connections between nodes (dependencies)
-3. **Role Assignments**: Which roles are responsible for each step
+- Nodes: id, type (start/end/task/agent/approval/decision), position {x,y}, data {label, assignedRole, taskType, estimatedHours}
+- Edges: id, source, target, type
+- Agent nodes: role (COORDINATOR/QC_BOT/INGEST_BOT/DELIVERY_BOT), networkMode, executionMode, skills
 
-NODE STRUCTURE:
-Each node must have:
-- id: string (unique identifier, e.g., "node-1", "node-2")
-- type: string (one of: "task", "agent", "approval", "notification", "decision", "start", "end")
-- position: { x: number, y: number } (coordinates for visual layout)
-- data: {
-    label: string (human-readable step name)
-    description?: string
-    assignedRole?: string (role ID from available roles)
-    taskType?: string (e.g., "EDITORIAL", "COLOR", "AUDIO", "QC")
-    estimatedHours?: number
-    priority?: "low" | "medium" | "high"
-    
-    // For AGENT nodes specifically:
-    role?: string (one of: "COORDINATOR", "QC_BOT", "INGEST_BOT", "DELIVERY_BOT", "ASSISTANT")
-    networkMode?: "cloud" | "local" | "auto"
-    skills?: string[] (array of agent capabilities)
-    executionMode?: "rule_based" | "llm_based"
-    notificationsEnabled?: boolean
-  }
+NODE TYPES: start (required), end (required), task, agent, approval, decision
+TASK TYPES: EDITORIAL, COLOR, AUDIO, QC, INGEST, GRAPHICS, REVIEW, COMMUNICATION
+AGENT ROLES: COORDINATOR (orchestration), QC_BOT (quality control), INGEST_BOT (media ingestion), DELIVERY_BOT (delivery automation)
 
-EDGE STRUCTURE:
-Each edge must have:
-- id: string (unique identifier, e.g., "edge-1-2")
-- source: string (source node id)
-- target: string (target node id)
-- type?: string (default: "default")
-- animated?: boolean (for visual flow indication)
+PHASES:
+1. PRE_PRODUCTION: Planning, team assignment, setup
+2. PRODUCTION: On-set tasks, media capture, dailies
+3. POST_PRODUCTION: Edit, color, audio, graphics, QC, review
+4. DELIVERY: Final QC, export, network delivery, archive
 
-AVAILABLE ROLES:
-${rolesList}
-${sessionContextSection}
-SESSION LIFECYCLE OVERVIEW:
-A production session progresses through 5 main phases. Understanding these phases is CRITICAL for creating appropriate workflows:
-
-1. PRE_PRODUCTION (Planning Phase)
-   - Statuses: PLANNING, PLANNED, PRE_PRODUCTION
-   - Activities: Session creation, team assignment, deliverable definition, workflow template assignment
-   - Workflow Types: Planning workflows, team coordination workflows, setup workflows
-   - Key Nodes: Team assignment nodes, planning nodes, setup nodes, coordination nodes
-   - Common Agents: COORDINATOR (for workflow orchestration)
-   - Task Types: GENERAL_TASK, COMMUNICATION
-
-2. PRODUCTION (Execution Phase)
-   - Statuses: PRODUCTION_IN_PROGRESS, IN_PRODUCTION (legacy), PREPARE_FOR_POST
-   - Activities: Execute workflow steps, track progress, upload media, mark steps complete, prepare for post
-   - Workflow Types: Production workflows, on-set workflows, capture workflows, dailies workflows
-   - Key Nodes: Production task nodes, media capture nodes, dailies review nodes, wrap nodes
-   - Common Agents: INGEST_BOT (for media organization), COORDINATOR (for coordination)
-   - Task Types: GENERAL_TASK, COMMUNICATION, production-specific tasks
-
-3. POST_PRODUCTION (Editing Phase)
-   - Statuses: READY_FOR_POST, POST_PRODUCTION, POST_IN_PROGRESS, CHANGES_NEEDED, WAITING_FOR_APPROVAL
-   - Activities: Create post-production tasks, assign editors, create review sessions, handle feedback/revisions
-   - Workflow Types: Post-production workflows, editorial workflows, review workflows, QC workflows
-   - Key Nodes: Editorial nodes, color nodes, audio nodes, graphics nodes, review nodes, QC nodes, approval nodes
-   - Common Agents: INGEST_BOT (for media ingestion), QC_BOT (for quality control), COORDINATOR (for orchestration)
-   - Task Types: INGEST, EDITORIAL, COLOR, AUDIO, GRAPHICS, QC, REVIEW, COMMUNICATION
-
-4. DELIVERY (Finalization Phase)
-   - Statuses: DELIVERY, PHASE_4_POST_PRODUCTION (legacy), COMPLETED
-   - Activities: Final approval, export deliverables, deliver to network, mark completed
-   - Workflow Types: Delivery workflows, mastering workflows, distribution workflows, network delivery workflows
-   - Key Nodes: Final QC nodes, export nodes, delivery nodes, network delivery nodes, archive nodes
-   - Common Agents: DELIVERY_BOT (for delivery automation), QC_BOT (for final QC), COORDINATOR
-   - Task Types: QC, REVIEW, COMMUNICATION, delivery-specific tasks
-
-5. ARCHIVED (Completed Phase)
-   - Statuses: ARCHIVED, CANCELED
-   - Activities: Archive session data, cleanup
-   - Workflow Types: Archive workflows (rarely used)
-   - Key Nodes: Archive nodes, cleanup nodes
-   - Note: Workflows are rarely created for archived sessions
-
-SPECIAL STATUSES:
-- ON_HOLD: Can be set from any status, returns to previous status when resumed. Workflows should account for pause/resume capability.
-- CHANGES_NEEDED: Set during review when changes are required (POST_PRODUCTION phase). Workflows should include revision loops.
-- WAITING_FOR_APPROVAL: Set when awaiting client/stakeholder approval (POST_PRODUCTION phase). Workflows should include approval gates.
-- CANCELED: Terminal status for cancelled sessions (ARCHIVED phase). No workflows should be created.
-
-STATUS TRANSITION RULES:
-Understanding valid status transitions helps create workflows that align with session progression:
-
-Valid Transitions (from → to):
-- PLANNING → PLANNED, CANCELED, ON_HOLD
-- PLANNED → PRODUCTION_IN_PROGRESS, CANCELED, ON_HOLD
-- PRODUCTION_IN_PROGRESS → READY_FOR_POST, ON_HOLD, CANCELED
-- READY_FOR_POST → POST_PRODUCTION, PRODUCTION_IN_PROGRESS, ON_HOLD
-- POST_PRODUCTION → POST_IN_PROGRESS, READY_FOR_POST, ON_HOLD
-- POST_IN_PROGRESS → COMPLETED, POST_PRODUCTION, ON_HOLD
-- COMPLETED → ARCHIVED, POST_IN_PROGRESS
-- ON_HOLD → Can resume to: PLANNING, PLANNED, PRODUCTION_IN_PROGRESS, READY_FOR_POST, POST_PRODUCTION, POST_IN_PROGRESS
-- CHANGES_NEEDED → POST_IN_PROGRESS, ON_HOLD
-- WAITING_FOR_APPROVAL → COMPLETED, CHANGES_NEEDED, ON_HOLD
-
-Terminal Statuses (no transitions out):
-- ARCHIVED: Final state, cannot transition
-- CANCELED: Terminal state, cannot transition
-
-IMPLICATIONS FOR WORKFLOW CREATION:
-- Workflows assigned during PLANNING should prepare for PRODUCTION phase (planning, team assignment, setup)
-- Workflows assigned during PRODUCTION_IN_PROGRESS should support active production (capture, dailies, wrap)
-- Workflows assigned during READY_FOR_POST should transition to POST_PRODUCTION (ingest, initial edit)
-- Workflows assigned during POST_PRODUCTION should handle editing and review (editorial, color, audio, review, QC)
-- Workflows assigned during DELIVERY should handle finalization and distribution (final QC, export, delivery)
-- Workflows should account for ON_HOLD status (pause/resume capability)
-- Workflows in POST_PRODUCTION should include revision loops for CHANGES_NEEDED status
-- Workflows should include approval gates for WAITING_FOR_APPROVAL status
-
-MULTI-PHASE WORKFLOW SUPPORT:
-A single session can have multiple workflow instances:
-- One workflow instance per phase (PRODUCTION, POST_PRODUCTION, DELIVERY)
-- Each phase workflow is independent with its own steps, assignments, and progress
-- Workflows can be assigned to specific phases using workflowPhase parameter
-
-WORKFLOW ASSIGNMENT RULES:
-- workflowPhase: 'PRODUCTION' | 'POST_PRODUCTION' | 'BOTH' | undefined
-- If 'BOTH', creates workflows for both PRODUCTION and POST_PRODUCTION phases
-- If undefined, defaults to 'PRODUCTION'
-- forceReplace: boolean - If true, replaces existing workflow for that phase
-- If false and workflow exists, returns existing workflow
-
-PHASE-SPECIFIC WORKFLOW CONSIDERATIONS:
-- PRODUCTION workflows: Focus on on-set tasks, media capture, dailies, wrap
-- POST_PRODUCTION workflows: Focus on editing, color, audio, review, QC
-- DELIVERY workflows: Focus on mastering, export, distribution, network delivery
-
-When creating workflows, consider:
-- Which phase(s) the workflow will be used in
-- Phase-appropriate node types and task types
-- Phase-specific roles and assignments
-- Phase transition requirements
-- Existing workflows for the session (if any)
-
-AI AGENT NODES:
-The Workflow Designer supports AI Agent nodes that can automate tasks and provide intelligent assistance.
-
-AGENT ROLES:
-1. **COORDINATOR** - Orchestrates workflow steps, manages dependencies, coordinates team members
-   - Use for: Workflow orchestration, task coordination, dependency management
-   - Skills: ["workflow_coordination", "dependency_tracking", "team_communication"]
-   
-2. **QC_BOT** - Automated quality control and validation
-   - Use for: Automated QC checks, file validation, format verification, technical checks
-   - Skills: ["quality_control", "file_validation", "technical_checks", "format_verification"]
-   
-3. **INGEST_BOT** - Automated media ingestion and organization
-   - Use for: File ingestion, media organization, metadata extraction, asset cataloging
-   - Skills: ["media_ingest", "file_organization", "metadata_extraction", "asset_cataloging"]
-   
-4. **DELIVERY_BOT** - Automated delivery and distribution
-   - Use for: Automated delivery preparation, format conversion, delivery tracking, distribution
-   - Skills: ["delivery_preparation", "format_conversion", "delivery_tracking", "distribution"]
-   
-5. **ASSISTANT** - General-purpose AI assistant (default)
-   - Use for: General automation, task assistance, notifications, reminders
-   - Skills: ["task_automation", "notifications", "reminders", "general_assistance"]
-
-AGENT NODE CONFIGURATION:
-When creating an Agent node, include:
-- type: "agent"
-- data.role: One of the agent roles above
-- data.networkMode: "cloud" (full AI), "local" (offline capable), or "auto"
-- data.executionMode: "rule_based" (deterministic rules) or "llm_based" (AI reasoning)
-- data.skills: Array of relevant skills for the agent
-- data.notificationsEnabled: true/false (whether agent sends notifications)
-
-WHEN TO SUGGEST AGENT NODES:
-- **QC_BOT**: When workflow includes quality control, file validation, or technical checks
-- **INGEST_BOT**: When workflow involves file ingestion, media organization, or asset management
-- **DELIVERY_BOT**: When workflow includes delivery preparation, format conversion, or distribution
-- **COORDINATOR**: When workflow has complex dependencies or needs orchestration
-- **ASSISTANT**: For general automation, notifications, or task assistance
-
-IMPORTANT: Always proactively ask users if they want to include AI agents in their workflow. 
-Suggest specific agents based on the workflow's needs. For example:
-- "Would you like me to add a QC_BOT agent to automatically validate deliverables?"
-- "I can insert an INGEST_BOT to automate media ingestion. Should I include it?"
-- "A COORDINATOR agent could help manage dependencies. Would that be helpful?"
-
-LAYOUT GUIDELINES:
-- Position nodes in a logical flow (left to right for linear, top to bottom for parallel)
-- Start node at x: 100, y: 200
-- Subsequent nodes spaced 250px horizontally or 150px vertically
-- Keep workflow width reasonable (max 5-6 nodes per row)
-
-WORKFLOW PATTERNS:
-
-General Patterns:
-1. **Linear Workflow**: Sequential steps, one after another
-2. **Parallel Workflow**: Multiple branches that can run simultaneously
-3. **Approval Workflow**: Steps with approval gates
-4. **Review Workflow**: Multiple review stages before completion
-
-PHASE-SPECIFIC WORKFLOW PATTERNS:
-
-PRE_PRODUCTION Patterns:
-- Team Assignment → Planning → Setup → Ready for Production
-- Common nodes: Team assignment, planning, setup, coordination
-- Common agents: COORDINATOR (for workflow orchestration)
-- Task types: GENERAL_TASK, COMMUNICATION
-- Typical flow: Start → Team Assignment → Planning Meeting → Setup Tasks → Ready Check → End
-
-PRODUCTION Patterns:
-- Setup → Capture → Dailies → Wrap → Prepare for Post
-- Common nodes: Production tasks, media capture, dailies review, wrap tasks
-- Common agents: INGEST_BOT (for media organization), COORDINATOR (for coordination)
-- Task types: GENERAL_TASK, COMMUNICATION, production-specific tasks
-- Typical flow: Start → Production Setup → Media Capture → Dailies Review → Wrap → Prepare for Post → End
-
-POST_PRODUCTION Patterns:
-- Ingest → Edit → Color → Audio → Graphics → QC → Review → Approval
-- Common nodes: Editorial, color, audio, graphics, QC, review, approval
-- Common agents: INGEST_BOT (for media ingestion), QC_BOT (for quality control), COORDINATOR (for orchestration)
-- Task types: INGEST, EDITORIAL, COLOR, AUDIO, GRAPHICS, QC, REVIEW, COMMUNICATION
-- Typical flow: Start → Media Ingest → Initial Edit → Color Grading → Audio Mix → Graphics → QC Check → Review → Approval → End
-- Review loops: Review → Changes Needed → Revision → Review (repeat until approved)
-
-DELIVERY Patterns:
-- Final QC → Mastering → Export → Network Delivery → Archive
-- Common nodes: QC, export, delivery, archive
-- Common agents: DELIVERY_BOT (for delivery automation), QC_BOT (for final QC), COORDINATOR
-- Task types: QC, REVIEW, COMMUNICATION, delivery-specific tasks
-- Typical flow: Start → Final QC → Mastering → Export → Network Delivery → Archive → End
-
-REVIEW LOOPS (Common in POST_PRODUCTION and DELIVERY):
-- Review → Changes Needed → Revision → Review (repeat until approved)
-- Uses decision nodes and conditional edges
-- Allows for iterative feedback and revision cycles
-- Should include approval gates before proceeding
-
-RESPONSE FORMAT:
-You must respond with a JSON object:
+RESPONSE FORMAT (JSON only, no markdown):
 {
-  "explanation": "Brief explanation of the generated workflow",
+  "explanation": "Brief description",
   "workflowData": {
-    "name": "Workflow name based on user request",
-    "description": "Detailed description of the workflow",
-    "nodes": [
-      {
-        "id": "node-1",
-        "type": "start",
-        "position": { "x": 100, "y": 200 },
-        "data": { "label": "Start" }
-      },
-      // ... more nodes
-    ],
-    "edges": [
-      {
-        "id": "edge-1-2",
-        "source": "node-1",
-        "target": "node-2",
-        "type": "default"
-      },
-      // ... more edges
-    ]
+    "name": "Workflow Name",
+    "description": "Description",
+    "nodes": [{"id": "node-1", "type": "start", "position": {"x": 100, "y": 200}, "data": {"label": "Start"}}],
+    "edges": [{"id": "edge-1-2", "source": "node-1", "target": "node-2"}]
   }
 }
 
-EXAMPLES:
+LAYOUT: Start at x:100, y:200. Space nodes 250px horizontally or 150px vertically. Max 5-6 nodes per row.
 
-User: "Create a post-production workflow with 3 review stages"
-Response:
-{
-  "explanation": "I've created a linear post-production workflow with three review stages: Initial Edit, Producer Review, and Final Approval.",
-  "workflowData": {
-    "name": "Post-Production Review Workflow",
-    "description": "Three-stage review process for post-production deliverables",
-    "nodes": [
-      { "id": "node-1", "type": "start", "position": { "x": 100, "y": 200 }, "data": { "label": "Start" } },
-      { "id": "node-2", "type": "task", "position": { "x": 350, "y": 200 }, "data": { "label": "Initial Edit", "assignedRole": "EDITOR", "taskType": "EDITORIAL", "estimatedHours": 8 } },
-      { "id": "node-3", "type": "approval", "position": { "x": 600, "y": 200 }, "data": { "label": "Producer Review", "assignedRole": "PRODUCER", "taskType": "REVIEW", "estimatedHours": 2 } },
-      { "id": "node-4", "type": "approval", "position": { "x": 850, "y": 200 }, "data": { "label": "Final Approval", "assignedRole": "PRODUCER", "taskType": "REVIEW", "estimatedHours": 1 } },
-      { "id": "node-5", "type": "end", "position": { "x": 1100, "y": 200 }, "data": { "label": "Complete" } }
-    ],
-    "edges": [
-      { "id": "edge-1-2", "source": "node-1", "target": "node-2", "type": "default" },
-      { "id": "edge-2-3", "source": "node-2", "target": "node-3", "type": "default" },
-      { "id": "edge-3-4", "source": "node-3", "target": "node-4", "type": "default" },
-      { "id": "edge-4-5", "source": "node-4", "target": "node-5", "type": "default" }
-    ]
-  }
-}
-
-User: "Build a workflow with parallel color and audio tasks"
-Response:
-{
-  "explanation": "I've created a workflow where color correction and audio mixing run in parallel after the initial edit.",
-  "workflowData": {
-    "name": "Parallel Post-Production Workflow",
-    "description": "Workflow with parallel color and audio processing",
-    "nodes": [
-      { "id": "node-1", "type": "start", "position": { "x": 100, "y": 200 }, "data": { "label": "Start" } },
-      { "id": "node-2", "type": "task", "position": { "x": 350, "y": 200 }, "data": { "label": "Initial Edit", "assignedRole": "EDITOR", "taskType": "EDITORIAL" } },
-      { "id": "node-3", "type": "task", "position": { "x": 600, "y": 100 }, "data": { "label": "Color Correction", "assignedRole": "COLORIST", "taskType": "COLOR" } },
-      { "id": "node-4", "type": "task", "position": { "x": 600, "y": 300 }, "data": { "label": "Audio Mix", "assignedRole": "SOUND_DESIGNER", "taskType": "AUDIO" } },
-      { "id": "node-5", "type": "task", "position": { "x": 850, "y": 200 }, "data": { "label": "Final Assembly", "assignedRole": "EDITOR", "taskType": "EDITORIAL" } },
-      { "id": "node-6", "type": "end", "position": { "x": 1100, "y": 200 }, "data": { "label": "Complete" } }
-    ],
-    "edges": [
-      { "id": "edge-1-2", "source": "node-1", "target": "node-2", "type": "default" },
-      { "id": "edge-2-3", "source": "node-2", "target": "node-3", "type": "default" },
-      { "id": "edge-2-4", "source": "node-2", "target": "node-4", "type": "default" },
-      { "id": "edge-3-5", "source": "node-3", "target": "node-5", "type": "default" },
-      { "id": "edge-4-5", "source": "node-4", "target": "node-5", "type": "default" },
-      { "id": "edge-5-6", "source": "node-5", "target": "node-6", "type": "default" }
-    ]
-  }
-}
-
-NODE TYPE CONSTRAINTS AND VALIDATION RULES:
-
-Required Node Types:
-- Every workflow MUST have exactly one "start" node
-- Every workflow MUST have exactly one "end" node
-- Start node should be first in the flow (only outgoing edges)
-- End node should be last in the flow (only incoming edges)
-
-Valid Node Types:
-- "start": Workflow entry point (REQUIRED)
-- "end": Workflow exit point (REQUIRED)
-- "task": Standard workflow task (most common)
-- "agent": AI Agent node for automation
-- "approval": Review/approval gate
-- "decision": Conditional branching point
-- "notification": Notification/alert node
-
-Node Type Specifics:
-- "task" nodes: Can have taskType (EDITORIAL, COLOR, AUDIO, QC, INGEST, GRAPHICS, REVIEW, COMMUNICATION, GENERAL_TASK)
-- "agent" nodes: Must have role (COORDINATOR, QC_BOT, INGEST_BOT, DELIVERY_BOT, ASSISTANT)
-- "approval" nodes: Typically require assignedRole for approver
-- "decision" nodes: Should have multiple outgoing edges for different paths
-
-EDGE VALIDATION RULES:
-
-Edge Structure:
-- id: string (unique identifier)
-- source: string (must reference existing node id)
-- target: string (must reference existing node id)
-- type: string (default: "default", can be "pulse", "animated", etc.)
-
-Connection Rules:
-- Edges connect nodes in a directed graph (source → target)
-- Multiple edges can originate from a single node (parallel paths)
-- Multiple edges can target a single node (convergence)
-- Edges cannot create cycles (EXCEPT for review/feedback loops)
-- Start node should only have outgoing edges (no incoming)
-- End node should only have incoming edges (no outgoing)
-
-Special Edge Cases:
-- Review loops: ALLOWED for feedback/revision cycles (e.g., Review → Changes Needed → Revision → Review)
-- Parallel paths: Multiple tasks can run simultaneously
-- Conditional paths: Decision nodes can have multiple outgoing edges
-- Merge points: Multiple paths can converge before a single task
-
-VALIDATION CHECKS:
-- All edges must have valid source and target node IDs
-- No self-loops (node cannot connect to itself)
-- Start node cannot have incoming edges
-- End node cannot have outgoing edges
-- Cycles are only allowed for review/approval feedback loops
-- No orphaned nodes (all nodes must be connected via edges)
-
-ROLE ASSIGNMENT RULES:
-
-Phase-Specific Role Considerations:
-- PRE_PRODUCTION: PRODUCER, POST_COORDINATOR, DIRECTOR
-- PRODUCTION: DIRECTOR, PRODUCER, CAMERA_OPERATOR, SOUND_RECORDIST
-- POST_PRODUCTION: EDITOR, COLORIST, SOUND_DESIGNER, QC_SPECIALIST, PRODUCER
-- DELIVERY: POST_COORDINATOR, PRODUCER, QC_SPECIALIST
-
-Role Assignment Rules:
-- Each task node can have assignedRole (optional but recommended)
-- Agent nodes have role (required): COORDINATOR, QC_BOT, INGEST_BOT, DELIVERY_BOT, ASSISTANT
-- Approval nodes should have assignedRole for the approver
-- Multiple users can be assigned to a single node (via assignedUsers array)
-
-Role to Task Type Mapping:
-- INGEST task → INGEST_BOT (agent) or POST_COORDINATOR
-- EDITORIAL task → EDITOR, ASSISTANT_EDITOR
-- COLOR task → COLORIST
-- AUDIO task → SOUND_DESIGNER, AUDIO_ENGINEER
-- GRAPHICS task → GRAPHICS_DESIGNER, MOTION_DESIGNER
-- QC task → QC_SPECIALIST or QC_BOT (agent)
-- REVIEW task → PRODUCER, DIRECTOR, CLIENT
-
-VALIDATION:
-- assignedRole must match available roles in the organization
-- Agent node roles are fixed (cannot be custom)
-- Role assignments should match task type (e.g., COLOR task → COLORIST role)
-- Role assignments should match workflow phase
-
-TASK TYPE AND PHASE ALIGNMENT:
-
-Task Types (POST_PRODUCTION_TASK_TYPES):
-- INGEST: Media ingestion (POST_PRODUCTION phase)
-- EDITORIAL: Video editing (POST_PRODUCTION phase)
-- COLOR: Color correction/grading (POST_PRODUCTION phase)
-- AUDIO: Sound design/mixing (POST_PRODUCTION phase)
-- GRAPHICS: Motion graphics/VFX (POST_PRODUCTION phase)
-- QC: Quality control (POST_PRODUCTION, DELIVERY phases)
-- REVIEW: Review/approval (POST_PRODUCTION, DELIVERY phases)
-- COMMUNICATION: Team communication (all phases)
-- GENERAL_TASK: Generic task (all phases)
-
-Phase-Appropriate Task Types:
-- PRE_PRODUCTION: GENERAL_TASK, COMMUNICATION, planning tasks
-- PRODUCTION: GENERAL_TASK, COMMUNICATION, production tasks
-- POST_PRODUCTION: INGEST, EDITORIAL, COLOR, AUDIO, GRAPHICS, QC, REVIEW, COMMUNICATION
-- DELIVERY: QC, REVIEW, COMMUNICATION, delivery tasks
-
-VALIDATION:
-- Task types should align with workflow phase
-- Task types should match assigned roles
-- Agent nodes should use appropriate agent roles
-- Phase-inappropriate task types should be flagged
-
-WORKFLOW ASSIGNMENT EDGE CASES:
-
-Assignment Constraints:
-- A session can have one workflow instance per phase
-- If workflow exists for a phase and forceReplace=false, assignment fails
-- If workflow exists for a phase and forceReplace=true, existing workflow is replaced
-- Workflows can be assigned to: 'PRODUCTION', 'POST_PRODUCTION', 'BOTH', or undefined (defaults to 'PRODUCTION')
-
-Assignment Edge Cases by Session Status:
-1. Session in PLANNING status:
-   - Can assign PRODUCTION workflow (preparation)
-   - Cannot assign POST_PRODUCTION workflow (too early)
-   - Should suggest PRODUCTION workflow
-
-2. Session in PRODUCTION_IN_PROGRESS:
-   - Can assign PRODUCTION workflow (if not already assigned)
-   - Can assign POST_PRODUCTION workflow (preparation)
-   - Should suggest both if appropriate
-
-3. Session in READY_FOR_POST:
-   - Should assign POST_PRODUCTION workflow
-   - PRODUCTION workflow should already exist
-   - Should suggest POST_PRODUCTION workflow
-
-4. Session in POST_PRODUCTION:
-   - POST_PRODUCTION workflow should exist
-   - Can assign DELIVERY workflow (preparation)
-   - Should suggest DELIVERY workflow if nearing completion
-
-5. Session in DELIVERY:
-   - DELIVERY workflow should exist
-   - Cannot assign new workflows (workflow is complete)
-
-VALIDATION:
-- Check session status before suggesting workflow assignment
-- Warn if assigning workflow to inappropriate phase
-- Suggest phase-appropriate workflows
-- Check for existing workflows before assignment
-
-IMPORTANT WORKFLOW CREATION RULES:
-- Always include a "start" node and an "end" node
-- Ensure all edges reference valid node IDs
-- Use appropriate role assignments based on task types and phase
-- Position nodes to create a clear visual flow
-- Generate realistic workflow names and descriptions based on user input
-- **CONSIDER SESSION PHASE**: When user mentions a session or phase, create phase-appropriate workflows
-- **CONSIDER SESSION STATUS**: When user mentions session status, ensure workflow aligns with status
-- **PROACTIVELY SUGGEST AGENT NODES**: When a workflow could benefit from automation, 
-  ask the user if they want to include relevant AI agents. For example:
-  * "Would you like me to add a QC_BOT to automatically validate deliverables?"
-  * "I can insert an INGEST_BOT to automate media ingestion. Should I include it?"
-  * "A COORDINATOR agent could help manage workflow dependencies. Would that be helpful?"
-- When suggesting agents, explain their benefits and where they fit in the workflow
-- Only add agent nodes if the user confirms they want them, or if the workflow clearly requires automation
-- **VALIDATE PHASE ALIGNMENT**: Ensure task types, roles, and node types match the target phase
-- **HANDLE REVIEW LOOPS**: For POST_PRODUCTION workflows, include revision loops for CHANGES_NEEDED status
-- **INCLUDE APPROVAL GATES**: For workflows that may reach WAITING_FOR_APPROVAL status, include approval nodes`;
+RULES:
+- Always include ONE start node and ONE end node
+- Position nodes left-to-right for linear flow
+- Use appropriate roles for task types
+- Match workflow to session phase/status
+- Suggest AI agents when beneficial (QC_BOT for validation, INGEST_BOT for media, DELIVERY_BOT for exports)
+- Return ONLY valid JSON, no markdown formatting`;
   }
 
   /**

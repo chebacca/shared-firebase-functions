@@ -2859,14 +2859,101 @@ app.post('/timecard/clock-out', authenticateToken, async (req: express.Request, 
     // Calculate total hours
     const clockInTime = (entryData.clockInTime as admin.firestore.Timestamp)?.toDate();
     const clockOutTime = now;
-    const totalHours = (clockOutTime.getTime() - clockInTime.getTime()) / (1000 * 60 * 60);
+    let totalHours = (clockOutTime.getTime() - clockInTime.getTime()) / (1000 * 60 * 60);
 
-    // Update entry with clock out time
+    // Subtract meal break if taken
+    const mealBreakStart = entryData.mealBreakStart?.toDate?.() || 
+                          (entryData.mealBreakStart ? new Date(entryData.mealBreakStart) : null);
+    const mealBreakEnd = entryData.mealBreakEnd?.toDate?.() || 
+                        (entryData.mealBreakEnd ? new Date(entryData.mealBreakEnd) : null);
+    
+    if (mealBreakStart && mealBreakEnd) {
+      const mealBreakHours = (mealBreakEnd.getTime() - mealBreakStart.getTime()) / (1000 * 60 * 60);
+      totalHours -= mealBreakHours;
+    }
+
+    // 🔧 ENHANCEMENT: Calculate preliminary Union/OT/DT/Meal values
+    // Get user's template for preliminary calculation
+    let template = null;
+    try {
+      const assignmentsQuery = await db.collection('timecardAssignments')
+        .where('userId', '==', userId)
+        .where('organizationId', '==', organizationId)
+        .where('isActive', '==', true)
+        .limit(1)
+        .get();
+
+      if (!assignmentsQuery.empty) {
+        const assignment = assignmentsQuery.docs[0].data();
+        if (assignment.templateId) {
+          const templateDoc = await db.collection('timecardTemplates').doc(assignment.templateId).get();
+          if (templateDoc.exists) {
+            template = templateDoc.data();
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ [TIMECARD CLOCK-OUT] Could not fetch template for preliminary calculation:', error);
+    }
+
+    // Use default rules if no template
+    const config = template || {
+      standardHoursPerDay: 8.0,
+      overtimeThreshold: 8.0,
+      doubleTimeThreshold: 12.0,
+      hourlyRate: entryData.hourlyRate || 0.0,
+      overtimeMultiplier: 1.5,
+      doubleTimeMultiplier: 2.0,
+      mealBreakRequired: true,
+      mealBreakThreshold: 6.0,
+      mealPenaltyHours: 1.0,
+    };
+
+    const hourlyRate = entryData.hourlyRate || config.hourlyRate || 0;
+
+    // Calculate meal penalty
+    const mealPenalty = config.mealBreakRequired &&
+      totalHours >= config.mealBreakThreshold &&
+      (!mealBreakStart || !mealBreakEnd);
+
+    // Calculate overtime breakdown
+    let regularHours = Math.min(totalHours, config.overtimeThreshold);
+    let overtimeHours = 0;
+    let doubleTimeHours = 0;
+
+    if (totalHours > config.overtimeThreshold) {
+      const overtimeAmount = totalHours - config.overtimeThreshold;
+
+      if (totalHours > config.doubleTimeThreshold) {
+        const doubleTimeAmount = totalHours - config.doubleTimeThreshold;
+        doubleTimeHours = doubleTimeAmount;
+        overtimeHours = overtimeAmount - doubleTimeAmount;
+      } else {
+        overtimeHours = overtimeAmount;
+      }
+    }
+
+    // Calculate preliminary total pay
+    let totalPay = regularHours * hourlyRate;
+    totalPay += overtimeHours * hourlyRate * config.overtimeMultiplier;
+    totalPay += doubleTimeHours * hourlyRate * config.doubleTimeMultiplier;
+
+    if (mealPenalty) {
+      totalPay += config.mealPenaltyHours * hourlyRate;
+    }
+
+    // Update entry with clock out time and preliminary calculations
     // Set status to PENDING so it can be submitted for approval
     await activeEntry.ref.update({
       clockOutTime: admin.firestore.Timestamp.fromDate(clockOutTime),
       notes: notes || entryData.notes || '',
       totalHours: totalHours,
+      regularHours: regularHours,
+      overtimeHours: overtimeHours,
+      doubleTimeHours: doubleTimeHours,
+      mealPenalty: mealPenalty,
+      totalPay: totalPay,
+      hourlyRate: hourlyRate,
       status: 'PENDING', // PENDING status allows submission for approval
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
@@ -2875,6 +2962,13 @@ app.post('/timecard/clock-out', authenticateToken, async (req: express.Request, 
     const updatedData: any = { id: updatedDoc.id, ...updatedDoc.data() };
 
     console.log(`⏰ [TIMECARD CLOCK-OUT] User ${userId} clocked out at ${now.toISOString()}, total hours: ${totalHours.toFixed(2)}`);
+    console.log(`⏰ [TIMECARD CLOCK-OUT] Preliminary calculations:`, {
+      regularHours: regularHours.toFixed(2),
+      overtimeHours: overtimeHours.toFixed(2),
+      doubleTimeHours: doubleTimeHours.toFixed(2),
+      mealPenalty,
+      totalPay: totalPay.toFixed(2)
+    });
 
     res.status(200).json(createSuccessResponse({
       id: updatedData.id,
@@ -2888,6 +2982,11 @@ app.post('/timecard/clock-out', authenticateToken, async (req: express.Request, 
       organizationId: updatedData.organizationId,
       status: updatedData.status,
       totalHours: updatedData.totalHours || 0,
+      regularHours: updatedData.regularHours || 0,
+      overtimeHours: updatedData.overtimeHours || 0,
+      doubleTimeHours: updatedData.doubleTimeHours || 0,
+      mealPenalty: updatedData.mealPenalty || false,
+      totalPay: updatedData.totalPay || 0,
       createdAt: (updatedData.createdAt as admin.firestore.Timestamp)?.toDate().toISOString(),
       updatedAt: (updatedData.updatedAt as admin.firestore.Timestamp)?.toDate().toISOString()
     }, 'Clocked out successfully'));

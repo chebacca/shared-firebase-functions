@@ -637,6 +637,7 @@ export const handleGoogleOAuthCallbackHttp = functions.https.onRequest(async (re
       accountEmail: userInfo.email,
       accountName: userInfo.name,
       tokens: encryptedTokens,
+      isActive: true, // Explicitly mark as active (required for client-side listener)
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       expiresAt: tokens.expiry_date ? admin.firestore.Timestamp.fromDate(new Date(tokens.expiry_date)) : null
