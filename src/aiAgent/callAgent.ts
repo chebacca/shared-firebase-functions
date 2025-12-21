@@ -93,13 +93,21 @@ export const callAIAgent = onCall(
       console.log(`🎯 [AI AGENT] Quick intent detected: ${quickIntent}`);
 
       // 3. Gather Context (Optimized based on intent)
+      // Extract sessionId from context if provided (for workflow creation)
+      const sessionId = context?.sessionId || context?.session?.id;
+      
       let globalContext;
       if (quickIntent === 'graph') {
         console.log(`⚡ [AI AGENT] Using minimal context for graph request (optimization)`);
         globalContext = await gatherMinimalContextForGraph(organizationId, uid);
       } else {
-        console.log(`📊 [AI AGENT] Gathering full global context for org: ${organizationId}`);
-        globalContext = await gatherGlobalContext(organizationId, uid);
+        console.log(`📊 [AI AGENT] Gathering full global context for org: ${organizationId}${sessionId ? ` (session: ${sessionId})` : ''}`);
+        globalContext = await gatherGlobalContext(organizationId, uid, sessionId);
+      }
+      
+      // Ensure userId is set in globalContext
+      if (!globalContext.userId) {
+        globalContext.userId = uid;
       }
 
       // 4. Generate Intelligent Response using Gemini
@@ -107,13 +115,25 @@ export const callAIAgent = onCall(
       const geminiService = createGeminiService();
       const currentMode = context?.activeMode || 'none';
 
+      // Check if function calling mode is enabled for workflows
+      const useFunctionCalling = context?.useFunctionCalling === true && currentMode === 'workflows';
 
-
-      const agentResponse = await geminiService.generateAgentResponse(
-        message,
-        globalContext,
-        currentMode
-      );
+      let agentResponse;
+      if (useFunctionCalling) {
+        console.log('🔧 [AI AGENT] Using function calling mode for workflow generation');
+        agentResponse = await geminiService.generateWorkflowResponseWithFunctions(
+          message,
+          globalContext,
+          context?.conversationHistory || [],
+          context?.maxTurns || 5
+        );
+      } else {
+        agentResponse = await geminiService.generateAgentResponse(
+          message,
+          globalContext,
+          currentMode
+        );
+      }
 
 
 
@@ -131,6 +151,15 @@ export const callAIAgent = onCall(
         intent: agentResponse.intent,
         suggestedDialog: agentResponse.suggestedDialog,
         prefillData: agentResponse.prefillData,
+        // NEW: Workflow generation fields
+        workflowData: agentResponse.workflowData || (agentResponse.contextData?.workflowData ? {
+          nodes: agentResponse.contextData.workflowData.nodes,
+          edges: agentResponse.contextData.workflowData.edges,
+          name: agentResponse.contextData.workflowData.name,
+          description: agentResponse.contextData.workflowData.description
+        } : undefined),
+        // NEW: Function calling results
+        functionResults: agentResponse.contextData?.functionResults,
         data: globalContext, // Include full context for debugging
         timestamp: new Date().toISOString()
       };
@@ -140,7 +169,18 @@ export const callAIAgent = onCall(
       return createSuccessResponse(response, 'AI agent called successfully');
 
     } catch (error: any) {
+      const errorAgentId = request.data?.agentId;
+      const errorOrgId = request.auth ? (await auth.getUser(request.auth.uid).catch(() => null))?.customClaims?.organizationId : null;
       console.error('❌ [AI AGENT] Error calling agent:', error);
+      console.error('❌ [AI AGENT] Error stack:', error.stack);
+      console.error('❌ [AI AGENT] Error details:', {
+        message: error.message,
+        name: error.name,
+        code: error.code,
+        agentId: errorAgentId,
+        organizationId: errorOrgId,
+        hasContext: !!request.data?.context
+      });
       return createErrorResponse(
         error.message || 'Failed to call AI agent',
         error.stack
@@ -246,6 +286,13 @@ export const callAIAgentHttp = onRequest(
         intent: agentResponse.intent,
         suggestedDialog: agentResponse.suggestedDialog,
         prefillData: agentResponse.prefillData,
+        // NEW: Workflow generation fields
+        workflowData: agentResponse.workflowData || (agentResponse.contextData?.workflowData ? {
+          nodes: agentResponse.contextData.workflowData.nodes,
+          edges: agentResponse.contextData.workflowData.edges,
+          name: agentResponse.contextData.workflowData.name,
+          description: agentResponse.contextData.workflowData.description
+        } : undefined),
         data: globalContext,
         timestamp: new Date().toISOString()
       };

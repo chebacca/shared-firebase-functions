@@ -8,6 +8,8 @@
 import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
 import { defineSecret } from 'firebase-functions/params';
 import { GlobalContext } from './contextAggregation/GlobalContextService';
+import { workflowFunctionDeclarations } from './workflowTools';
+import { WorkflowFunctionExecutor } from './workflowFunctionExecutor';
 
 // Define secret for Gemini API key
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
@@ -51,6 +53,13 @@ export interface AgentResponse {
   intent?: string;              // User intent (e.g., 'create_pitch', 'create_script')
   suggestedDialog?: string;     // Dialog ID to open (e.g., 'clipshow_create_pitch')
   prefillData?: Record<string, any>; // Data to pre-fill in dialog
+  // NEW: Workflow generation fields
+  workflowData?: {
+    nodes: any[];
+    edges: any[];
+    name?: string;
+    description?: string;
+  };
 }
 
 /**
@@ -78,6 +87,12 @@ export class GeminiService {
       console.log('🧠 [Gemini Service] Starting response generation...');
       console.log('📝 [Gemini Service] User message:', message);
       console.log('🎯 [Gemini Service] Current mode:', currentMode);
+
+      // Check if this is a workflow building request
+      const isWorkflowRequest = this.detectWorkflowIntent(message);
+      if (isWorkflowRequest && currentMode === 'workflows') {
+        return await this.generateWorkflowResponse(message, globalContext);
+      }
 
       // Build optimized context summary
       const contextSummary = this.buildContextSummary(globalContext);
@@ -130,6 +145,1039 @@ export class GeminiService {
   }
 
   /**
+   * Detect if user wants to build a workflow
+   */
+  private detectWorkflowIntent(message: string): boolean {
+    const lower = message.toLowerCase();
+    const workflowKeywords = [
+      'workflow', 'create workflow', 'build workflow', 'make workflow',
+      'generate workflow', 'design workflow', 'new workflow', 'workflow template',
+      'post-production workflow', 'production workflow', 'approval workflow',
+      'linear workflow', 'parallel workflow', 'review stages', 'workflow steps'
+    ];
+    return workflowKeywords.some(keyword => lower.includes(keyword));
+  }
+
+  /**
+   * Generate workflow-specific response with nodes and edges
+   */
+  private async generateWorkflowResponse(
+    message: string,
+    globalContext: GlobalContext
+  ): Promise<AgentResponse> {
+    try {
+      console.log('🔧 [Gemini Service] Generating workflow response...');
+
+      // Get available roles from context
+      const availableRoles = this.extractAvailableRoles(globalContext);
+
+      // Build workflow-specific system prompt
+      const workflowPrompt = this.buildWorkflowSystemPrompt(availableRoles);
+
+      // Build user prompt with workflow requirements
+      const userPrompt = `User Request: ${message}\n\nGenerate a workflow template based on this description. Include nodes, edges, and role assignments.`;
+
+      // Call Gemini API
+      const result = await this.model.generateContent([
+        { text: workflowPrompt },
+        { text: userPrompt }
+      ]);
+
+      const responseText = result.response.text();
+      console.log('✅ [Gemini Service] Workflow response:', responseText.substring(0, 500));
+
+      // Parse workflow response
+      const parsed = this.parseWorkflowResponse(responseText, message);
+
+      return {
+        response: parsed.explanation || 'I\'ve generated a workflow based on your description. Review it below and apply it to the canvas when ready.',
+        suggestedContext: 'workflows',
+        contextData: {
+          workflowData: parsed.workflowData
+        },
+        followUpSuggestions: [
+          'Apply to canvas',
+          'Modify workflow',
+          'Save as template'
+        ],
+        reasoning: 'Generated workflow template from user description'
+      };
+
+    } catch (error) {
+      console.error('❌ [Gemini Service] Error generating workflow:', error);
+      return {
+        response: 'I encountered an error generating the workflow. Please try rephrasing your request.',
+        suggestedContext: 'workflows',
+        contextData: null,
+        followUpSuggestions: ['Try a simpler description', 'Specify number of steps'],
+        reasoning: 'Error during workflow generation'
+      };
+    }
+  }
+
+  /**
+   * Generate workflow response with function calling (multi-turn agentic)
+   */
+  async generateWorkflowResponseWithFunctions(
+    message: string,
+    globalContext: GlobalContext,
+    conversationHistory: Array<{ role: string; parts: any[] }> = [],
+    maxTurns: number = 5
+  ): Promise<AgentResponse> {
+    try {
+      console.log('🔧 [Gemini Service] Starting function calling workflow generation...');
+      console.log('🔧 [Gemini Service] Message length:', message.length);
+      console.log('🔧 [Gemini Service] Conversation history length:', conversationHistory.length);
+      console.log('🔧 [Gemini Service] Max turns:', maxTurns);
+      console.log('🔧 [Gemini Service] Function declarations count:', workflowFunctionDeclarations.length);
+      
+      // Validate API key
+      if (!this.genAI) {
+        throw new Error('Gemini AI client not initialized. API key may be missing.');
+      }
+      
+      // Validate function declarations
+      if (!workflowFunctionDeclarations || workflowFunctionDeclarations.length === 0) {
+        throw new Error('No function declarations available for workflow generation');
+      }
+      
+      // Create model with function declarations
+      let model;
+      try {
+        model = this.genAI.getGenerativeModel({ 
+          model: 'gemini-2.5-flash',
+          tools: [{ functionDeclarations: workflowFunctionDeclarations as any }]
+        });
+        console.log('✅ [Gemini Service] Model created successfully');
+      } catch (modelError: any) {
+        console.error('❌ [Gemini Service] Error creating model:', modelError);
+        throw new Error(`Failed to create Gemini model: ${modelError.message}`);
+      }
+
+      let turnCount = 0;
+      let functionResults: any[] = [];
+      
+      // Transform conversation history from frontend format to Gemini SDK format
+      // Frontend sends: { role: 'user' | 'assistant', content: string }
+      // Gemini SDK expects: { role: 'user' | 'model', parts: [{ text: string }] }
+      const history: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
+      
+      // Only process non-empty conversation history
+      if (conversationHistory && conversationHistory.length > 0) {
+        conversationHistory.forEach((msg: any, index: number) => {
+          try {
+            // Extract text content - handle multiple formats
+            let text = '';
+            if (typeof msg === 'string') {
+              text = msg;
+            } else if (msg.content && typeof msg.content === 'string') {
+              text = msg.content;
+            } else if (msg.text && typeof msg.text === 'string') {
+              text = msg.text;
+            } else if (msg.parts && Array.isArray(msg.parts) && msg.parts[0]) {
+              const firstPart = msg.parts[0];
+              if (firstPart && typeof firstPart === 'object' && firstPart.text) {
+                text = firstPart.text;
+              } else if (typeof firstPart === 'string') {
+                text = firstPart;
+              }
+            }
+            
+            // Skip if no text found
+            if (!text || text.trim().length === 0) {
+              console.warn(`⚠️ [Gemini Service] Skipping message ${index} - no text content found`);
+              return;
+            }
+            
+            // Determine role - convert 'assistant' to 'model'
+            let role: 'user' | 'model' = 'user';
+            if (msg.role === 'assistant' || msg.role === 'model') {
+              role = 'model';
+            } else if (msg.role === 'user') {
+              role = 'user';
+            }
+            
+            // Create clean message object - ensure parts only contains { text: string }
+            history.push({
+              role,
+              parts: [{ text: text.trim() }]
+            });
+          } catch (err: any) {
+            console.error(`❌ [Gemini Service] Error processing message ${index}:`, err);
+            // Skip this message and continue
+          }
+        });
+      }
+      
+      console.log('🔧 [Gemini Service] Transformed history length:', history.length);
+      if (history.length > 0) {
+        console.log('🔧 [Gemini Service] First message structure:', JSON.stringify({
+          role: history[0].role,
+          partsIsArray: Array.isArray(history[0].parts),
+          partsLength: history[0].parts.length,
+          firstPart: history[0].parts[0] ? {
+            type: typeof history[0].parts[0],
+            keys: Object.keys(history[0].parts[0]),
+            hasText: 'text' in history[0].parts[0],
+            hasRole: 'role' in history[0].parts[0],
+            hasParts: 'parts' in history[0].parts[0],
+            textValue: typeof history[0].parts[0].text === 'string' ? history[0].parts[0].text.substring(0, 50) : 'N/A'
+          } : null
+        }, null, 2));
+        
+        // Validate each message in history
+        history.forEach((msg: any, idx: number) => {
+          if (!msg || !msg.role || !Array.isArray(msg.parts) || msg.parts.length === 0) {
+            console.error(`❌ [Gemini Service] Invalid message at index ${idx}:`, JSON.stringify(msg, null, 2));
+          } else if (msg.parts[0] && ('role' in msg.parts[0] || 'parts' in msg.parts[0])) {
+            console.error(`❌ [Gemini Service] Message at index ${idx} has nested role/parts in parts[0]:`, JSON.stringify(msg, null, 2));
+          }
+        });
+      }
+
+      // Get available roles
+      const availableRoles = this.extractAvailableRoles(globalContext);
+      console.log('🔧 [Gemini Service] Available roles count:', availableRoles.length);
+      
+      // Get session context if available
+      const sessionContext = globalContext.sessions;
+      console.log('🔧 [Gemini Service] Has session context:', !!sessionContext?.currentSession);
+      
+      // Add system prompt
+      let systemPrompt: string;
+      try {
+        systemPrompt = this.buildWorkflowSystemPrompt(availableRoles, sessionContext);
+        console.log('✅ [Gemini Service] System prompt built, length:', systemPrompt.length);
+      } catch (promptError: any) {
+        console.error('❌ [Gemini Service] Error building system prompt:', promptError);
+        throw new Error(`Failed to build system prompt: ${promptError.message}`);
+      }
+      
+      // For startChat, we need to format history correctly
+      // The history should be an array of content objects: { role: 'user' | 'model', parts: [{ text: string }] }
+      // But we should NOT include the system prompt in history - it should be in systemInstruction
+      // And we should NOT include the current user message - that will be sent via sendMessage
+      const chatHistory: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [...history];
+      
+      // Validate chat history structure before passing to startChat
+      const isValidChatHistory = chatHistory.every((msg: any) => {
+        return msg && 
+               (msg.role === 'user' || msg.role === 'model') &&
+               Array.isArray(msg.parts) &&
+               msg.parts.length > 0 &&
+               msg.parts[0] &&
+               typeof msg.parts[0] === 'object' &&
+               typeof msg.parts[0].text === 'string' &&
+               !msg.parts[0].role && // Ensure no nested role
+               !msg.parts[0].parts; // Ensure no nested parts
+      });
+      
+      if (!isValidChatHistory && chatHistory.length > 0) {
+        console.error('❌ [Gemini Service] Invalid chat history structure!');
+        console.error('❌ [Gemini Service] First invalid message:', JSON.stringify(chatHistory.find((msg: any) => {
+          return !(msg && 
+                   (msg.role === 'user' || msg.role === 'model') &&
+                   Array.isArray(msg.parts) &&
+                   msg.parts.length > 0 &&
+                   msg.parts[0] &&
+                   typeof msg.parts[0] === 'object' &&
+                   typeof msg.parts[0].text === 'string' &&
+                   !msg.parts[0].role &&
+                   !msg.parts[0].parts);
+        }), null, 2));
+        throw new Error('Invalid chat history structure for startChat');
+      }
+      
+      console.log('✅ [Gemini Service] Chat history prepared, length:', chatHistory.length);
+      console.log('✅ [Gemini Service] System prompt will be included in systemInstruction');
+      
+      // For function calling with multi-turn conversations, use startChat
+      // System prompt should be passed as systemInstruction, not in history
+      // If history is empty, pass empty array (not undefined)
+      const chat = model.startChat({
+        history: chatHistory.length > 0 ? chatHistory : [], // Only conversation history, no system prompt or current message
+        systemInstruction: systemPrompt // System prompt goes here, not in history
+      });
+      
+      console.log('✅ [Gemini Service] Chat started with history length:', chatHistory.length);
+      
+      // Track if we've sent the initial message
+      let initialMessageSent = false;
+      
+      while (turnCount < maxTurns) {
+        console.log(`🔄 [Gemini Service] Turn ${turnCount + 1}/${maxTurns}`);
+        
+        let result;
+        let response;
+        try {
+          if (!initialMessageSent) {
+            // Send the current user message (last item in fullHistory)
+            console.log('🔧 [Gemini Service] Sending initial user message');
+            result = await chat.sendMessage(message);
+            initialMessageSent = true;
+          } else {
+            // After function execution, continue the chat
+            // The chat object automatically includes function results in the next request
+            console.log('🔧 [Gemini Service] Continuing chat after function execution');
+            // Send empty message to continue - the chat will use function results from history
+            result = await chat.sendMessage('');
+          }
+          
+          response = result.response;
+        } catch (genError: any) {
+          console.error('❌ [Gemini Service] Error calling Gemini API:', genError);
+          console.error('❌ [Gemini Service] Gemini API error details:', {
+            name: genError?.name,
+            message: genError?.message,
+            code: genError?.code,
+            status: genError?.status,
+            statusText: genError?.statusText
+          });
+          throw genError; // Re-throw to be caught by outer catch
+        }
+
+        // Check if agent wants to call a function
+        const functionCalls = response.functionCalls();
+        
+        if (!functionCalls || functionCalls.length === 0) {
+          // Agent is done, return final response
+          const text = response.text();
+          console.log('✅ [Gemini Service] Function calling complete, returning final response');
+          return this.parseWorkflowResponseWithFunctions(text, functionResults);
+        }
+
+        console.log(`🔧 [Gemini Service] Executing ${functionCalls.length} function call(s)`);
+
+        // Execute function calls
+        const functionResponses = [];
+        for (const functionCall of functionCalls) {
+          console.log(`⚙️ [Gemini Service] Executing function: ${functionCall.name}`);
+          console.log(`⚙️ [Gemini Service] Function args:`, JSON.stringify(functionCall.args, null, 2).substring(0, 500));
+          
+          let functionResult;
+          try {
+            functionResult = await WorkflowFunctionExecutor.executeFunction(
+              functionCall.name,
+              functionCall.args,
+              globalContext.organizationId,
+              globalContext.userId || ''
+            );
+          } catch (execError: any) {
+            console.error(`❌ [Gemini Service] Error executing function ${functionCall.name}:`, execError);
+            console.error(`❌ [Gemini Service] Function execution error details:`, {
+              name: execError?.name,
+              message: execError?.message,
+              stack: execError?.stack?.substring(0, 500)
+            });
+            // Return error result instead of throwing
+            functionResult = {
+              success: false,
+              error: execError?.message || `Failed to execute function ${functionCall.name}`,
+              validationErrors: []
+            };
+          }
+
+          functionResults.push({
+            function: functionCall.name,
+            args: functionCall.args,
+            result: functionResult
+          });
+
+          // Format function response for Gemini SDK chat API
+          // The chat API expects function responses in a specific format
+          functionResponses.push({
+            functionResponse: {
+              name: functionCall.name,
+              response: functionResult
+            }
+          });
+
+          console.log(`✅ [Gemini Service] Function ${functionCall.name} completed: ${functionResult.success ? 'success' : 'failed'}`);
+        }
+
+        // After executing functions, we need to send the function results back to the chat
+        // The chat API handles this by calling sendMessage with function responses
+        // But first, we need to get the model's response text (if any)
+        const modelText = response.text() || '';
+        
+        // For the next turn, the chat will automatically include function results
+        // when we call sendMessage again, but we need to structure it correctly
+        // The chat object maintains its own history, so we just need to continue
+        console.log(`✅ [Gemini Service] Function results processed, will continue in next turn`);
+        
+        turnCount++;
+      }
+
+      // Max turns reached, return with function results
+      console.log(`⚠️ [Gemini Service] Max turns (${maxTurns}) reached`);
+      return {
+        response: "I've completed the workflow operations. Review the results below.",
+        workflowData: this.extractWorkflowFromResults(functionResults),
+        contextData: { functionResults, turns: turnCount },
+        suggestedContext: 'workflows',
+        followUpSuggestions: [],
+        reasoning: `Completed ${turnCount} function calls`
+      };
+    } catch (error: any) {
+      // Declare variables in catch scope for error logging
+      let turnCount = 0;
+      let functionResults: any[] = [];
+      
+      console.error('❌ [Gemini Service] Error in function calling:', error);
+      console.error('❌ [Gemini Service] Error name:', error?.name);
+      console.error('❌ [Gemini Service] Error message:', error?.message);
+      console.error('❌ [Gemini Service] Error stack:', error?.stack);
+      console.error('❌ [Gemini Service] Error code:', error?.code);
+      console.error('❌ [Gemini Service] Error details:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+      console.error('❌ [Gemini Service] Context at error:', {
+        turnCount,
+        functionResultsCount: functionResults.length,
+        messageLength: message.length,
+        hasGlobalContext: !!globalContext,
+        organizationId: globalContext?.organizationId
+      });
+      
+      // Include error details in response for debugging
+      const errorMessage = error?.message || 'Unknown error';
+      const errorDetails = error?.stack ? error.stack.substring(0, 500) : 'No stack trace available';
+      
+      return {
+        response: `I encountered an error while processing your workflow request: ${errorMessage}. Please try again or rephrase your request.`,
+        suggestedContext: 'workflows',
+        contextData: {
+          error: errorMessage,
+          errorDetails: errorDetails,
+          functionResults: functionResults.length > 0 ? functionResults : undefined
+        },
+        followUpSuggestions: ['Try a simpler request', 'Rephrase your workflow description', 'Check that all required fields are provided'],
+        reasoning: `Error during function calling workflow generation: ${errorMessage}`
+      };
+    }
+  }
+
+  private extractWorkflowFromResults(functionResults: any[]): any {
+    // Extract final workflow from function results
+    for (let i = functionResults.length - 1; i >= 0; i--) {
+      const result = functionResults[i];
+      if (result.function === 'create_workflow' || result.function === 'modify_workflow') {
+        return result.result.data?.workflow || result.result.data;
+      }
+    }
+    return null;
+  }
+
+  private parseWorkflowResponseWithFunctions(text: string, functionResults: any[]): AgentResponse {
+    // Parse text response and combine with function results
+    const workflowData = this.extractWorkflowFromResults(functionResults);
+    
+    return {
+      response: text,
+      workflowData: workflowData,
+      contextData: { functionResults },
+      suggestedContext: 'workflows',
+      followUpSuggestions: workflowData ? ['Apply to canvas', 'Save as template'] : [],
+      reasoning: 'Workflow generated via function calling'
+    };
+  }
+
+  /**
+   * Build system prompt for workflow generation
+   */
+  private buildWorkflowSystemPrompt(
+    availableRoles: Array<{ id: string; name: string; displayName: string }>,
+    sessionContext?: any
+  ): string {
+    const rolesList = availableRoles.length > 0
+      ? availableRoles.map(r => `- ${r.displayName} (${r.id})`).join('\n')
+      : '- EDITOR\n- ASSISTANT_EDITOR\n- COLORIST\n- SOUND_DESIGNER\n- PRODUCER\n- POST_COORDINATOR';
+    
+    // Build session context section if available
+    let sessionContextSection = '';
+    try {
+      if (sessionContext?.currentSession) {
+        const session = sessionContext.currentSession;
+        sessionContextSection = `
+CURRENT SESSION CONTEXT:
+- Session Name: ${session.name}
+- Session Status: ${session.status}
+- Current Phase: ${session.phase}
+${session.workflowStage ? `- Workflow Stage: ${session.workflowStage}` : ''}
+${session.teamMembers && session.teamMembers.length > 0 ? `- Team Members: ${session.teamMembers.map((m: any) => m.roleName || m.roleId || 'Unknown').join(', ')}` : ''}
+${session.deliverables && session.deliverables.length > 0 ? `- Deliverables: ${session.deliverables.map((d: any) => d.name || 'Unnamed').join(', ')}` : ''}
+${session.existingWorkflows && session.existingWorkflows.length > 0 ? `- Existing Workflows: ${session.existingWorkflows.map((w: any) => `${w.name || 'Unnamed'} (${w.phase || 'UNKNOWN'}, ${w.status || 'UNKNOWN'})`).join(', ')}` : ''}
+
+IMPORTANT: When creating workflows for this session:
+- Target phase should be: ${session.phase}
+- Consider existing workflows: ${session.existingWorkflows && session.existingWorkflows.length > 0 ? 'Session already has workflows. Check if you should modify existing or create new.' : 'No existing workflows. Create new workflow.'}
+- Use available team members for role assignments
+- Align workflow with session deliverables
+- Ensure workflow is appropriate for session status: ${session.status}
+`;
+      }
+    } catch (error) {
+      console.warn('[GeminiService] Error building session context section:', error);
+      // Continue without session context section
+      sessionContextSection = '';
+    }
+
+    return `You are a Workflow Architect AI specialized in creating production and post-production workflows.
+
+Your task is to generate workflow templates as JSON structures that can be directly used in a React Flow-based workflow designer.
+
+WORKFLOW STRUCTURE:
+A workflow consists of:
+1. **Nodes**: Individual workflow steps/tasks
+2. **Edges**: Connections between nodes (dependencies)
+3. **Role Assignments**: Which roles are responsible for each step
+
+NODE STRUCTURE:
+Each node must have:
+- id: string (unique identifier, e.g., "node-1", "node-2")
+- type: string (one of: "task", "agent", "approval", "notification", "decision", "start", "end")
+- position: { x: number, y: number } (coordinates for visual layout)
+- data: {
+    label: string (human-readable step name)
+    description?: string
+    assignedRole?: string (role ID from available roles)
+    taskType?: string (e.g., "EDITORIAL", "COLOR", "AUDIO", "QC")
+    estimatedHours?: number
+    priority?: "low" | "medium" | "high"
+    
+    // For AGENT nodes specifically:
+    role?: string (one of: "COORDINATOR", "QC_BOT", "INGEST_BOT", "DELIVERY_BOT", "ASSISTANT")
+    networkMode?: "cloud" | "local" | "auto"
+    skills?: string[] (array of agent capabilities)
+    executionMode?: "rule_based" | "llm_based"
+    notificationsEnabled?: boolean
+  }
+
+EDGE STRUCTURE:
+Each edge must have:
+- id: string (unique identifier, e.g., "edge-1-2")
+- source: string (source node id)
+- target: string (target node id)
+- type?: string (default: "default")
+- animated?: boolean (for visual flow indication)
+
+AVAILABLE ROLES:
+${rolesList}
+${sessionContextSection}
+SESSION LIFECYCLE OVERVIEW:
+A production session progresses through 5 main phases. Understanding these phases is CRITICAL for creating appropriate workflows:
+
+1. PRE_PRODUCTION (Planning Phase)
+   - Statuses: PLANNING, PLANNED, PRE_PRODUCTION
+   - Activities: Session creation, team assignment, deliverable definition, workflow template assignment
+   - Workflow Types: Planning workflows, team coordination workflows, setup workflows
+   - Key Nodes: Team assignment nodes, planning nodes, setup nodes, coordination nodes
+   - Common Agents: COORDINATOR (for workflow orchestration)
+   - Task Types: GENERAL_TASK, COMMUNICATION
+
+2. PRODUCTION (Execution Phase)
+   - Statuses: PRODUCTION_IN_PROGRESS, IN_PRODUCTION (legacy), PREPARE_FOR_POST
+   - Activities: Execute workflow steps, track progress, upload media, mark steps complete, prepare for post
+   - Workflow Types: Production workflows, on-set workflows, capture workflows, dailies workflows
+   - Key Nodes: Production task nodes, media capture nodes, dailies review nodes, wrap nodes
+   - Common Agents: INGEST_BOT (for media organization), COORDINATOR (for coordination)
+   - Task Types: GENERAL_TASK, COMMUNICATION, production-specific tasks
+
+3. POST_PRODUCTION (Editing Phase)
+   - Statuses: READY_FOR_POST, POST_PRODUCTION, POST_IN_PROGRESS, CHANGES_NEEDED, WAITING_FOR_APPROVAL
+   - Activities: Create post-production tasks, assign editors, create review sessions, handle feedback/revisions
+   - Workflow Types: Post-production workflows, editorial workflows, review workflows, QC workflows
+   - Key Nodes: Editorial nodes, color nodes, audio nodes, graphics nodes, review nodes, QC nodes, approval nodes
+   - Common Agents: INGEST_BOT (for media ingestion), QC_BOT (for quality control), COORDINATOR (for orchestration)
+   - Task Types: INGEST, EDITORIAL, COLOR, AUDIO, GRAPHICS, QC, REVIEW, COMMUNICATION
+
+4. DELIVERY (Finalization Phase)
+   - Statuses: DELIVERY, PHASE_4_POST_PRODUCTION (legacy), COMPLETED
+   - Activities: Final approval, export deliverables, deliver to network, mark completed
+   - Workflow Types: Delivery workflows, mastering workflows, distribution workflows, network delivery workflows
+   - Key Nodes: Final QC nodes, export nodes, delivery nodes, network delivery nodes, archive nodes
+   - Common Agents: DELIVERY_BOT (for delivery automation), QC_BOT (for final QC), COORDINATOR
+   - Task Types: QC, REVIEW, COMMUNICATION, delivery-specific tasks
+
+5. ARCHIVED (Completed Phase)
+   - Statuses: ARCHIVED, CANCELED
+   - Activities: Archive session data, cleanup
+   - Workflow Types: Archive workflows (rarely used)
+   - Key Nodes: Archive nodes, cleanup nodes
+   - Note: Workflows are rarely created for archived sessions
+
+SPECIAL STATUSES:
+- ON_HOLD: Can be set from any status, returns to previous status when resumed. Workflows should account for pause/resume capability.
+- CHANGES_NEEDED: Set during review when changes are required (POST_PRODUCTION phase). Workflows should include revision loops.
+- WAITING_FOR_APPROVAL: Set when awaiting client/stakeholder approval (POST_PRODUCTION phase). Workflows should include approval gates.
+- CANCELED: Terminal status for cancelled sessions (ARCHIVED phase). No workflows should be created.
+
+STATUS TRANSITION RULES:
+Understanding valid status transitions helps create workflows that align with session progression:
+
+Valid Transitions (from → to):
+- PLANNING → PLANNED, CANCELED, ON_HOLD
+- PLANNED → PRODUCTION_IN_PROGRESS, CANCELED, ON_HOLD
+- PRODUCTION_IN_PROGRESS → READY_FOR_POST, ON_HOLD, CANCELED
+- READY_FOR_POST → POST_PRODUCTION, PRODUCTION_IN_PROGRESS, ON_HOLD
+- POST_PRODUCTION → POST_IN_PROGRESS, READY_FOR_POST, ON_HOLD
+- POST_IN_PROGRESS → COMPLETED, POST_PRODUCTION, ON_HOLD
+- COMPLETED → ARCHIVED, POST_IN_PROGRESS
+- ON_HOLD → Can resume to: PLANNING, PLANNED, PRODUCTION_IN_PROGRESS, READY_FOR_POST, POST_PRODUCTION, POST_IN_PROGRESS
+- CHANGES_NEEDED → POST_IN_PROGRESS, ON_HOLD
+- WAITING_FOR_APPROVAL → COMPLETED, CHANGES_NEEDED, ON_HOLD
+
+Terminal Statuses (no transitions out):
+- ARCHIVED: Final state, cannot transition
+- CANCELED: Terminal state, cannot transition
+
+IMPLICATIONS FOR WORKFLOW CREATION:
+- Workflows assigned during PLANNING should prepare for PRODUCTION phase (planning, team assignment, setup)
+- Workflows assigned during PRODUCTION_IN_PROGRESS should support active production (capture, dailies, wrap)
+- Workflows assigned during READY_FOR_POST should transition to POST_PRODUCTION (ingest, initial edit)
+- Workflows assigned during POST_PRODUCTION should handle editing and review (editorial, color, audio, review, QC)
+- Workflows assigned during DELIVERY should handle finalization and distribution (final QC, export, delivery)
+- Workflows should account for ON_HOLD status (pause/resume capability)
+- Workflows in POST_PRODUCTION should include revision loops for CHANGES_NEEDED status
+- Workflows should include approval gates for WAITING_FOR_APPROVAL status
+
+MULTI-PHASE WORKFLOW SUPPORT:
+A single session can have multiple workflow instances:
+- One workflow instance per phase (PRODUCTION, POST_PRODUCTION, DELIVERY)
+- Each phase workflow is independent with its own steps, assignments, and progress
+- Workflows can be assigned to specific phases using workflowPhase parameter
+
+WORKFLOW ASSIGNMENT RULES:
+- workflowPhase: 'PRODUCTION' | 'POST_PRODUCTION' | 'BOTH' | undefined
+- If 'BOTH', creates workflows for both PRODUCTION and POST_PRODUCTION phases
+- If undefined, defaults to 'PRODUCTION'
+- forceReplace: boolean - If true, replaces existing workflow for that phase
+- If false and workflow exists, returns existing workflow
+
+PHASE-SPECIFIC WORKFLOW CONSIDERATIONS:
+- PRODUCTION workflows: Focus on on-set tasks, media capture, dailies, wrap
+- POST_PRODUCTION workflows: Focus on editing, color, audio, review, QC
+- DELIVERY workflows: Focus on mastering, export, distribution, network delivery
+
+When creating workflows, consider:
+- Which phase(s) the workflow will be used in
+- Phase-appropriate node types and task types
+- Phase-specific roles and assignments
+- Phase transition requirements
+- Existing workflows for the session (if any)
+
+AI AGENT NODES:
+The Workflow Designer supports AI Agent nodes that can automate tasks and provide intelligent assistance.
+
+AGENT ROLES:
+1. **COORDINATOR** - Orchestrates workflow steps, manages dependencies, coordinates team members
+   - Use for: Workflow orchestration, task coordination, dependency management
+   - Skills: ["workflow_coordination", "dependency_tracking", "team_communication"]
+   
+2. **QC_BOT** - Automated quality control and validation
+   - Use for: Automated QC checks, file validation, format verification, technical checks
+   - Skills: ["quality_control", "file_validation", "technical_checks", "format_verification"]
+   
+3. **INGEST_BOT** - Automated media ingestion and organization
+   - Use for: File ingestion, media organization, metadata extraction, asset cataloging
+   - Skills: ["media_ingest", "file_organization", "metadata_extraction", "asset_cataloging"]
+   
+4. **DELIVERY_BOT** - Automated delivery and distribution
+   - Use for: Automated delivery preparation, format conversion, delivery tracking, distribution
+   - Skills: ["delivery_preparation", "format_conversion", "delivery_tracking", "distribution"]
+   
+5. **ASSISTANT** - General-purpose AI assistant (default)
+   - Use for: General automation, task assistance, notifications, reminders
+   - Skills: ["task_automation", "notifications", "reminders", "general_assistance"]
+
+AGENT NODE CONFIGURATION:
+When creating an Agent node, include:
+- type: "agent"
+- data.role: One of the agent roles above
+- data.networkMode: "cloud" (full AI), "local" (offline capable), or "auto"
+- data.executionMode: "rule_based" (deterministic rules) or "llm_based" (AI reasoning)
+- data.skills: Array of relevant skills for the agent
+- data.notificationsEnabled: true/false (whether agent sends notifications)
+
+WHEN TO SUGGEST AGENT NODES:
+- **QC_BOT**: When workflow includes quality control, file validation, or technical checks
+- **INGEST_BOT**: When workflow involves file ingestion, media organization, or asset management
+- **DELIVERY_BOT**: When workflow includes delivery preparation, format conversion, or distribution
+- **COORDINATOR**: When workflow has complex dependencies or needs orchestration
+- **ASSISTANT**: For general automation, notifications, or task assistance
+
+IMPORTANT: Always proactively ask users if they want to include AI agents in their workflow. 
+Suggest specific agents based on the workflow's needs. For example:
+- "Would you like me to add a QC_BOT agent to automatically validate deliverables?"
+- "I can insert an INGEST_BOT to automate media ingestion. Should I include it?"
+- "A COORDINATOR agent could help manage dependencies. Would that be helpful?"
+
+LAYOUT GUIDELINES:
+- Position nodes in a logical flow (left to right for linear, top to bottom for parallel)
+- Start node at x: 100, y: 200
+- Subsequent nodes spaced 250px horizontally or 150px vertically
+- Keep workflow width reasonable (max 5-6 nodes per row)
+
+WORKFLOW PATTERNS:
+
+General Patterns:
+1. **Linear Workflow**: Sequential steps, one after another
+2. **Parallel Workflow**: Multiple branches that can run simultaneously
+3. **Approval Workflow**: Steps with approval gates
+4. **Review Workflow**: Multiple review stages before completion
+
+PHASE-SPECIFIC WORKFLOW PATTERNS:
+
+PRE_PRODUCTION Patterns:
+- Team Assignment → Planning → Setup → Ready for Production
+- Common nodes: Team assignment, planning, setup, coordination
+- Common agents: COORDINATOR (for workflow orchestration)
+- Task types: GENERAL_TASK, COMMUNICATION
+- Typical flow: Start → Team Assignment → Planning Meeting → Setup Tasks → Ready Check → End
+
+PRODUCTION Patterns:
+- Setup → Capture → Dailies → Wrap → Prepare for Post
+- Common nodes: Production tasks, media capture, dailies review, wrap tasks
+- Common agents: INGEST_BOT (for media organization), COORDINATOR (for coordination)
+- Task types: GENERAL_TASK, COMMUNICATION, production-specific tasks
+- Typical flow: Start → Production Setup → Media Capture → Dailies Review → Wrap → Prepare for Post → End
+
+POST_PRODUCTION Patterns:
+- Ingest → Edit → Color → Audio → Graphics → QC → Review → Approval
+- Common nodes: Editorial, color, audio, graphics, QC, review, approval
+- Common agents: INGEST_BOT (for media ingestion), QC_BOT (for quality control), COORDINATOR (for orchestration)
+- Task types: INGEST, EDITORIAL, COLOR, AUDIO, GRAPHICS, QC, REVIEW, COMMUNICATION
+- Typical flow: Start → Media Ingest → Initial Edit → Color Grading → Audio Mix → Graphics → QC Check → Review → Approval → End
+- Review loops: Review → Changes Needed → Revision → Review (repeat until approved)
+
+DELIVERY Patterns:
+- Final QC → Mastering → Export → Network Delivery → Archive
+- Common nodes: QC, export, delivery, archive
+- Common agents: DELIVERY_BOT (for delivery automation), QC_BOT (for final QC), COORDINATOR
+- Task types: QC, REVIEW, COMMUNICATION, delivery-specific tasks
+- Typical flow: Start → Final QC → Mastering → Export → Network Delivery → Archive → End
+
+REVIEW LOOPS (Common in POST_PRODUCTION and DELIVERY):
+- Review → Changes Needed → Revision → Review (repeat until approved)
+- Uses decision nodes and conditional edges
+- Allows for iterative feedback and revision cycles
+- Should include approval gates before proceeding
+
+RESPONSE FORMAT:
+You must respond with a JSON object:
+{
+  "explanation": "Brief explanation of the generated workflow",
+  "workflowData": {
+    "name": "Workflow name based on user request",
+    "description": "Detailed description of the workflow",
+    "nodes": [
+      {
+        "id": "node-1",
+        "type": "start",
+        "position": { "x": 100, "y": 200 },
+        "data": { "label": "Start" }
+      },
+      // ... more nodes
+    ],
+    "edges": [
+      {
+        "id": "edge-1-2",
+        "source": "node-1",
+        "target": "node-2",
+        "type": "default"
+      },
+      // ... more edges
+    ]
+  }
+}
+
+EXAMPLES:
+
+User: "Create a post-production workflow with 3 review stages"
+Response:
+{
+  "explanation": "I've created a linear post-production workflow with three review stages: Initial Edit, Producer Review, and Final Approval.",
+  "workflowData": {
+    "name": "Post-Production Review Workflow",
+    "description": "Three-stage review process for post-production deliverables",
+    "nodes": [
+      { "id": "node-1", "type": "start", "position": { "x": 100, "y": 200 }, "data": { "label": "Start" } },
+      { "id": "node-2", "type": "task", "position": { "x": 350, "y": 200 }, "data": { "label": "Initial Edit", "assignedRole": "EDITOR", "taskType": "EDITORIAL", "estimatedHours": 8 } },
+      { "id": "node-3", "type": "approval", "position": { "x": 600, "y": 200 }, "data": { "label": "Producer Review", "assignedRole": "PRODUCER", "taskType": "REVIEW", "estimatedHours": 2 } },
+      { "id": "node-4", "type": "approval", "position": { "x": 850, "y": 200 }, "data": { "label": "Final Approval", "assignedRole": "PRODUCER", "taskType": "REVIEW", "estimatedHours": 1 } },
+      { "id": "node-5", "type": "end", "position": { "x": 1100, "y": 200 }, "data": { "label": "Complete" } }
+    ],
+    "edges": [
+      { "id": "edge-1-2", "source": "node-1", "target": "node-2", "type": "default" },
+      { "id": "edge-2-3", "source": "node-2", "target": "node-3", "type": "default" },
+      { "id": "edge-3-4", "source": "node-3", "target": "node-4", "type": "default" },
+      { "id": "edge-4-5", "source": "node-4", "target": "node-5", "type": "default" }
+    ]
+  }
+}
+
+User: "Build a workflow with parallel color and audio tasks"
+Response:
+{
+  "explanation": "I've created a workflow where color correction and audio mixing run in parallel after the initial edit.",
+  "workflowData": {
+    "name": "Parallel Post-Production Workflow",
+    "description": "Workflow with parallel color and audio processing",
+    "nodes": [
+      { "id": "node-1", "type": "start", "position": { "x": 100, "y": 200 }, "data": { "label": "Start" } },
+      { "id": "node-2", "type": "task", "position": { "x": 350, "y": 200 }, "data": { "label": "Initial Edit", "assignedRole": "EDITOR", "taskType": "EDITORIAL" } },
+      { "id": "node-3", "type": "task", "position": { "x": 600, "y": 100 }, "data": { "label": "Color Correction", "assignedRole": "COLORIST", "taskType": "COLOR" } },
+      { "id": "node-4", "type": "task", "position": { "x": 600, "y": 300 }, "data": { "label": "Audio Mix", "assignedRole": "SOUND_DESIGNER", "taskType": "AUDIO" } },
+      { "id": "node-5", "type": "task", "position": { "x": 850, "y": 200 }, "data": { "label": "Final Assembly", "assignedRole": "EDITOR", "taskType": "EDITORIAL" } },
+      { "id": "node-6", "type": "end", "position": { "x": 1100, "y": 200 }, "data": { "label": "Complete" } }
+    ],
+    "edges": [
+      { "id": "edge-1-2", "source": "node-1", "target": "node-2", "type": "default" },
+      { "id": "edge-2-3", "source": "node-2", "target": "node-3", "type": "default" },
+      { "id": "edge-2-4", "source": "node-2", "target": "node-4", "type": "default" },
+      { "id": "edge-3-5", "source": "node-3", "target": "node-5", "type": "default" },
+      { "id": "edge-4-5", "source": "node-4", "target": "node-5", "type": "default" },
+      { "id": "edge-5-6", "source": "node-5", "target": "node-6", "type": "default" }
+    ]
+  }
+}
+
+NODE TYPE CONSTRAINTS AND VALIDATION RULES:
+
+Required Node Types:
+- Every workflow MUST have exactly one "start" node
+- Every workflow MUST have exactly one "end" node
+- Start node should be first in the flow (only outgoing edges)
+- End node should be last in the flow (only incoming edges)
+
+Valid Node Types:
+- "start": Workflow entry point (REQUIRED)
+- "end": Workflow exit point (REQUIRED)
+- "task": Standard workflow task (most common)
+- "agent": AI Agent node for automation
+- "approval": Review/approval gate
+- "decision": Conditional branching point
+- "notification": Notification/alert node
+
+Node Type Specifics:
+- "task" nodes: Can have taskType (EDITORIAL, COLOR, AUDIO, QC, INGEST, GRAPHICS, REVIEW, COMMUNICATION, GENERAL_TASK)
+- "agent" nodes: Must have role (COORDINATOR, QC_BOT, INGEST_BOT, DELIVERY_BOT, ASSISTANT)
+- "approval" nodes: Typically require assignedRole for approver
+- "decision" nodes: Should have multiple outgoing edges for different paths
+
+EDGE VALIDATION RULES:
+
+Edge Structure:
+- id: string (unique identifier)
+- source: string (must reference existing node id)
+- target: string (must reference existing node id)
+- type: string (default: "default", can be "pulse", "animated", etc.)
+
+Connection Rules:
+- Edges connect nodes in a directed graph (source → target)
+- Multiple edges can originate from a single node (parallel paths)
+- Multiple edges can target a single node (convergence)
+- Edges cannot create cycles (EXCEPT for review/feedback loops)
+- Start node should only have outgoing edges (no incoming)
+- End node should only have incoming edges (no outgoing)
+
+Special Edge Cases:
+- Review loops: ALLOWED for feedback/revision cycles (e.g., Review → Changes Needed → Revision → Review)
+- Parallel paths: Multiple tasks can run simultaneously
+- Conditional paths: Decision nodes can have multiple outgoing edges
+- Merge points: Multiple paths can converge before a single task
+
+VALIDATION CHECKS:
+- All edges must have valid source and target node IDs
+- No self-loops (node cannot connect to itself)
+- Start node cannot have incoming edges
+- End node cannot have outgoing edges
+- Cycles are only allowed for review/approval feedback loops
+- No orphaned nodes (all nodes must be connected via edges)
+
+ROLE ASSIGNMENT RULES:
+
+Phase-Specific Role Considerations:
+- PRE_PRODUCTION: PRODUCER, POST_COORDINATOR, DIRECTOR
+- PRODUCTION: DIRECTOR, PRODUCER, CAMERA_OPERATOR, SOUND_RECORDIST
+- POST_PRODUCTION: EDITOR, COLORIST, SOUND_DESIGNER, QC_SPECIALIST, PRODUCER
+- DELIVERY: POST_COORDINATOR, PRODUCER, QC_SPECIALIST
+
+Role Assignment Rules:
+- Each task node can have assignedRole (optional but recommended)
+- Agent nodes have role (required): COORDINATOR, QC_BOT, INGEST_BOT, DELIVERY_BOT, ASSISTANT
+- Approval nodes should have assignedRole for the approver
+- Multiple users can be assigned to a single node (via assignedUsers array)
+
+Role to Task Type Mapping:
+- INGEST task → INGEST_BOT (agent) or POST_COORDINATOR
+- EDITORIAL task → EDITOR, ASSISTANT_EDITOR
+- COLOR task → COLORIST
+- AUDIO task → SOUND_DESIGNER, AUDIO_ENGINEER
+- GRAPHICS task → GRAPHICS_DESIGNER, MOTION_DESIGNER
+- QC task → QC_SPECIALIST or QC_BOT (agent)
+- REVIEW task → PRODUCER, DIRECTOR, CLIENT
+
+VALIDATION:
+- assignedRole must match available roles in the organization
+- Agent node roles are fixed (cannot be custom)
+- Role assignments should match task type (e.g., COLOR task → COLORIST role)
+- Role assignments should match workflow phase
+
+TASK TYPE AND PHASE ALIGNMENT:
+
+Task Types (POST_PRODUCTION_TASK_TYPES):
+- INGEST: Media ingestion (POST_PRODUCTION phase)
+- EDITORIAL: Video editing (POST_PRODUCTION phase)
+- COLOR: Color correction/grading (POST_PRODUCTION phase)
+- AUDIO: Sound design/mixing (POST_PRODUCTION phase)
+- GRAPHICS: Motion graphics/VFX (POST_PRODUCTION phase)
+- QC: Quality control (POST_PRODUCTION, DELIVERY phases)
+- REVIEW: Review/approval (POST_PRODUCTION, DELIVERY phases)
+- COMMUNICATION: Team communication (all phases)
+- GENERAL_TASK: Generic task (all phases)
+
+Phase-Appropriate Task Types:
+- PRE_PRODUCTION: GENERAL_TASK, COMMUNICATION, planning tasks
+- PRODUCTION: GENERAL_TASK, COMMUNICATION, production tasks
+- POST_PRODUCTION: INGEST, EDITORIAL, COLOR, AUDIO, GRAPHICS, QC, REVIEW, COMMUNICATION
+- DELIVERY: QC, REVIEW, COMMUNICATION, delivery tasks
+
+VALIDATION:
+- Task types should align with workflow phase
+- Task types should match assigned roles
+- Agent nodes should use appropriate agent roles
+- Phase-inappropriate task types should be flagged
+
+WORKFLOW ASSIGNMENT EDGE CASES:
+
+Assignment Constraints:
+- A session can have one workflow instance per phase
+- If workflow exists for a phase and forceReplace=false, assignment fails
+- If workflow exists for a phase and forceReplace=true, existing workflow is replaced
+- Workflows can be assigned to: 'PRODUCTION', 'POST_PRODUCTION', 'BOTH', or undefined (defaults to 'PRODUCTION')
+
+Assignment Edge Cases by Session Status:
+1. Session in PLANNING status:
+   - Can assign PRODUCTION workflow (preparation)
+   - Cannot assign POST_PRODUCTION workflow (too early)
+   - Should suggest PRODUCTION workflow
+
+2. Session in PRODUCTION_IN_PROGRESS:
+   - Can assign PRODUCTION workflow (if not already assigned)
+   - Can assign POST_PRODUCTION workflow (preparation)
+   - Should suggest both if appropriate
+
+3. Session in READY_FOR_POST:
+   - Should assign POST_PRODUCTION workflow
+   - PRODUCTION workflow should already exist
+   - Should suggest POST_PRODUCTION workflow
+
+4. Session in POST_PRODUCTION:
+   - POST_PRODUCTION workflow should exist
+   - Can assign DELIVERY workflow (preparation)
+   - Should suggest DELIVERY workflow if nearing completion
+
+5. Session in DELIVERY:
+   - DELIVERY workflow should exist
+   - Cannot assign new workflows (workflow is complete)
+
+VALIDATION:
+- Check session status before suggesting workflow assignment
+- Warn if assigning workflow to inappropriate phase
+- Suggest phase-appropriate workflows
+- Check for existing workflows before assignment
+
+IMPORTANT WORKFLOW CREATION RULES:
+- Always include a "start" node and an "end" node
+- Ensure all edges reference valid node IDs
+- Use appropriate role assignments based on task types and phase
+- Position nodes to create a clear visual flow
+- Generate realistic workflow names and descriptions based on user input
+- **CONSIDER SESSION PHASE**: When user mentions a session or phase, create phase-appropriate workflows
+- **CONSIDER SESSION STATUS**: When user mentions session status, ensure workflow aligns with status
+- **PROACTIVELY SUGGEST AGENT NODES**: When a workflow could benefit from automation, 
+  ask the user if they want to include relevant AI agents. For example:
+  * "Would you like me to add a QC_BOT to automatically validate deliverables?"
+  * "I can insert an INGEST_BOT to automate media ingestion. Should I include it?"
+  * "A COORDINATOR agent could help manage workflow dependencies. Would that be helpful?"
+- When suggesting agents, explain their benefits and where they fit in the workflow
+- Only add agent nodes if the user confirms they want them, or if the workflow clearly requires automation
+- **VALIDATE PHASE ALIGNMENT**: Ensure task types, roles, and node types match the target phase
+- **HANDLE REVIEW LOOPS**: For POST_PRODUCTION workflows, include revision loops for CHANGES_NEEDED status
+- **INCLUDE APPROVAL GATES**: For workflows that may reach WAITING_FOR_APPROVAL status, include approval nodes`;
+  }
+
+  /**
+   * Extract available roles from global context
+   */
+  private extractAvailableRoles(globalContext: GlobalContext): Array<{ id: string; name: string; displayName: string }> {
+    // Default roles if context doesn't provide them
+    const defaultRoles = [
+      { id: 'EDITOR', name: 'Editor', displayName: 'Editor' },
+      { id: 'ASSISTANT_EDITOR', name: 'Assistant Editor', displayName: 'Assistant Editor' },
+      { id: 'COLORIST', name: 'Colorist', displayName: 'Colorist' },
+      { id: 'SOUND_DESIGNER', name: 'Sound Designer', displayName: 'Sound Designer' },
+      { id: 'PRODUCER', name: 'Producer', displayName: 'Producer' },
+      { id: 'POST_COORDINATOR', name: 'Post Coordinator', displayName: 'Post Coordinator' },
+      { id: 'QC_SPECIALIST', name: 'QC Specialist', displayName: 'QC Specialist' }
+    ];
+
+    // Try to extract from context if available
+    // Note: TeamContext doesn't have roles property, so we use default roles
+    // If roles are needed from context, they should be added to TeamContext interface
+
+    return defaultRoles;
+  }
+
+  /**
+   * Parse workflow response from AI
+   */
+  private parseWorkflowResponse(responseText: string, originalMessage: string): {
+    explanation: string;
+    workflowData: {
+      name: string;
+      description: string;
+      nodes: any[];
+      edges: any[];
+    };
+  } {
+    try {
+      // Try to extract JSON from response
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        
+        if (parsed.workflowData) {
+          return {
+            explanation: parsed.explanation || 'Workflow generated successfully',
+            workflowData: parsed.workflowData
+          };
+        }
+      }
+
+      // Fallback: Generate a simple workflow
+      return {
+        explanation: 'I\'ve created a basic workflow based on your description. You can modify it on the canvas.',
+        workflowData: {
+          name: `Workflow: ${originalMessage.substring(0, 50)}`,
+          description: `Generated workflow based on: ${originalMessage}`,
+          nodes: [
+            { id: 'node-1', type: 'start', position: { x: 100, y: 200 }, data: { label: 'Start' } },
+            { id: 'node-2', type: 'task', position: { x: 350, y: 200 }, data: { label: 'Task 1', assignedRole: 'EDITOR' } },
+            { id: 'node-3', type: 'end', position: { x: 600, y: 200 }, data: { label: 'Complete' } }
+          ],
+          edges: [
+            { id: 'edge-1-2', source: 'node-1', target: 'node-2', type: 'default' },
+            { id: 'edge-2-3', source: 'node-2', target: 'node-3', type: 'default' }
+          ]
+        }
+      };
+    } catch (error) {
+      console.error('❌ [Gemini Service] Error parsing workflow response:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Build optimized context summary
    * Reduces token usage while preserving key information
    */
@@ -155,6 +1203,15 @@ export class GeminiService {
     const velocityMetrics = globalContext.clipShow?.velocityMetrics;
     const totalItems = (velocityMetrics?.itemsCompleted || 0) + (velocityMetrics?.itemsInProgress || 0);
 
+    // PWS Workflow information
+    const pwsWorkflows = globalContext.pwsWorkflows;
+    const workflowInfo = pwsWorkflows ? `
+        - Workflow Templates: ${pwsWorkflows.statistics.totalTemplates} available
+        - Active Workflows: ${pwsWorkflows.statistics.totalActiveWorkflows} sessions
+        - Average Complexity: ${pwsWorkflows.statistics.averageWorkflowComplexity.toFixed(1)} nodes per workflow
+        ${pwsWorkflows.statistics.mostUsedTemplate ? `- Most Used: "${pwsWorkflows.statistics.mostUsedTemplate}"` : ''}
+    ` : '';
+
     return `
         CONTEXT SUMMARY:
         - Organization: ${globalContext.organizationId || 'Unknown'}
@@ -162,12 +1219,14 @@ export class GeminiService {
         - Active Licenses: ${globalContext.licensing?.activeLicenses || 0}
         - Team Members: ${globalContext.team?.activeMembers || 0}
         - Velocity: ${velocityMetrics?.completionRate || 0}% completion rate (${velocityMetrics?.itemsCompleted || 0} items completed)
-        
+        ${workflowInfo}
         
         SYSTEM CAPABILITIES:
-        - Can switch views: "media" (Gallery), "script" (Script Editor), "graph" (Knowledge Graph)
+        - Can switch views: "media" (Gallery), "script" (Script Editor), "graph" (Knowledge Graph), "pws-workflows" (Workflow System)
         - Can filter data based on user intent
         - Can suggest follow-up actions
+        - Can query and analyze workflows (read-only)
+        - NOTE: Workflow CREATION must be done in PWS Workflow Architect, not here
         `;
   }
 
@@ -286,6 +1345,14 @@ export class GeminiService {
         14. "tasks" - TasksWrapper
             - Purpose: Post-production task tracking
             - Use when: User wants to see todo list, assignments, or project status
+        
+        15. "pws-workflows" - PWSWorkflowAdapter
+            - Purpose: Production Workflow System - Query and analyze workflows (READ-ONLY)
+            - Use when: User wants to see workflow templates, check workflow status, or analyze workflow progress
+            - Features: Template library, active workflow status, workflow analytics
+            - Keywords: workflow, workflows, templates, workflow status, workflow progress, session workflow
+            - IMPORTANT: This is READ-ONLY. For workflow CREATION, direct users to PWS Workflow Architect
+            - Can show: Available templates, active session workflows, workflow statistics, progress tracking
             - Keywords: tasks, todo, assignments, tracking, list
 
         15. "roles" - RolesWrapper

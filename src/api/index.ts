@@ -335,10 +335,20 @@ app.get('/timecard-approval/my-manager', authenticateToken, async (req: express.
       res.status(401).json({ error: 'User authentication required' });
       return;
     }
+    console.log(`⏰ [TIMECARD APPROVAL API] /my-manager called for user: ${userId}, org: ${userOrgId}`);
     await handleMyManager(req, res, userOrgId, userId);
   } catch (error: any) {
-    console.error('❌ [TIMECARD APPROVAL API] Error:', error);
-    res.status(500).json({ error: error.message || 'Internal server error' });
+    console.error('❌ [TIMECARD APPROVAL API] Error in /my-manager route:', {
+      error: error.message,
+      stack: error.stack,
+      userId: req.user?.uid,
+      organizationId: req.user?.organizationId
+    });
+    res.status(500).json({ 
+      success: false,
+      error: error.message || 'Internal server error',
+      errorDetails: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 

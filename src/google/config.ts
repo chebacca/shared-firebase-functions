@@ -68,7 +68,9 @@ export async function getGoogleConfig(organizationId: string) {
     // Fallback to environment variables for backward compatibility
     const envClientId = process.env.GOOGLE_CLIENT_ID;
     const envClientSecret = process.env.GOOGLE_CLIENT_SECRET;
-    const envRedirectUri = process.env.GOOGLE_REDIRECT_URI || 'https://backbone-client.web.app/integration-settings';
+    // NOTE: redirectUri should come from the client request, not env/config
+    // This is a fallback only - the actual redirect URI is provided by the client
+    const envRedirectUri = process.env.GOOGLE_REDIRECT_URI || 'https://backbone-logic.web.app/integration-settings';
     
     if (envClientId && envClientSecret) {
       console.log(`⚠️ [GoogleConfig] Using environment variables (legacy mode) for org: ${organizationId}`);
@@ -119,7 +121,12 @@ export async function getGoogleConfig(organizationId: string) {
       'https://www.googleapis.com/auth/drive.file',
       'https://www.googleapis.com/auth/documents',
       'https://www.googleapis.com/auth/userinfo.email',
-      'https://www.googleapis.com/auth/userinfo.profile'
+      'https://www.googleapis.com/auth/userinfo.profile',
+      // Google Calendar and Meet scopes
+      'https://www.googleapis.com/auth/calendar',
+      'https://www.googleapis.com/auth/calendar.events',
+      'https://www.googleapis.com/auth/meetings.space.created',
+      'https://www.googleapis.com/auth/meetings.space.readonly'
     ],
   };
 }
@@ -181,7 +188,12 @@ export const saveGoogleConfig = onCall(
             'https://www.googleapis.com/auth/drive.file',
             'https://www.googleapis.com/auth/documents',
             'https://www.googleapis.com/auth/userinfo.email',
-            'https://www.googleapis.com/auth/userinfo.profile'
+            'https://www.googleapis.com/auth/userinfo.profile',
+            // Google Calendar and Meet scopes
+            'https://www.googleapis.com/auth/calendar',
+            'https://www.googleapis.com/auth/calendar.events',
+            'https://www.googleapis.com/auth/meetings.space.created',
+            'https://www.googleapis.com/auth/meetings.space.readonly'
           ],
           isConfigured: true,
           configuredBy: auth.uid,

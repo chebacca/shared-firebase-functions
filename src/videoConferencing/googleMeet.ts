@@ -37,6 +37,8 @@ function decryptToken(encryptedData: string): string {
  * Get authenticated Google OAuth client for organization
  */
 async function getAuthenticatedGoogleClient(organizationId: string) {
+  console.log(`🔍 [GoogleMeet] Getting authenticated client for org: ${organizationId}`);
+  
   // Prefer org-level googleConnections; fall back to cloudIntegrations/google so existing Firestore OAuth can be reused
   const connectionsSnapshot = await db
     .collection('organizations')
@@ -50,9 +52,32 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
   let connection: any | null = null;
 
   if (!connectionsSnapshot.empty) {
-    connection = connectionsSnapshot.docs[0].data();
+    console.log(`✅ [GoogleMeet] Found connection in googleConnections`);
+    const googleConnData = connectionsSnapshot.docs[0].data();
+    console.log(`🔍 [GoogleMeet] googleConnections data structure:`, {
+      hasAccessToken: !!(googleConnData.accessToken || googleConnData.access_token),
+      hasRefreshToken: !!(googleConnData.refreshToken || googleConnData.refresh_token),
+      hasTokens: !!(googleConnData.tokens || googleConnData.encryptedTokens),
+      accountEmail: googleConnData.accountEmail,
+      type: googleConnData.type,
+      isActive: googleConnData.isActive,
+    });
+    // Check if this connection has valid tokens
+    const hasAccessToken = googleConnData.accessToken || googleConnData.access_token;
+    if (hasAccessToken) {
+      connection = googleConnData;
+      console.log(`✅ [GoogleMeet] googleConnections has valid access token`);
+    } else {
+      console.log(`⚠️ [GoogleMeet] googleConnections found but no access token, checking fallback locations...`);
+      connection = null; // Will trigger fallback checks
+    }
   } else {
-    // Fallback to shared Firestore OAuth tokens (used by other apps)
+    console.log(`⚠️ [GoogleMeet] No googleConnections found, checking fallback locations...`);
+  }
+
+  // If no valid connection from googleConnections, check fallback locations
+  if (!connection) {
+    // Fallback 1: cloudIntegrations/google
     const cloudIntegrationDoc = await db
       .collection('organizations')
       .doc(organizationId)
@@ -61,12 +86,43 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
       .get();
 
     if (cloudIntegrationDoc.exists) {
+      console.log(`✅ [GoogleMeet] Found cloudIntegrations/google document`);
       const cloudData = cloudIntegrationDoc.data() || {};
       if (cloudData.isActive !== false) {
         const encryptedTokens = (cloudData as any).tokens || (cloudData as any).encryptedTokens;
-        const decrypted = encryptedTokens ? decryptTokens(encryptedTokens) : null;
+        
+        let decrypted: any = null;
+        if (encryptedTokens) {
+          try {
+            // Try to decrypt if it looks like encrypted data (base64 string)
+            if (typeof encryptedTokens === 'string' && encryptedTokens.length > 50) {
+              decrypted = decryptTokens(encryptedTokens);
+            } else if (typeof encryptedTokens === 'object') {
+              // Tokens might already be decrypted/plain object
+              decrypted = encryptedTokens;
+            }
+          } catch (decryptError: any) {
+            console.warn(`⚠️ [GoogleMeet] Failed to decrypt tokens: ${decryptError.message}`);
+            // If decryption fails, try using tokens as-is (might be plain object)
+            if (typeof encryptedTokens === 'object') {
+              decrypted = encryptedTokens;
+            }
+          }
+        }
+
+        // Also check for plain tokens in the document
+        if (!decrypted) {
+          if ((cloudData as any).accessToken || (cloudData as any).access_token) {
+            console.log(`✅ [GoogleMeet] Found plain tokens in cloudIntegrations/google`);
+            decrypted = {
+              access_token: (cloudData as any).accessToken || (cloudData as any).access_token,
+              refresh_token: (cloudData as any).refreshToken || (cloudData as any).refresh_token,
+            };
+          }
+        }
 
         if (decrypted?.access_token || decrypted?.accessToken) {
+          console.log(`✅ [GoogleMeet] Successfully extracted tokens from cloudIntegrations/google`);
           connection = {
             type: 'organization',
             isActive: cloudData.isActive !== false,
@@ -76,27 +132,140 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
             refreshToken: decrypted.refresh_token || decrypted.refreshToken,
             tokenExpiresAt: cloudData.expiresAt || cloudData.tokenExpiresAt,
           };
+        } else {
+          console.warn(`⚠️ [GoogleMeet] cloudIntegrations/google exists but no valid tokens found`);
+          console.warn(`   Token structure:`, {
+            hasTokens: !!encryptedTokens,
+            tokensType: typeof encryptedTokens,
+            hasAccessToken: !!(cloudData as any).accessToken || !!(cloudData as any).access_token,
+          });
+        }
+      }
+    }
+
+    // Fallback 2: integrationConfigs (for google_meet, googleMeet, google_drive, google_docs)
+    if (!connection) {
+      console.log(`🔍 [GoogleMeet] Checking integrationConfigs...`);
+      const integrationConfigsQuery = await db
+        .collection('organizations')
+        .doc(organizationId)
+        .collection('integrationConfigs')
+        .where('type', 'in', ['google_meet', 'googleMeet', 'google_drive', 'google_docs'])
+        .where('enabled', '==', true)
+        .limit(1)
+        .get();
+
+      if (!integrationConfigsQuery.empty) {
+        console.log(`✅ [GoogleMeet] Found integrationConfig in integrationConfigs`);
+        const config = integrationConfigsQuery.docs[0].data();
+        // Check if it has credentials with tokens
+        if (config.credentials?.accessToken || config.credentials?.access_token) {
+          connection = {
+            type: 'organization',
+            isActive: true,
+            accountEmail: config.accountEmail,
+            accountName: config.accountName,
+            accessToken: config.credentials.accessToken || config.credentials.access_token,
+            refreshToken: config.credentials.refreshToken || config.credentials.refresh_token,
+            tokenExpiresAt: config.credentials.expiresAt || config.credentials.tokenExpiresAt,
+          };
+        }
+      }
+    }
+
+    // Fallback 3: integrationSettings/google
+    if (!connection) {
+      console.log(`🔍 [GoogleMeet] Checking integrationSettings/google...`);
+      const integrationSettingsDoc = await db
+        .collection('organizations')
+        .doc(organizationId)
+        .collection('integrationSettings')
+        .doc('google')
+        .get();
+
+      if (integrationSettingsDoc.exists) {
+        console.log(`✅ [GoogleMeet] Found integrationSettings/google document`);
+        const settingsData = integrationSettingsDoc.data() || {};
+        if (settingsData.isConfigured === true) {
+          // Check for tokens in the settings
+          const tokens = (settingsData as any).tokens || (settingsData as any).encryptedTokens;
+          
+          let decrypted: any = null;
+          if (tokens) {
+            try {
+              // Try to decrypt if it looks like encrypted data (base64 string)
+              if (typeof tokens === 'string' && tokens.length > 50) {
+                decrypted = decryptTokens(tokens);
+              } else if (typeof tokens === 'object') {
+                // Tokens might already be decrypted/plain object
+                decrypted = tokens;
+              }
+            } catch (decryptError: any) {
+              console.warn(`⚠️ [GoogleMeet] Failed to decrypt tokens from integrationSettings: ${decryptError.message}`);
+              // If decryption fails, try using tokens as-is (might be plain object)
+              if (typeof tokens === 'object') {
+                decrypted = tokens;
+              }
+            }
+          }
+
+          // Also check for plain tokens in the document
+          if (!decrypted) {
+            if ((settingsData as any).accessToken || (settingsData as any).access_token) {
+              console.log(`✅ [GoogleMeet] Found plain tokens in integrationSettings/google`);
+              decrypted = {
+                access_token: (settingsData as any).accessToken || (settingsData as any).access_token,
+                refresh_token: (settingsData as any).refreshToken || (settingsData as any).refresh_token,
+              };
+            }
+          }
+
+          if (decrypted?.access_token || decrypted?.accessToken) {
+            console.log(`✅ [GoogleMeet] Successfully extracted tokens from integrationSettings/google`);
+            connection = {
+              type: 'organization',
+              isActive: true,
+              accountEmail: settingsData.accountEmail,
+              accountName: settingsData.accountName,
+              accessToken: decrypted.access_token || decrypted.accessToken,
+              refreshToken: decrypted.refresh_token || decrypted.refreshToken,
+              tokenExpiresAt: settingsData.expiresAt || settingsData.tokenExpiresAt,
+            };
+          } else {
+            console.warn(`⚠️ [GoogleMeet] integrationSettings/google is configured but no valid tokens found`);
+          }
         }
       }
     }
   }
 
   if (!connection) {
+    console.error(`❌ [GoogleMeet] No active Google connection found in any location for org: ${organizationId}`);
     throw new HttpsError('failed-precondition', 'No active Google connection found for organization');
   }
+
+  console.log(`✅ [GoogleMeet] Found connection with account: ${connection.accountEmail || connection.accountName || 'unknown'}`);
 
   const config = await getGoogleConfig(organizationId);
 
   // Decrypt tokens when stored in googleConnections (colon-delimited) or use plaintext from cloudIntegrations fallback
-  const accessToken =
+  let accessToken =
     typeof connection.accessToken === 'string' && connection.accessToken.includes(':')
       ? decryptToken(connection.accessToken)
       : connection.accessToken;
 
-  const refreshToken =
+  let refreshToken =
     connection.refreshToken && typeof connection.refreshToken === 'string' && connection.refreshToken.includes(':')
       ? decryptToken(connection.refreshToken)
       : connection.refreshToken || null;
+
+  // Validate we have at least an access token
+  if (!accessToken) {
+    console.error(`❌ [GoogleMeet] No access token found in connection data`);
+    throw new HttpsError('failed-precondition', 'No access token found in Google connection');
+  }
+
+  console.log(`✅ [GoogleMeet] Using tokens - hasAccessToken: ${!!accessToken}, hasRefreshToken: ${!!refreshToken}`);
 
   // Create OAuth2 client
   const oauth2Client = new google.auth.OAuth2(
@@ -110,14 +279,46 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
     refresh_token: refreshToken,
   });
 
-  // Refresh token if needed
+  // Try to refresh token if needed, but don't fail if refresh doesn't work
+  // The access token might still be valid even if refresh fails
   try {
-    await oauth2Client.getAccessToken();
-  } catch (error) {
-    console.warn('⚠️ [GoogleMeet] Token refresh failed, attempting manual refresh');
+    const token = await oauth2Client.getAccessToken();
+    console.log(`✅ [GoogleMeet] Successfully got access token`);
+    if (token) {
+      oauth2Client.setCredentials({
+        access_token: token.token || accessToken,
+        refresh_token: refreshToken,
+      });
+    }
+  } catch (error: any) {
+    console.warn(`⚠️ [GoogleMeet] Token refresh failed: ${error.message}`);
     if (refreshToken) {
-      const { credentials } = await oauth2Client.refreshAccessToken();
-      oauth2Client.setCredentials(credentials);
+      try {
+        console.log(`🔄 [GoogleMeet] Attempting manual token refresh...`);
+        const { credentials } = await oauth2Client.refreshAccessToken();
+        oauth2Client.setCredentials(credentials);
+        console.log(`✅ [GoogleMeet] Successfully refreshed access token`);
+      } catch (refreshError: any) {
+        console.warn(`⚠️ [GoogleMeet] Manual refresh failed: ${refreshError.message}`);
+        console.warn(`⚠️ [GoogleMeet] This may indicate the refresh token was created with different OAuth credentials`);
+        console.warn(`⚠️ [GoogleMeet] Will attempt to use existing access token - if it fails, user may need to re-authenticate`);
+        // Continue with existing access token - it might still work
+        // If it doesn't, the Calendar API call will fail and we'll handle that error
+        oauth2Client.setCredentials({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+      }
+    } else {
+      // No refresh token, but we have access token - try to use it
+      if (accessToken) {
+        console.log(`⚠️ [GoogleMeet] No refresh token, using access token only`);
+        oauth2Client.setCredentials({
+          access_token: accessToken,
+        });
+      } else {
+        throw new HttpsError('failed-precondition', 'No access token or refresh token available');
+      }
     }
   }
 
@@ -342,6 +543,14 @@ export const scheduleMeetMeeting = onCall(
       
       if (error instanceof HttpsError) {
         throw error;
+      }
+      
+      // Check for OAuth client mismatch errors
+      if (error.message?.includes('invalid_client') || error.response?.data?.error === 'invalid_client') {
+        throw new HttpsError(
+          'failed-precondition',
+          'Google OAuth credentials mismatch. The refresh token was created with different OAuth credentials. Please re-authenticate your Google account in Integration Settings.'
+        );
       }
       
       throw new HttpsError('internal', `Failed to schedule Google Meet: ${error.message || 'Unknown error'}`);

@@ -4,10 +4,7 @@
  * Exported handler functions for use in Express routes
  */
 
-import { getFirestore } from 'firebase-admin/firestore';
-import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
-
-const db = getFirestore();
+import { db, createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
 
 // ============================================================================
 // PENDING APPROVALS OPERATIONS
@@ -286,18 +283,84 @@ export async function handleMyManager(req: any, res: any, organizationId: string
 
     const teamMemberDoc = teamMemberQuery.docs[0];
     const teamMember = teamMemberDoc.data();
+    
+    if (!teamMember) {
+      console.log(`⏰ [MY MANAGER] Team member document has no data for user: ${userId}`);
+      res.status(404).json(createErrorResponse(
+        'Team member data not found',
+        'Your team member record exists but contains no data'
+      ));
+      return;
+    }
+    
+    // Check if user is owner/admin
+    const isOwner = teamMember.isOrganizationOwner === true || 
+                    teamMember.role === 'owner' || 
+                    teamMember.role === 'SUPERADMIN' ||
+                    teamMember.teamMemberRole === 'owner';
+    const isAdmin = teamMember.isAdmin === true || 
+                    teamMember.role === 'admin' || 
+                    teamMember.role === 'ADMIN' ||
+                    teamMember.dashboardRole === 'ADMIN';
+    
     const managerId = teamMember.managerId;
 
+    // Handle case where user doesn't have a manager
     if (!managerId) {
-      console.log(`⏰ [MY MANAGER] No manager ID found for user: ${userId}`);
+      console.log(`⏰ [MY MANAGER] No manager ID found for user: ${userId} (isOwner: ${isOwner}, isAdmin: ${isAdmin})`);
+      
+      // For owners/admins without managers, return self-manager response
+      if (isOwner || isAdmin) {
+        // Get user's own details for self-manager response
+        const userDoc = await db.collection('users').doc(userId).get();
+        const userData = userDoc.exists ? userDoc.data() : null;
+        
+        const selfManagerInfo = {
+          id: teamMemberDoc.id,
+          employeeId: userId,
+          managerId: userId, // Self-manager
+          isActive: true,
+          canApproveTimecards: true,
+          isSelfManager: true,
+          effectiveDate: (teamMember.createdAt && typeof teamMember.createdAt.toDate === 'function') 
+            ? teamMember.createdAt.toDate().toISOString() 
+            : new Date().toISOString(),
+          manager: {
+            id: userId,
+            name: userData?.displayName || userData?.name || `${userData?.firstName || ''} ${userData?.lastName || ''}`.trim() || teamMember.email || 'You',
+            firstName: userData?.firstName || undefined,
+            lastName: userData?.lastName || undefined,
+            email: userData?.email || teamMember.email || undefined,
+            role: teamMember.role || userData?.role || undefined,
+            department: teamMember.department || userData?.department || undefined
+          },
+          assigner: {
+            id: 'system',
+            name: 'System',
+            email: 'system@backbone.app'
+          }
+        };
+
+        console.log(`⏰ [MY MANAGER] Returning self-manager for owner/admin: ${userId}`);
+        res.status(200).json(createSuccessResponse(
+          selfManagerInfo,
+          'You are self-managed for timecard approvals (organization owner/admin)'
+        ));
+        return;
+      }
+      
+      // For regular users without managers, return informative error
       res.status(404).json(createErrorResponse(
         'No manager assigned',
-        'You do not have a manager assigned for timecard approvals'
+        'You do not have a manager assigned for timecard approvals. Please contact your administrator.'
       ));
       return;
     }
 
-    // Get manager's user details
+    // Check if this is a self-manager scenario
+    const isSelfManager = managerId === userId;
+    
+    // Get manager's user details (or user's own details if self-manager)
     const managerDoc = await db.collection('users').doc(managerId).get();
     
     if (!managerDoc.exists) {
@@ -311,35 +374,57 @@ export async function handleMyManager(req: any, res: any, organizationId: string
 
     const managerData = managerDoc.data();
     
+    if (!managerData) {
+      console.log(`⏰ [MY MANAGER] Manager document exists but has no data: ${managerId}`);
+      res.status(404).json(createErrorResponse(
+        'Manager data not found',
+        'Your assigned manager document exists but contains no data'
+      ));
+      return;
+    }
+    
     // Build response matching the expected UserDirectReport type
+    // Safely access properties with defaults
     const directReportInfo = {
       id: teamMemberDoc.id,
       employeeId: userId,
       managerId: managerId,
-      isActive: teamMember.isActive,
+      isActive: teamMember.isActive !== false, // Default to true if not set
       canApproveTimecards: teamMember.canApproveTimecards !== false, // Default to true if not set
-      effectiveDate: teamMember.createdAt || new Date().toISOString(),
+      isSelfManager: isSelfManager, // Flag to indicate self-management
+      effectiveDate: (teamMember.createdAt && typeof teamMember.createdAt.toDate === 'function') 
+        ? teamMember.createdAt.toDate().toISOString() 
+        : (teamMember.createdAt || new Date().toISOString()),
       manager: {
         id: managerId,
-        name: managerData.displayName || managerData.name || `${managerData.firstName || ''} ${managerData.lastName || ''}`.trim() || managerData.email,
-        firstName: managerData.firstName,
-        lastName: managerData.lastName,
-        email: managerData.email,
-        role: managerData.role,
-        department: managerData.department
+        name: managerData.displayName || managerData.name || `${managerData.firstName || ''} ${managerData.lastName || ''}`.trim() || managerData.email || 'Unknown',
+        firstName: managerData.firstName || undefined,
+        lastName: managerData.lastName || undefined,
+        email: managerData.email || undefined,
+        role: managerData.role || teamMember.role || undefined,
+        department: managerData.department || teamMember.department || undefined
       },
       assigner: teamMember.createdBy ? {
         id: teamMember.createdBy,
         name: 'System',
         email: 'system@backbone.app'
-      } : undefined
+      } : (teamMember.managerAssignedBy ? {
+        id: teamMember.managerAssignedBy,
+        name: 'System',
+        email: 'system@backbone.app'
+      } : undefined)
     };
 
-    console.log(`⏰ [MY MANAGER] Found manager for user ${userId}: ${managerData.email}`);
+    const managerType = isSelfManager ? 'self-manager' : 'assigned manager';
+    console.log(`⏰ [MY MANAGER] Found ${managerType} for user ${userId}: ${managerData.email || managerId}`);
+
+    const message = isSelfManager 
+      ? 'You are self-managed for timecard approvals'
+      : 'Manager information retrieved successfully';
 
     res.status(200).json(createSuccessResponse(
       directReportInfo,
-      'Manager information retrieved successfully'
+      message
     ));
 
   } catch (error: any) {

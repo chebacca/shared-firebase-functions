@@ -226,6 +226,7 @@ export const getGoogleIntegrationStatusHttp = functions.https.onRequest(async (r
     const userAgent = req.headers['user-agent'] || '';
     const isClipShowPro = userAgent.includes('Clip Show Pro') || 
                          req.headers['x-client-type'] === 'clip-show-pro' ||
+                         req.headers['origin']?.includes('localhost:4001') ||
                          req.headers['origin']?.includes('localhost:4010');
 
     if (isClipShowPro) {

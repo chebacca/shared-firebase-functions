@@ -30,6 +30,8 @@ export const getVideoConferencingProviders = onCall(
         throw new HttpsError('invalid-argument', 'Organization ID is required');
       }
 
+      console.log(`🔍 [VideoConferencing] Checking providers for org: ${organizationId}`);
+
       // Check Google Meet connection
       const googleConnections = await db
         .collection('organizations')
@@ -56,6 +58,46 @@ export const getVideoConferencingProviders = onCall(
         }
       }
 
+      // Additional fallback: Check integrationConfigs collection
+      if (!hasGoogleConnection) {
+        const integrationConfigsQuery = await db
+          .collection('organizations')
+          .doc(organizationId)
+          .collection('integrationConfigs')
+          .where('type', 'in', ['google_meet', 'googleMeet', 'google_drive', 'google_docs'])
+          .where('enabled', '==', true)
+          .limit(1)
+          .get();
+
+        if (!integrationConfigsQuery.empty) {
+          const config = integrationConfigsQuery.docs[0].data();
+          // Check if it has connection status or credentials
+          hasGoogleConnection = config.connectionStatus === 'connected' || 
+                                !!(config.accountEmail || config.accountName || config.credentials?.clientId);
+        }
+      }
+
+      // Additional fallback: Check integrationSettings collection
+      if (!hasGoogleConnection) {
+        const integrationSettingsDoc = await db
+          .collection('organizations')
+          .doc(organizationId)
+          .collection('integrationSettings')
+          .doc('google')
+          .get();
+
+        if (integrationSettingsDoc.exists) {
+          const data = integrationSettingsDoc.data() || {};
+          hasGoogleConnection = data.isConfigured === true || 
+                                !!(data.clientId && (data.tokens || data.encryptedTokens));
+          if (hasGoogleConnection) {
+            console.log(`✅ [VideoConferencing] Found Google connection in integrationSettings/google`);
+          }
+        }
+      }
+
+      console.log(`📊 [VideoConferencing] Google Meet connection status: ${hasGoogleConnection}`);
+
       // Check Webex connection
       const webexConnections = await db
         .collection('organizations')
@@ -65,6 +107,46 @@ export const getVideoConferencingProviders = onCall(
         .where('isActive', '==', true)
         .limit(1)
         .get();
+
+      // Additional fallback: Check integrationConfigs for Webex
+      let hasWebexConnection = !webexConnections.empty;
+      if (!hasWebexConnection) {
+        const webexConfigsQuery = await db
+          .collection('organizations')
+          .doc(organizationId)
+          .collection('integrationConfigs')
+          .where('type', '==', 'webex')
+          .where('enabled', '==', true)
+          .limit(1)
+          .get();
+
+        if (!webexConfigsQuery.empty) {
+          const config = webexConfigsQuery.docs[0].data();
+          hasWebexConnection = config.connectionStatus === 'connected' || 
+                               !!(config.accountEmail || config.accountName || config.credentials?.clientId);
+        }
+      }
+
+      // Additional fallback: Check integrationSettings for Webex
+      if (!hasWebexConnection) {
+        const webexSettingsDoc = await db
+          .collection('organizations')
+          .doc(organizationId)
+          .collection('integrationSettings')
+          .doc('webex')
+          .get();
+
+        if (webexSettingsDoc.exists) {
+          const data = webexSettingsDoc.data() || {};
+          hasWebexConnection = data.isConfigured === true || 
+                               !!(data.clientId && (data.tokens || data.encryptedTokens));
+          if (hasWebexConnection) {
+            console.log(`✅ [VideoConferencing] Found Webex connection in integrationSettings/webex`);
+          }
+        }
+      }
+
+      console.log(`📊 [VideoConferencing] Webex connection status: ${hasWebexConnection}`);
 
       // Check default provider preference
       const orgDoc = await db.collection('organizations').doc(organizationId).get();
@@ -82,7 +164,7 @@ export const getVideoConferencingProviders = onCall(
         });
       }
 
-      if (!webexConnections.empty) {
+      if (hasWebexConnection) {
         providers.push({
           type: 'webex',
           name: 'Webex',
@@ -90,6 +172,8 @@ export const getVideoConferencingProviders = onCall(
           isDefault: defaultProvider === 'webex' || (defaultProvider === null && providers.length === 0),
         });
       }
+
+      console.log(`✅ [VideoConferencing] Returning ${providers.length} provider(s) for org: ${organizationId}`, providers);
 
       return {
         success: true,

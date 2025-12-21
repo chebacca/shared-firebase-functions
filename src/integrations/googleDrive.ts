@@ -10,6 +10,7 @@ import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { encryptTokens, decryptTokens, generateSecureState, verifyState, hashForLogging } from './encryption';
 import { createSuccessResponse, createErrorResponse, db } from '../shared/utils';
+import { getGoogleConfig as getGoogleConfigFromFirestore } from '../google/config';
 
 // Google OAuth configuration - Use environment variables (Firebase Functions v2 compatible)
 const getGoogleConfig = () => {
@@ -31,7 +32,9 @@ const getGoogleConfig = () => {
   
   const clientId = process.env.GOOGLE_CLIENT_ID || configClientId;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET || configClientSecret;
-  const redirectUri = process.env.GOOGLE_REDIRECT_URI || configRedirectUri || 'https://backbone-client.web.app/auth/google/callback';
+  // NOTE: redirectUri is now always provided by the client request, not from env/config
+  // This allows dynamic redirect URIs for dev (localhost) vs production
+  const redirectUri = process.env.GOOGLE_REDIRECT_URI || configRedirectUri || 'https://backbone-logic.web.app/integration-settings';
   
   // Log config source for debugging
   console.log('[googleDrive] getGoogleConfig:', {
@@ -142,6 +145,7 @@ export const initiateGoogleOAuthHttp = functions.https.onRequest(async (req, res
     'https://dashboard-1c3a5.web.app',
     'http://localhost:3000',
     'http://localhost:3001',
+    'http://localhost:4001',
     'http://localhost:4003',
     'http://localhost:4010',
     'http://localhost:5173',
@@ -177,9 +181,8 @@ export const initiateGoogleOAuthHttp = functions.https.onRequest(async (req, res
     const userId = decodedToken.uid;
     const organizationId = decodedToken.organizationId || 'default';
 
-    // Get client ID, secret, and redirect URI from request body
-    // This allows user-specific OAuth clients from integration config
-    const { clientId, clientSecret, redirectUri } = req.body || {};
+    // Get redirect URI from request body
+    const { redirectUri } = req.body || {};
     
     // CRITICAL: redirectUri is REQUIRED - no fallbacks
     if (!redirectUri) {
@@ -192,11 +195,50 @@ export const initiateGoogleOAuthHttp = functions.https.onRequest(async (req, res
     
     const finalRedirectUri = redirectUri.trim();
     
-    console.log('[googleDrive] OAuth initiation request:', {
+    // Get OAuth credentials from Firestore (integrationSettings/google)
+    // This ensures we use the correct OAuth client ID that has the redirect URIs configured
+    let googleConfig;
+    try {
+      googleConfig = await getGoogleConfigFromFirestore(organizationId);
+      console.log('[googleDrive] ✅ Using Firestore config for OAuth:', {
+        hasClientId: !!googleConfig.clientId,
+        hasClientSecret: !!googleConfig.clientSecret,
+        clientId: googleConfig.clientId, // Full client ID for debugging
+        clientIdPrefix: googleConfig.clientId?.substring(0, 20) + '...',
+        redirectUri: finalRedirectUri, // Full redirect URI for debugging
+        redirectUriLength: finalRedirectUri.length,
+        origin: req.headers.origin,
+        organizationId: organizationId
+      });
+    } catch (configError: any) {
+      console.error('[googleDrive] Failed to get Firestore config, falling back to environment variables:', configError);
+      // Fallback to environment variables if Firestore config not found
+      const fallbackConfig = getGoogleConfig();
+      if (!fallbackConfig.clientId || !fallbackConfig.clientSecret) {
+        res.status(400).json({
+          success: false,
+          error: 'Google OAuth not configured. Please configure in Integration Settings.'
+        });
+        return;
+      }
+      googleConfig = fallbackConfig;
+    }
+    
+    // Use client ID/secret from Firestore config (or fallback)
+    const clientId = googleConfig.clientId;
+    const clientSecret = googleConfig.clientSecret;
+    
+    console.log('[googleDrive] 📋 OAuth initiation request details:', {
       hasClientId: !!clientId,
       hasClientSecret: !!clientSecret,
-      redirectUri: finalRedirectUri.substring(0, 50) + '...',
-      origin: req.headers.origin
+      clientId: clientId, // Full client ID for debugging
+      clientIdPrefix: clientId?.substring(0, 20) + '...',
+      redirectUri: finalRedirectUri, // Full redirect URI for debugging
+      redirectUriLength: finalRedirectUri.length,
+      origin: req.headers.origin,
+      organizationId: organizationId,
+      configSource: googleConfig === getGoogleConfig() ? 'environment' : 'firestore',
+      action: '⚠️ VERIFY: This client ID must have this exact redirect URI in Google Cloud Console!'
     });
 
     // Generate secure state parameter
@@ -251,22 +293,31 @@ export const initiateGoogleOAuthHttp = functions.https.onRequest(async (req, res
       hasRedirectUri: !!verifyStateDoc.data()?.redirectUri
     });
 
-    // Create OAuth2 client - use provided client ID/secret or fall back to config
+    // Create OAuth2 client using Firestore config (or fallback)
     // CRITICAL: Must use the SAME redirectUri that will be used in token exchange
-    let oauth2Client;
-    if (clientId && clientSecret) {
-      // Use user-provided client credentials from integration config
-      oauth2Client = new google.auth.OAuth2(
-        clientId,
-        clientSecret,
-        finalRedirectUri // Use the exact redirect URI
-      );
-      console.log('[googleDrive] Using user-provided OAuth client credentials with redirectUri:', finalRedirectUri.substring(0, 50) + '...');
-    } else {
-      // Use Firebase Functions config credentials (default)
-      oauth2Client = getOAuth2Client(finalRedirectUri); // Pass redirectUri explicitly
-      console.log('[googleDrive] Using Firebase Functions config OAuth credentials with redirectUri:', finalRedirectUri.substring(0, 50) + '...');
+    // CRITICAL: Must use the OAuth client ID from Firestore that has the redirect URIs configured
+    if (!clientId || !clientSecret) {
+      res.status(400).json({
+        success: false,
+        error: 'Google OAuth client ID and secret are required. Please configure in Integration Settings.'
+      });
+      return;
     }
+    
+    const oauth2Client = new google.auth.OAuth2(
+      clientId,
+      clientSecret,
+      finalRedirectUri // Use the exact redirect URI from request
+    );
+    
+    console.log('[googleDrive] Created OAuth2 client:', {
+      clientIdPrefix: clientId.substring(0, 20) + '...',
+      clientIdFull: clientId, // Log full client ID for debugging
+      redirectUri: finalRedirectUri,
+      redirectUriLength: finalRedirectUri.length,
+      configSource: googleConfig === getGoogleConfig() ? 'environment' : 'firestore',
+      organizationId: organizationId
+    });
 
     // Generate authorization URL - OAuth2 client will use the redirectUri it was created with
     const authUrl = oauth2Client.generateAuthUrl({
@@ -284,13 +335,26 @@ export const initiateGoogleOAuthHttp = functions.https.onRequest(async (req, res
       const authUrlRedirectUri = authUrlObj.searchParams.get('redirect_uri');
       decodedAuthRedirectUri = authUrlRedirectUri ? decodeURIComponent(authUrlRedirectUri) : null;
       
-      console.log('[googleDrive] Authorization URL generated:', {
-        redirectUriInAuthUrl: decodedAuthRedirectUri ? decodedAuthRedirectUri.substring(0, 50) + '...' : 'not found',
-        storedRedirectUri: finalRedirectUri.substring(0, 50) + '...',
+      console.log('[googleDrive] ⚠️ CRITICAL DEBUG - Authorization URL generated:', {
+        redirectUriInAuthUrl: decodedAuthRedirectUri, // Full URI for debugging
+        storedRedirectUri: finalRedirectUri, // Full URI for debugging
         matches: decodedAuthRedirectUri === finalRedirectUri,
-        fullAuthUrlRedirectUri: decodedAuthRedirectUri,
-        fullStoredRedirectUri: finalRedirectUri
+        clientId: clientId, // Full client ID for debugging
+        organizationId: organizationId,
+        origin: req.headers.origin,
+        errorMessage: decodedAuthRedirectUri !== finalRedirectUri ? 'REDIRECT URI MISMATCH IN AUTH URL!' : 'OK'
       });
+      
+      // CRITICAL: If redirect URIs don't match, log error
+      if (decodedAuthRedirectUri && decodedAuthRedirectUri !== finalRedirectUri) {
+        console.error('[googleDrive] ❌ CRITICAL ERROR: Redirect URI mismatch detected!', {
+          authUrlRedirectUri: decodedAuthRedirectUri,
+          storedRedirectUri: finalRedirectUri,
+          difference: 'The redirect URI in the auth URL does not match what was requested!',
+          clientId: clientId,
+          action: 'Check Google Cloud Console - ensure this exact redirect URI is authorized for this OAuth client ID'
+        });
+      }
       
       if (decodedAuthRedirectUri && decodedAuthRedirectUri !== finalRedirectUri) {
         console.error('[googleDrive] CRITICAL: Redirect URI mismatch!', {
@@ -352,6 +416,7 @@ export const handleGoogleOAuthCallbackHttp = functions.https.onRequest(async (re
     'https://dashboard-1c3a5.web.app',
     'http://localhost:3000',
     'http://localhost:3001',
+    'http://localhost:4001',
     'http://localhost:4003',
     'http://localhost:4010',
     'http://localhost:5173',
@@ -632,6 +697,7 @@ export const refreshGoogleAccessTokenHttp = functions.https.onRequest(async (req
     'https://dashboard-1c3a5.web.app',
     'http://localhost:3000',
     'http://localhost:3001',
+    'http://localhost:4001',
     'http://localhost:4003',
     'http://localhost:4010',
     'http://localhost:5173',

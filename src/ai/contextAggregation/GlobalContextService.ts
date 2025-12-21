@@ -20,10 +20,13 @@ import { gatherLicensingContext, LicensingContext } from './LicensingContextServ
 import { gatherCallSheetContext, CallSheetContext } from './CallSheetContextService';
 import { gatherBridgeContext, BridgeContext } from './BridgeContextService';
 import { gatherTeamContext, TeamContext } from './TeamContextService';
+import { gatherPWSWorkflowContext, PWSWorkflowContext } from './PWSWorkflowContextService';
+import { gatherSessionContext, SessionContext } from './SessionContextService';
 
 export interface GlobalContext {
   organizationId: string;
   timestamp: string;
+  userId?: string;
 
   // App-specific contexts (composed from existing services)
   dashboard: DashboardContext;
@@ -33,6 +36,8 @@ export interface GlobalContext {
   clipShow: WorkflowContext;
   schedule: ScheduleContext;
   team: TeamContext;
+  pwsWorkflows: PWSWorkflowContext; // PWS workflow context for CNS
+  sessions: SessionContext; // Session context for workflow creation
 }
 
 /**
@@ -43,12 +48,14 @@ export interface GlobalContext {
  */
 export async function gatherGlobalContext(
   organizationId: string,
-  userId?: string
+  userId?: string,
+  sessionId?: string // Optional: if provided, gathers detailed session context
 ): Promise<GlobalContext> {
   const now = new Date();
 
   // Parallel fetch of all contexts using existing services
   // Each service follows the same patterns as its corresponding frontend app
+  // Session context is fetched separately with error handling to prevent failures
   const [
     dashboardContext,
     licensingContext,
@@ -56,7 +63,8 @@ export async function gatherGlobalContext(
     bridgeContext,
     workflowContext,
     scheduleContext,
-    teamContext
+    teamContext,
+    pwsWorkflowContext
   ] = await Promise.all([
     gatherDashboardContext(organizationId),
     gatherLicensingContext(organizationId),
@@ -64,19 +72,39 @@ export async function gatherGlobalContext(
     gatherBridgeContext(organizationId),
     gatherWorkflowContext(organizationId),
     gatherScheduleContext(organizationId, { userId }),
-    gatherTeamContext(organizationId)
+    gatherTeamContext(organizationId),
+    gatherPWSWorkflowContext(organizationId) // PWS workflow context
   ]);
+
+  // Fetch session context separately with error handling to prevent it from breaking the entire context gathering
+  let sessionContext: SessionContext;
+  try {
+    sessionContext = await gatherSessionContext(organizationId, sessionId);
+  } catch (error) {
+    console.warn('[GlobalContextService] Error gathering session context, continuing without it:', error);
+    sessionContext = {
+      statistics: {
+        totalSessions: 0,
+        sessionsByStatus: {},
+        sessionsByPhase: {},
+        activeWorkflows: 0
+      }
+    };
+  }
 
   return {
     organizationId,
     timestamp: now.toISOString(),
+    userId,
     dashboard: dashboardContext,
     licensing: licensingContext,
     callSheet: callSheetContext,
     bridge: bridgeContext,
     clipShow: workflowContext,
     schedule: scheduleContext,
-    team: teamContext
+    team: teamContext,
+    pwsWorkflows: pwsWorkflowContext,
+    sessions: sessionContext
   };
 }
 
@@ -141,6 +169,25 @@ export async function gatherMinimalContextForGraph(
       atRiskItems: [],
       activeItemsTimeline: []
     },
-    team: teamContext
+    team: teamContext,
+    pwsWorkflows: {
+      templates: [],
+      sessionWorkflows: [],
+      userWorkflows: [],
+      statistics: {
+        totalTemplates: 0,
+        totalActiveWorkflows: 0,
+        averageWorkflowComplexity: 0,
+        mostUsedTemplate: ''
+      }
+    },
+    sessions: {
+      statistics: {
+        totalSessions: 0,
+        sessionsByStatus: {},
+        sessionsByPhase: {},
+        activeWorkflows: 0
+      }
+    }
   };
 }
