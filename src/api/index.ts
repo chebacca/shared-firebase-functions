@@ -1376,6 +1376,169 @@ app.get('/sessions/:id', authenticateToken, async (req: express.Request, res: ex
   }
 });
 
+// Helper function to create session conversation
+async function createSessionConversation(
+  sessionId: string,
+  organizationId: string,
+  sessionName: string,
+  createdBy: string
+): Promise<void> {
+  try {
+    console.log(`💬 [SESSIONS API] Creating conversation for session: ${sessionId}`);
+
+    // Check if conversation already exists
+    const existingConversations = await db.collection('conversations')
+      .where('organizationId', '==', organizationId)
+      .where('sessionId', '==', sessionId)
+      .limit(1)
+      .get();
+
+    if (!existingConversations.empty) {
+      console.log(`ℹ️ [SESSIONS API] Conversation already exists for session ${sessionId}`);
+      return;
+    }
+
+    // Collect participants from session assignments
+    const sessionDoc = await db.collection('sessions').doc(sessionId).get();
+    if (!sessionDoc.exists) {
+      console.warn(`⚠️ [SESSIONS API] Session ${sessionId} not found when creating conversation`);
+      return;
+    }
+
+    const sessionData = sessionDoc.data();
+    const participants = new Set<string>();
+
+    // Add creator if provided
+    if (createdBy && createdBy !== 'system') {
+      participants.add(createdBy);
+    }
+
+    // Collect from crewAssignments
+    if (sessionData?.crewAssignments && Array.isArray(sessionData.crewAssignments)) {
+      sessionData.crewAssignments.forEach((assignment: any) => {
+        if (assignment.personId) participants.add(assignment.personId);
+        if (assignment.userId) participants.add(assignment.userId);
+      });
+    }
+
+    // Collect from assignedTo field
+    if (sessionData?.assignedTo && Array.isArray(sessionData.assignedTo)) {
+      sessionData.assignedTo.forEach((userId: string) => {
+        if (userId) participants.add(userId);
+      });
+    }
+
+    // Collect from workflow step assignments
+    const workflowStepsSnapshot = await db.collection('workflowSteps')
+      .where('sessionId', '==', sessionId)
+      .get();
+
+    workflowStepsSnapshot.forEach((stepDoc) => {
+      const stepData = stepDoc.data();
+      if (stepData?.assignedUserId) {
+        participants.add(stepData.assignedUserId);
+      }
+    });
+
+    // Check workflowStepAssignments collection
+    const stepIds = workflowStepsSnapshot.docs.map(doc => doc.id);
+    if (stepIds.length > 0) {
+      // Firestore 'in' queries are limited to 10 items, so we need to batch if needed
+      const batchSize = 10;
+      for (let i = 0; i < stepIds.length; i += batchSize) {
+        const batch = stepIds.slice(i, i + batchSize);
+        const stepAssignmentsSnapshot = await db.collection('workflowStepAssignments')
+          .where('workflowStepId', 'in', batch)
+          .where('isActive', '==', true)
+          .get();
+
+        stepAssignmentsSnapshot.forEach((assignmentDoc) => {
+          const assignmentData = assignmentDoc.data();
+          if (assignmentData?.userId) {
+            participants.add(assignmentData.userId);
+          }
+        });
+      }
+    }
+
+    // Convert Set to Array and remove duplicates
+    const uniqueParticipants = Array.from(participants);
+
+    if (uniqueParticipants.length === 0) {
+      console.log(`ℹ️ [SESSIONS API] No participants found for session ${sessionId}, skipping conversation creation`);
+      return;
+    }
+
+    // Get participant details
+    const participantDetails: any[] = [];
+    for (const participantId of uniqueParticipants) {
+      try {
+        const userDoc = await db.collection('users').doc(participantId).get();
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+          participantDetails.push({
+            uid: participantId,
+            firebaseUid: participantId,
+            name: userData?.name || (userData?.firstName && userData?.lastName 
+              ? `${userData.firstName} ${userData.lastName}` 
+              : userData?.email || 'Unknown User'),
+            email: userData?.email || '',
+            avatar: userData?.avatar || userData?.photoURL || '',
+          });
+        }
+      } catch (userError) {
+        console.warn(`⚠️ [SESSIONS API] Error fetching user ${participantId}:`, userError);
+      }
+    }
+
+    // Create unread count object
+    const unreadCount: Record<string, number> = {};
+    uniqueParticipants.forEach(uid => {
+      unreadCount[uid] = 0;
+    });
+
+    // Create conversation
+    const conversationData = {
+      organizationId,
+      type: 'group',
+      participants: uniqueParticipants,
+      participantDetails,
+      name: `Session: ${sessionName}`,
+      sessionId,
+      createdAt: FieldValue.serverTimestamp(),
+      createdBy: createdBy || 'system',
+      isArchived: false,
+      unreadCount,
+    };
+
+    const conversationRef = await db.collection('conversations').add(conversationData);
+    console.log(`✅ [SESSIONS API] Created conversation ${conversationRef.id} for session ${sessionId}`);
+
+    // Create initial system message
+    const messageData = {
+      conversationId: conversationRef.id,
+      senderId: 'system',
+      senderName: 'System',
+      senderEmail: 'system@backbone-logic.com',
+      text: `Session conversation created for "${sessionName}". All assigned team members can discuss this session here.`,
+      type: 'system',
+      readBy: [],
+      createdAt: FieldValue.serverTimestamp(),
+      isEdited: false,
+      isDeleted: false,
+      reactions: {},
+    };
+
+    await db.collection('conversations').doc(conversationRef.id)
+      .collection('messages').add(messageData);
+
+    console.log(`✅ [SESSIONS API] Created initial message for session conversation`);
+  } catch (error) {
+    console.error(`❌ [SESSIONS API] Error creating session conversation:`, error);
+    throw error;
+  }
+}
+
 // Create session
 app.post('/sessions', authenticateToken, async (req: express.Request, res: express.Response) => {
   try {
@@ -1416,6 +1579,15 @@ app.post('/sessions', authenticateToken, async (req: express.Request, res: expre
     const sessionRef = await db.collection('sessions').add(sessionData);
 
     console.log(`✅ [SESSIONS API] Created session: ${sessionRef.id}`);
+
+    // Automatically create session conversation
+    try {
+      await createSessionConversation(sessionRef.id, organizationId, name || 'Untitled Session', userId || 'system');
+    } catch (conversationError) {
+      // Log but don't fail session creation if conversation creation fails
+      console.warn('⚠️ [SESSIONS API] Failed to create session conversation (non-critical):', conversationError);
+    }
+
     return res.status(200).json({
       success: true,
       data: {
@@ -5667,6 +5839,70 @@ app.post('/sessions/:sessionId/steps/:stepId/assign', authenticateToken, async (
     });
 
     console.log(`✅ [WORKFLOW] Assigned step ${stepId} to user ${userId}`);
+
+    // Add user to session conversation if it exists
+    try {
+      const sessionConversations = await db.collection('conversations')
+        .where('organizationId', '==', organizationId)
+        .where('sessionId', '==', sessionId)
+        .limit(1)
+        .get();
+
+      if (!sessionConversations.empty) {
+        const conversationDoc = sessionConversations.docs[0];
+        const conversationData = conversationDoc.data();
+        const participants = conversationData.participants || [];
+
+        // Check if user is already a participant
+        if (!participants.includes(userId)) {
+          // Get user details
+          const userDoc = await db.collection('users').doc(userId).get();
+          let participantDetail: any = null;
+          if (userDoc.exists) {
+            const userData = userDoc.data();
+            participantDetail = {
+              uid: userId,
+              firebaseUid: userId,
+              name: userData?.name || (userData?.firstName && userData?.lastName 
+                ? `${userData.firstName} ${userData.lastName}` 
+                : userData?.email || 'Unknown User'),
+              email: userData?.email || '',
+              avatar: userData?.avatar || userData?.photoURL || '',
+            };
+          }
+
+          // Add user to participants
+          const updatedParticipants = [...participants, userId];
+          const updatedParticipantDetails = [...(conversationData.participantDetails || []), participantDetail].filter(Boolean);
+          const updatedUnreadCount = { ...(conversationData.unreadCount || {}), [userId]: 0 };
+
+          await db.collection('conversations').doc(conversationDoc.id).update({
+            participants: updatedParticipants,
+            participantDetails: updatedParticipantDetails,
+            unreadCount: updatedUnreadCount,
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+
+          console.log(`✅ [WORKFLOW] Added user ${userId} to session conversation ${conversationDoc.id}`);
+        }
+      } else {
+        // Conversation doesn't exist, create it
+        const sessionDoc = await db.collection('sessions').doc(sessionId).get();
+        if (sessionDoc.exists) {
+          const sessionData = sessionDoc.data();
+          await createSessionConversation(
+            sessionId,
+            organizationId,
+            sessionData?.sessionName || sessionData?.name || 'Untitled Session',
+            currentUserId
+          );
+        }
+      }
+    } catch (conversationError) {
+      // Log but don't fail step assignment if conversation update fails
+      console.warn('⚠️ [WORKFLOW] Failed to update session conversation (non-critical):', conversationError);
+    }
+
     return res.status(200).json({
       success: true,
       message: 'Step assigned successfully'
@@ -16237,6 +16473,104 @@ app.delete('/diagrams/:id/force', authenticateToken, async (req: express.Request
   } catch (error: any) {
     console.error('[Workflow Diagrams] Force delete error:', error);
     return res.status(500).json(createErrorResponse('Failed to force delete workflow diagram', error.message));
+  }
+});
+
+// ====================
+// Workflow Routes - /workflow/diagrams (Alias for /diagrams)
+// ====================
+
+// GET /workflow/diagrams - Get all workflow diagrams/templates (alias for /diagrams)
+// This endpoint queries workflow-templates collection which is where templates are actually stored
+app.get('/workflow/diagrams', authenticateToken, async (req: express.Request, res: express.Response) => {
+  try {
+    const userId = req.user?.uid;
+    const organizationId = req.user?.organizationId;
+
+    if (!userId) {
+      return res.status(401).json(createErrorResponse('User authentication required'));
+    }
+
+    console.log('[Workflow Diagrams] Get request via /workflow/diagrams:', { userId, organizationId });
+
+    // Query workflow-templates collection (where templates are actually stored)
+    const userTemplatesQuery = db.collection('workflow-templates')
+      .where('organizationId', '==', organizationId)
+      .orderBy('updatedAt', 'desc');
+
+    // Also get public templates from other organizations
+    const publicTemplatesQuery = db.collection('workflow-templates')
+      .where('isPublic', '==', true)
+      .orderBy('updatedAt', 'desc');
+
+    const [userTemplatesSnapshot, publicTemplatesSnapshot] = await Promise.all([
+      userTemplatesQuery.get(),
+      publicTemplatesQuery.get()
+    ]);
+
+    // Combine results and remove duplicates
+    const diagramMap = new Map<string, any>();
+
+    // Add user's organization templates
+    userTemplatesSnapshot.docs.forEach(doc => {
+      const data = doc.data();
+      diagramMap.set(doc.id, {
+        id: doc.id,
+        name: data.name || data.displayName,
+        description: data.description || '',
+        nodes: data.nodes || [],
+        edges: data.edges || [],
+        metadata: data.metadata || {},
+        isTemplate: data.isTemplate !== false, // Default to true for workflow-templates
+        isPublic: data.isPublic || false,
+        category: data.category || 'general',
+        tags: data.tags || [],
+        version: data.version || '1.0.0',
+        createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt,
+        updatedAt: data.updatedAt?.toDate?.()?.toISOString() || data.updatedAt,
+        userId: data.userId || data.createdBy,
+        organizationId: data.organizationId
+      });
+    });
+
+    // Add public templates (excluding user's own organization)
+    for (const doc of publicTemplatesSnapshot.docs) {
+      const data = doc.data();
+      if (data.organizationId !== organizationId && !diagramMap.has(doc.id)) {
+        diagramMap.set(doc.id, {
+          id: doc.id,
+          name: data.name || data.displayName,
+          description: data.description || '',
+          nodes: data.nodes || [],
+          edges: data.edges || [],
+          metadata: data.metadata || {},
+          isTemplate: true,
+          isPublic: true,
+          category: data.category || 'general',
+          tags: data.tags || [],
+          version: data.version || '1.0.0',
+          createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt,
+          updatedAt: data.updatedAt?.toDate?.()?.toISOString() || data.updatedAt,
+          userId: data.userId || data.createdBy,
+          organizationId: data.organizationId
+        });
+      }
+    }
+
+    const workflows = Array.from(diagramMap.values());
+
+    console.log('[Workflow Diagrams] Query results from workflow-templates:', {
+      userId,
+      organizationId,
+      totalWorkflows: workflows.length,
+      ownOrgWorkflows: workflows.filter(w => w.organizationId === organizationId).length,
+      publicTemplates: workflows.filter(w => w.isPublic && w.organizationId !== organizationId).length
+    });
+
+    return res.status(200).json(createSuccessResponse(workflows));
+  } catch (error: any) {
+    console.error('[Workflow Diagrams] Get error:', error);
+    return res.status(500).json(createErrorResponse('Failed to fetch workflow diagrams', error.message));
   }
 });
 
