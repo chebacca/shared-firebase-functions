@@ -5,6 +5,7 @@
  */
 
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import * as functions from 'firebase-functions'; // Import v1 for config() access
 import { db } from '../shared/utils';
 import { getGoogleConfig } from '../google/config';
 import { Timestamp } from 'firebase-admin/firestore';
@@ -12,6 +13,19 @@ import { encryptionKey, getEncryptionKey } from '../google/secrets';
 import { decryptTokens } from '../integrations/encryption';
 import { google } from 'googleapis';
 import * as crypto from 'crypto';
+
+/**
+ * Helper to get Firebase Functions v1 config (for backward compatibility)
+ */
+function getFunctionsConfig(): any {
+  try {
+    // Access v1 functions.config() - this works even in v2 functions when imported at top level
+    return functions.config();
+  } catch (error: any) {
+    console.log(`⚠️ [GoogleMeet] Could not access functions.config():`, error?.message || error);
+    return null;
+  }
+}
 
 /**
  * Decrypt token (reuse from google/oauth pattern)
@@ -131,6 +145,7 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
             accessToken: decrypted.access_token || decrypted.accessToken,
             refreshToken: decrypted.refresh_token || decrypted.refreshToken,
             tokenExpiresAt: cloudData.expiresAt || cloudData.tokenExpiresAt,
+            clientId: cloudData.clientId, // Store client ID used to create these tokens
           };
         } else {
           console.warn(`⚠️ [GoogleMeet] cloudIntegrations/google exists but no valid tokens found`);
@@ -246,7 +261,157 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
 
   console.log(`✅ [GoogleMeet] Found connection with account: ${connection.accountEmail || connection.accountName || 'unknown'}`);
 
-  const config = await getGoogleConfig(organizationId);
+  // Use the client ID stored with the tokens if available, otherwise get from config
+  // This ensures we use the same client ID that was used to create the tokens
+  let config: any = null;
+  
+  // If we have a stored clientId in the connection, try to use it first
+  if (connection.clientId) {
+    console.log(`🔍 [GoogleMeet] Connection has stored clientId: ${connection.clientId.substring(0, 20)}...`);
+    
+    // First check environment variables
+    let envClientId = process.env.GOOGLE_CLIENT_ID;
+    let envClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    let envRedirectUri = process.env.GOOGLE_REDIRECT_URI;
+    
+    // 🔥 CRITICAL FIX: Also check functions.config() for Firebase Functions v1 compatibility
+    if (!envClientId || !envClientSecret) {
+      const functionsConfig = getFunctionsConfig();
+      if (functionsConfig && functionsConfig.google) {
+        envClientId = envClientId || functionsConfig.google.client_id;
+        envClientSecret = envClientSecret || functionsConfig.google.client_secret;
+        envRedirectUri = envRedirectUri || functionsConfig.google.redirect_uri;
+        console.log(`🔍 [GoogleMeet] Found credentials in functions.config().google`);
+      }
+    }
+    
+    if (envClientId === connection.clientId && envClientSecret) {
+      console.log(`✅ [GoogleMeet] Found matching credentials in environment/functions.config variables`);
+      config = {
+        clientId: envClientId,
+        clientSecret: envClientSecret,
+        redirectUri: envRedirectUri || 'https://backbone-logic.web.app/integration-settings',
+        scopes: [
+          'https://www.googleapis.com/auth/drive.readonly',
+          'https://www.googleapis.com/auth/drive.file',
+          'https://www.googleapis.com/auth/documents',
+          'https://www.googleapis.com/auth/userinfo.email',
+          'https://www.googleapis.com/auth/userinfo.profile',
+          'https://www.googleapis.com/auth/calendar',
+          'https://www.googleapis.com/auth/calendar.events',
+          'https://www.googleapis.com/auth/meetings.space.created',
+          'https://www.googleapis.com/auth/meetings.space.readonly'
+        ],
+      };
+    } else {
+      // Check integrationSettings/google for matching client ID
+      const integrationSettingsDoc = await db
+        .collection('organizations')
+        .doc(organizationId)
+        .collection('integrationSettings')
+        .doc('google')
+        .get();
+      
+      if (integrationSettingsDoc.exists) {
+        const settingsData = integrationSettingsDoc.data()!;
+        if (settingsData.clientId === connection.clientId && settingsData.isConfigured) {
+          console.log(`✅ [GoogleMeet] Found matching credentials in integrationSettings/google`);
+          const decryptedSecret = decryptToken(settingsData.clientSecret);
+          config = {
+            clientId: settingsData.clientId,
+            clientSecret: decryptedSecret,
+            redirectUri: settingsData.redirectUri || 'https://backbone-logic.web.app/integration-settings',
+            scopes: settingsData.scopes || [
+              'https://www.googleapis.com/auth/drive.readonly',
+              'https://www.googleapis.com/auth/drive.file',
+              'https://www.googleapis.com/auth/documents',
+              'https://www.googleapis.com/auth/userinfo.email',
+              'https://www.googleapis.com/auth/userinfo.profile',
+              'https://www.googleapis.com/auth/calendar',
+              'https://www.googleapis.com/auth/calendar.events',
+              'https://www.googleapis.com/auth/meetings.space.created',
+              'https://www.googleapis.com/auth/meetings.space.readonly'
+            ],
+          };
+        }
+      }
+    }
+  }
+  
+  // If we don't have config yet, try getGoogleConfig (standard flow)
+  if (!config) {
+    try {
+      config = await getGoogleConfig(organizationId);
+    } catch (error: any) {
+      // If getGoogleConfig fails but we have a connection with tokens, that's okay
+      // We'll use environment variables as a last resort
+      // 🔥 FIX: Check if we have tokens (not just clientId) - tokens from cloudIntegrations/google
+      // might not have clientId stored, but they can still work with environment variables
+      const hasTokens = !!(connection.accessToken || connection.access_token);
+      if (connection.clientId || hasTokens) {
+        console.warn(`⚠️ [GoogleMeet] getGoogleConfig failed, but we have ${connection.clientId ? 'clientId' : 'tokens'}. Checking environment variables...`);
+        let envClientId = process.env.GOOGLE_CLIENT_ID;
+        let envClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+        let envRedirectUri = process.env.GOOGLE_REDIRECT_URI;
+        
+        // 🔥 CRITICAL FIX: Also check functions.config() for Firebase Functions v1 compatibility
+        if (!envClientId || !envClientSecret) {
+          const functionsConfig = getFunctionsConfig();
+          if (functionsConfig && functionsConfig.google) {
+            envClientId = envClientId || functionsConfig.google.client_id;
+            envClientSecret = envClientSecret || functionsConfig.google.client_secret;
+            envRedirectUri = envRedirectUri || functionsConfig.google.redirect_uri;
+            console.log(`🔍 [GoogleMeet] Found credentials in functions.config().google (fallback)`);
+          }
+        }
+        
+        if (envClientId && envClientSecret) {
+          console.log(`✅ [GoogleMeet] Using environment/functions.config variables as fallback`);
+          config = {
+            clientId: envClientId,
+            clientSecret: envClientSecret,
+            redirectUri: envRedirectUri || 'https://backbone-logic.web.app/integration-settings',
+            scopes: [
+              'https://www.googleapis.com/auth/drive.readonly',
+              'https://www.googleapis.com/auth/drive.file',
+              'https://www.googleapis.com/auth/documents',
+              'https://www.googleapis.com/auth/userinfo.email',
+              'https://www.googleapis.com/auth/userinfo.profile',
+              'https://www.googleapis.com/auth/calendar',
+              'https://www.googleapis.com/auth/calendar.events',
+              'https://www.googleapis.com/auth/meetings.space.created',
+              'https://www.googleapis.com/auth/meetings.space.readonly'
+            ],
+          };
+        } else {
+          // No credentials found anywhere
+          throw new HttpsError(
+            'failed-precondition',
+            'Google OAuth credentials not found. Please ensure GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set in Firebase Functions environment variables or functions.config().google, or configure in Integration Settings.'
+          );
+        }
+      } else {
+        // Re-throw the original error
+        throw error;
+      }
+    }
+  }
+  
+  // Verify we have valid config
+  if (!config || !config.clientId || !config.clientSecret) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Google OAuth credentials not found. Please ensure GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set in Firebase Functions environment variables, or configure in Integration Settings.'
+    );
+  }
+  
+  // Final verification: if we have a stored clientId, ensure it matches (should already be handled above)
+  if (connection.clientId && connection.clientId !== config.clientId) {
+    console.warn(`⚠️ [GoogleMeet] Client ID still doesn't match after credential lookup. This may cause token refresh issues.`);
+    console.warn(`   Stored client ID: ${connection.clientId.substring(0, 20)}...`);
+    console.warn(`   Config client ID: ${config.clientId.substring(0, 20)}...`);
+    // Continue anyway - the tokens might still work if they were created with the current config
+  }
 
   // Decrypt tokens when stored in googleConnections (colon-delimited) or use plaintext from cloudIntegrations fallback
   let accessToken =
@@ -463,6 +628,47 @@ export const scheduleMeetMeeting = onCall(
         throw new HttpsError('unauthenticated', 'User must be authenticated');
       }
 
+      // Check if connection has calendar scopes BEFORE attempting API call
+      // This provides a clearer error message than waiting for the API to fail
+      const connectionDoc = await db
+        .collection('organizations')
+        .doc(organizationId)
+        .collection('cloudIntegrations')
+        .doc('google')
+        .get();
+      
+      if (connectionDoc.exists) {
+        const connectionData = connectionDoc.data();
+        const scopes = connectionData?.scopes || [];
+        const requiredCalendarScopes = [
+          'https://www.googleapis.com/auth/calendar',
+          'https://www.googleapis.com/auth/calendar.events'
+        ];
+        const hasCalendarScopes = requiredCalendarScopes.every(scope => scopes.includes(scope));
+        
+        if (scopes.length === 0) {
+          // No scopes field - connection was created before scopes were tracked OR licensing website didn't save them
+          console.warn(`⚠️ [GoogleMeet] Connection exists but has no scopes field. Created: ${connectionData?.createdAt?.toDate?.() || 'unknown'}`);
+          throw new HttpsError(
+            'failed-precondition',
+            'Google OAuth connection is missing calendar permissions. The connection document does not have a scopes field, which means either: (1) it was created before calendar scopes were added, or (2) the licensing website needs to be restarted. Please disconnect and reconnect your Google account in Integration Settings: https://backbone-logic.web.app/integration-settings'
+          );
+        } else if (!hasCalendarScopes) {
+          // Has scopes but missing calendar scopes
+          console.warn(`⚠️ [GoogleMeet] Connection missing calendar scopes. Document has: ${scopes.join(', ')}`);
+          throw new HttpsError(
+            'failed-precondition',
+            'Google OAuth connection is missing calendar permissions. The connection has scopes but not calendar scopes. Please disconnect and reconnect your Google account in Integration Settings: https://backbone-logic.web.app/integration-settings'
+          );
+        }
+        console.log(`✅ [GoogleMeet] Connection has required calendar scopes in document`);
+      } else {
+        throw new HttpsError(
+          'failed-precondition',
+          'Google OAuth connection not found. Please connect your Google account in Integration Settings: https://backbone-logic.web.app/integration-settings'
+        );
+      }
+
       // Get authenticated client
       const oauth2Client = await getAuthenticatedGoogleClient(organizationId);
       const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
@@ -523,6 +729,7 @@ export const scheduleMeetMeeting = onCall(
           createdBy: auth.uid,
           createdAt: Timestamp.now(),
           status: 'scheduled',
+          organizationId: organizationId, // Add organizationId for easier querying and rule validation
         });
 
       return {
@@ -550,6 +757,20 @@ export const scheduleMeetMeeting = onCall(
         throw new HttpsError(
           'failed-precondition',
           'Google OAuth credentials mismatch. The refresh token was created with different OAuth credentials. Please re-authenticate your Google account in Integration Settings.'
+        );
+      }
+      
+      // Check for insufficient permissions errors
+      if (error.message?.includes('Insufficient Permission') || 
+          error.message?.includes('insufficient permission') ||
+          error.message?.includes('insufficient_scope') ||
+          error.response?.data?.error === 'insufficientPermissions' ||
+          error.response?.headers?.['www-authenticate']?.includes('insufficient_scope') ||
+          error.code === 403) {
+        // Provide a clear, actionable error message with direct link
+        throw new HttpsError(
+          'permission-denied',
+          'Google OAuth token is missing calendar permissions. This happens when the connection was created before calendar scopes were added. Please disconnect and reconnect your Google account in Integration Settings to fix this: https://backbone-logic.web.app/integration-settings'
         );
       }
       
@@ -637,6 +858,17 @@ export const updateMeetMeeting = onCall(
       
       if (error instanceof HttpsError) {
         throw error;
+      }
+      
+      // Check for insufficient permissions errors
+      if (error.message?.includes('Insufficient Permission') || 
+          error.message?.includes('insufficient permission') ||
+          error.response?.data?.error === 'insufficientPermissions' ||
+          error.code === 403) {
+        throw new HttpsError(
+          'permission-denied',
+          'Insufficient permissions to update Google Calendar events. Please re-authenticate your Google account in Integration Settings with calendar permissions enabled.'
+        );
       }
       
       throw new HttpsError('internal', `Failed to update Google Meet: ${error.message || 'Unknown error'}`);

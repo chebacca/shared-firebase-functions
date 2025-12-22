@@ -122,13 +122,17 @@ const getOAuth2Client = (redirectUri: string) => {
   return oauth2Client;
 };
 
-// Google Drive API scopes
+// Google API scopes (Drive + Calendar for video conferencing)
 const SCOPES = [
   'https://www.googleapis.com/auth/drive.readonly',
   'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/documents',
   'https://www.googleapis.com/auth/userinfo.email',
-  'https://www.googleapis.com/auth/userinfo.profile'
+  'https://www.googleapis.com/auth/userinfo.profile',
+  'https://www.googleapis.com/auth/calendar',
+  'https://www.googleapis.com/auth/calendar.events',
+  'https://www.googleapis.com/auth/meetings.space.created',
+  'https://www.googleapis.com/auth/meetings.space.readonly'
 ];
 
 /**
@@ -638,6 +642,8 @@ export const handleGoogleOAuthCallbackHttp = functions.https.onRequest(async (re
       accountName: userInfo.name,
       tokens: encryptedTokens,
       isActive: true, // Explicitly mark as active (required for client-side listener)
+      clientId: usedClientId, // Store the client ID used to create these tokens (critical for token refresh)
+      scopes: SCOPES, // Store the OAuth scopes that were granted (required for calendar permissions check)
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       expiresAt: tokens.expiry_date ? admin.firestore.Timestamp.fromDate(new Date(tokens.expiry_date)) : null

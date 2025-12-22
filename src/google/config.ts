@@ -5,6 +5,7 @@
  */
 
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import * as functions from 'firebase-functions'; // Import v1 for config() access
 import { db } from '../shared/utils';
 import * as admin from 'firebase-admin';
 import * as crypto from 'crypto';
@@ -66,14 +67,33 @@ export async function getGoogleConfig(organizationId: string) {
     
   if (!configDoc.exists) {
     // Fallback to environment variables for backward compatibility
-    const envClientId = process.env.GOOGLE_CLIENT_ID;
-    const envClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    let envClientId = process.env.GOOGLE_CLIENT_ID;
+    let envClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    let envRedirectUri = process.env.GOOGLE_REDIRECT_URI;
+    
+    // 🔥 CRITICAL FIX: Also check functions.config() for Firebase Functions v1 compatibility
+    // This is where the credentials are actually stored in the current deployment
+    if (!envClientId || !envClientSecret) {
+      try {
+        // Access v1 functions.config() - imported at top level
+        const functionsConfig = functions.config();
+        if (functionsConfig && functionsConfig.google) {
+          envClientId = envClientId || functionsConfig.google.client_id;
+          envClientSecret = envClientSecret || functionsConfig.google.client_secret;
+          envRedirectUri = envRedirectUri || functionsConfig.google.redirect_uri;
+          console.log(`🔍 [GoogleConfig] Found credentials in functions.config().google`);
+        }
+      } catch (error: any) {
+        console.log(`⚠️ [GoogleConfig] functions.config() not available:`, error?.message || error);
+      }
+    }
+    
     // NOTE: redirectUri should come from the client request, not env/config
     // This is a fallback only - the actual redirect URI is provided by the client
-    const envRedirectUri = process.env.GOOGLE_REDIRECT_URI || 'https://backbone-logic.web.app/integration-settings';
+    envRedirectUri = envRedirectUri || 'https://backbone-logic.web.app/integration-settings';
     
     if (envClientId && envClientSecret) {
-      console.log(`⚠️ [GoogleConfig] Using environment variables (legacy mode) for org: ${organizationId}`);
+      console.log(`⚠️ [GoogleConfig] Using environment/functions.config variables (legacy mode) for org: ${organizationId}`);
       return {
         clientId: envClientId,
         clientSecret: envClientSecret,
@@ -243,6 +263,7 @@ export const getGoogleConfigStatus = onCall(
     }
 
     try {
+      // Check integrationSettings/google first (explicit configuration)
       const configDoc = await db
         .collection('organizations')
         .doc(organizationId)
@@ -250,26 +271,55 @@ export const getGoogleConfigStatus = onCall(
         .doc('google')
         .get();
 
-      if (!configDoc.exists) {
-        // Check environment variables as fallback
-        const hasEnvConfig = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+      if (configDoc.exists) {
+        const config = configDoc.data()!;
         return {
-          isConfigured: hasEnvConfig,
-          clientId: hasEnvConfig ? process.env.GOOGLE_CLIENT_ID?.substring(0, 20) + '...' : null,
-          configuredAt: null,
-          configuredBy: null,
-          source: hasEnvConfig ? 'environment' : 'none',
+          isConfigured: config.isConfigured || false,
+          clientId: config.clientId ? config.clientId.substring(0, 20) + '...' : null,
+          configuredAt: config.configuredAt || null,
+          configuredBy: config.configuredBy || null,
+          source: 'firestore',
         };
       }
 
-      const config = configDoc.data()!;
+      // Fallback 1: Check cloudIntegrations/google (OAuth tokens from OAuth flow)
+      const cloudIntegrationDoc = await db
+        .collection('organizations')
+        .doc(organizationId)
+        .collection('cloudIntegrations')
+        .doc('google')
+        .get();
 
+      if (cloudIntegrationDoc.exists) {
+        const cloudData = cloudIntegrationDoc.data()!;
+        // Check if connection is active (isActive !== false)
+        const isActive = cloudData.isActive !== false;
+        const hasTokens = !!(cloudData.tokens || cloudData.encryptedTokens || cloudData.accessToken || cloudData.refreshToken);
+        
+        if (isActive && hasTokens) {
+          console.log(`✅ [GoogleConfig] Found active connection in cloudIntegrations/google for org: ${organizationId}`);
+          return {
+            isConfigured: true,
+            clientId: null, // OAuth tokens don't include client ID
+            configuredAt: cloudData.createdAt || cloudData.updatedAt || null,
+            configuredBy: null, // OAuth flow doesn't track configuredBy
+            source: 'cloudIntegrations',
+            accountEmail: cloudData.accountEmail || null,
+            accountName: cloudData.accountName || null,
+          };
+        } else {
+          console.log(`⚠️ [GoogleConfig] cloudIntegrations/google exists but not active or missing tokens for org: ${organizationId}`);
+        }
+      }
+
+      // Fallback 2: Check environment variables
+      const hasEnvConfig = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
       return {
-        isConfigured: config.isConfigured || false,
-        clientId: config.clientId ? config.clientId.substring(0, 20) + '...' : null,
-        configuredAt: config.configuredAt || null,
-        configuredBy: config.configuredBy || null,
-        source: 'firestore',
+        isConfigured: hasEnvConfig,
+        clientId: hasEnvConfig ? process.env.GOOGLE_CLIENT_ID?.substring(0, 20) + '...' : null,
+        configuredAt: null,
+        configuredBy: null,
+        source: hasEnvConfig ? 'environment' : 'none',
       };
 
     } catch (error) {

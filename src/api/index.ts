@@ -31,7 +31,8 @@ import {
   handleMySubmissions,
   handleApprovalHistory,
   handleDirectReports,
-  handleMyManager
+  handleMyManager,
+  handleSubmitTimecard
 } from '../timecards/timecardApprovalApiHandlers';
 
 // Import cloud integration functions - Commented out as they're separate Firebase Functions
@@ -343,6 +344,41 @@ app.get('/timecard-approval/my-manager', authenticateToken, async (req: express.
       stack: error.stack,
       userId: req.user?.uid,
       organizationId: req.user?.organizationId
+    });
+    res.status(500).json({ 
+      success: false,
+      error: error.message || 'Internal server error',
+      errorDetails: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
+
+// Submit timecard for approval
+app.post('/timecard-approval/:timecardId/submit', authenticateToken, async (req: express.Request, res: express.Response) => {
+  try {
+    const userId = req.user?.uid;
+    const userOrgId = req.user?.organizationId;
+    const timecardId = req.params.timecardId;
+    
+    if (!userId || !userOrgId) {
+      res.status(401).json({ error: 'User authentication required' });
+      return;
+    }
+    
+    if (!timecardId) {
+      res.status(400).json({ error: 'Timecard ID is required' });
+      return;
+    }
+    
+    console.log(`⏰ [TIMECARD APPROVAL API] POST /${timecardId}/submit called for user: ${userId}, org: ${userOrgId}`);
+    await handleSubmitTimecard(req, res, userOrgId, userId, timecardId);
+  } catch (error: any) {
+    console.error('❌ [TIMECARD APPROVAL API] Error in /:timecardId/submit route:', {
+      error: error.message,
+      stack: error.stack,
+      userId: req.user?.uid,
+      organizationId: req.user?.organizationId,
+      timecardId: req.params.timecardId
     });
     res.status(500).json({ 
       success: false,
