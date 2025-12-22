@@ -6746,7 +6746,8 @@ app.put('/sessions/:sessionId/steps/:stepId/documentation', authenticateToken, a
   try {
     const sessionId = decodeURIComponent(req.params.sessionId);
     const stepId = decodeURIComponent(req.params.stepId);
-    const { documentation } = req.body;
+    // Accept full documentation data structure or legacy string format
+    const documentationData = req.body.documentation || req.body;
     const organizationId = req.user?.organizationId;
     const userId = req.user?.uid;
 
@@ -6757,38 +6758,104 @@ app.put('/sessions/:sessionId/steps/:stepId/documentation', authenticateToken, a
       });
     }
 
-    // Verify step exists
-    const stepDoc = await db.collection('unifiedSessionSteps').doc(stepId).get();
+    // Verify step exists - try both collections (workflowSteps and unifiedSessionSteps)
+    let stepDoc = await db.collection('workflowSteps').doc(stepId).get();
+    let collectionName = 'workflowSteps';
+    
+    if (!stepDoc.exists) {
+      // Try unifiedSessionSteps as fallback
+      stepDoc = await db.collection('unifiedSessionSteps').doc(stepId).get();
+      collectionName = 'unifiedSessionSteps';
+    }
+    
     if (!stepDoc.exists) {
       return res.status(404).json({
         success: false,
-        error: 'Workflow step not found'
+        error: 'Workflow step not found in workflowSteps or unifiedSessionSteps'
       });
     }
 
     const stepData = stepDoc.data();
-    if (stepData?.sessionId !== sessionId || stepData?.organizationId !== organizationId) {
+    // Check sessionId match (workflowSteps uses workflowInstanceId, unifiedSessionSteps uses sessionId)
+    const stepSessionId = stepData?.sessionId || stepData?.workflowInstanceId;
+    if (stepSessionId !== sessionId || stepData?.organizationId !== organizationId) {
       return res.status(403).json({
         success: false,
         error: 'Access denied to this step'
       });
     }
 
-    // Update documentation
-    await db.collection('unifiedSessionSteps').doc(stepId).update({
-      documentation: documentation || '',
+    // Build update object - handle both structured data and legacy string format
+    const updateData: any = {
       documentationUpdatedAt: FieldValue.serverTimestamp(),
       documentationUpdatedBy: userId,
       updatedAt: FieldValue.serverTimestamp()
-    });
+    };
 
-    const updatedDoc = await db.collection('unifiedSessionSteps').doc(stepId).get();
+    // If it's a string (legacy format), just save as documentation
+    if (typeof documentationData === 'string') {
+      updateData.documentation = documentationData || '';
+    } else {
+      // Structured documentation data
+      if (documentationData.description !== undefined) {
+        updateData.description = documentationData.description;
+      }
+      if (documentationData.notes !== undefined) {
+        updateData.notes = documentationData.notes;
+      }
+      if (Array.isArray(documentationData.files)) {
+        // Ensure all files have filepath - preserve filepath from Media Library selections
+        const filesWithPath = documentationData.files.map((file: any) => {
+          // Ensure path is set - prioritize path, then url, then other fields
+          const filePath = file.path || file.url || file.fullPath || file.downloadURL || '';
+          return {
+            ...file,
+            path: filePath, // Ensure path is always set
+            // Preserve Media Library metadata
+            mediaLibraryId: file.mediaLibraryId,
+            isInMediaLibrary: file.isInMediaLibrary !== undefined ? file.isInMediaLibrary : !!file.mediaLibraryId,
+            sessionId: file.sessionId,
+            workflowStepId: file.workflowStepId,
+            workflowStepName: file.workflowStepName
+          };
+        });
+        updateData.files = filesWithPath;
+      }
+      if (Array.isArray(documentationData.workNotes)) {
+        updateData.workNotes = documentationData.workNotes;
+      }
+      if (Array.isArray(documentationData.deliverables)) {
+        updateData.deliverables = documentationData.deliverables;
+      }
+      if (typeof documentationData.estimatedHours === 'number') {
+        updateData.estimatedHours = documentationData.estimatedHours;
+      }
+      if (typeof documentationData.actualHours === 'number') {
+        updateData.actualHours = documentationData.actualHours;
+      }
+      // Also save as documentation string for backwards compatibility
+      if (documentationData.description) {
+        updateData.documentation = documentationData.description;
+      }
+    }
+
+    // Update documentation in the collection where the step was found
+    await db.collection(collectionName).doc(stepId).update(updateData);
+
+    const updatedDoc = await db.collection(collectionName).doc(stepId).get();
     const updatedStep = {
       id: updatedDoc.id,
       ...updatedDoc.data()
     };
 
-    console.log(`✅ [WORKFLOW] Updated documentation for step ${stepId}`);
+    console.log(`✅ [WORKFLOW] Updated documentation for step ${stepId} in ${collectionName}`, {
+      hasFiles: Array.isArray(documentationData.files) && documentationData.files.length > 0,
+      filesCount: Array.isArray(documentationData.files) ? documentationData.files.length : 0,
+      filesWithPath: Array.isArray(documentationData.files) ? documentationData.files.filter((f: any) => f.path).length : 0,
+      filesWithMediaLibraryId: Array.isArray(documentationData.files) ? documentationData.files.filter((f: any) => f.mediaLibraryId).length : 0,
+      hasWorkNotes: Array.isArray(documentationData.workNotes) && documentationData.workNotes.length > 0,
+      hasDeliverables: Array.isArray(documentationData.deliverables) && documentationData.deliverables.length > 0
+    });
     return res.status(200).json({
       success: true,
       message: 'Documentation updated successfully',

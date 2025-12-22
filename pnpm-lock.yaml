@@ -53,6 +53,12 @@ importers:
       googleapis:
         specifier: ^134.0.0
         version: 134.0.0
+      jsonwebtoken:
+        specifier: ^9.0.2
+        version: 9.0.2
+      ldapjs:
+        specifier: ^3.0.7
+        version: 3.0.7
       long:
         specifier: ^5.2.3
         version: 5.3.2
@@ -66,6 +72,12 @@ importers:
         specifier: ^14.0.0
         version: 14.25.0
     devDependencies:
+      '@types/jsonwebtoken':
+        specifier: ^9.0.5
+        version: 9.0.10
+      '@types/ldapjs':
+        specifier: ^3.0.6
+        version: 3.0.6
       '@types/node':
         specifier: ^20.10.5
         version: 20.19.22
@@ -298,6 +310,42 @@ packages:
 
   '@js-sdsl/ordered-map@4.4.2':
     resolution: {integrity: sha512-iUKgm52T8HOE/makSxjqoWhe95ZJA1/G1sYsGev2JDKUSS14KAgg1LHb+Ba+IPow0xflbnSkOsZcO08C7w1gYw==}
+
+  '@ldapjs/asn1@1.2.0':
+    resolution: {integrity: sha512-KX/qQJ2xxzvO2/WOvr1UdQ+8P5dVvuOLk/C9b1bIkXxZss8BaR28njXdPgFCpj5aHaf1t8PmuVnea+N9YG9YMw==}
+    deprecated: This package has been decomissioned. See https://github.com/ldapjs/node-ldapjs/blob/8ffd0bc9c149088a10ec4c1ec6a18450f76ad05d/README.md
+
+  '@ldapjs/asn1@2.0.0':
+    resolution: {integrity: sha512-G9+DkEOirNgdPmD0I8nu57ygQJKOOgFEMKknEuQvIHbGLwP3ny1mY+OTUYLCbCaGJP4sox5eYgBJRuSUpnAddA==}
+    deprecated: This package has been decomissioned. See https://github.com/ldapjs/node-ldapjs/blob/8ffd0bc9c149088a10ec4c1ec6a18450f76ad05d/README.md
+
+  '@ldapjs/attribute@1.0.0':
+    resolution: {integrity: sha512-ptMl2d/5xJ0q+RgmnqOi3Zgwk/TMJYG7dYMC0Keko+yZU6n+oFM59MjQOUht5pxJeS4FWrImhu/LebX24vJNRQ==}
+    deprecated: This package has been decomissioned. See https://github.com/ldapjs/node-ldapjs/blob/8ffd0bc9c149088a10ec4c1ec6a18450f76ad05d/README.md
+
+  '@ldapjs/change@1.0.0':
+    resolution: {integrity: sha512-EOQNFH1RIku3M1s0OAJOzGfAohuFYXFY4s73wOhRm4KFGhmQQ7MChOh2YtYu9Kwgvuq1B0xKciXVzHCGkB5V+Q==}
+    deprecated: This package has been decomissioned. See https://github.com/ldapjs/node-ldapjs/blob/8ffd0bc9c149088a10ec4c1ec6a18450f76ad05d/README.md
+
+  '@ldapjs/controls@2.1.0':
+    resolution: {integrity: sha512-2pFdD1yRC9V9hXfAWvCCO2RRWK9OdIEcJIos/9cCVP9O4k72BY1bLDQQ4KpUoJnl4y/JoD4iFgM+YWT3IfITWw==}
+    deprecated: This package has been decomissioned. See https://github.com/ldapjs/node-ldapjs/blob/8ffd0bc9c149088a10ec4c1ec6a18450f76ad05d/README.md
+
+  '@ldapjs/dn@1.1.0':
+    resolution: {integrity: sha512-R72zH5ZeBj/Fujf/yBu78YzpJjJXG46YHFo5E4W1EqfNpo1UsVPqdLrRMXeKIsJT3x9dJVIfR6OpzgINlKpi0A==}
+    deprecated: This package has been decomissioned. See https://github.com/ldapjs/node-ldapjs/blob/8ffd0bc9c149088a10ec4c1ec6a18450f76ad05d/README.md
+
+  '@ldapjs/filter@2.1.1':
+    resolution: {integrity: sha512-TwPK5eEgNdUO1ABPBUQabcZ+h9heDORE4V9WNZqCtYLKc06+6+UAJ3IAbr0L0bYTnkkWC/JEQD2F+zAFsuikNw==}
+    deprecated: This package has been decomissioned. See https://github.com/ldapjs/node-ldapjs/blob/8ffd0bc9c149088a10ec4c1ec6a18450f76ad05d/README.md
+
+  '@ldapjs/messages@1.3.0':
+    resolution: {integrity: sha512-K7xZpXJ21bj92jS35wtRbdcNrwmxAtPwy4myeh9duy/eR3xQKvikVycbdWVzkYEAVE5Ce520VXNOwCHjomjCZw==}
+    deprecated: This package has been decomissioned. See https://github.com/ldapjs/node-ldapjs/blob/8ffd0bc9c149088a10ec4c1ec6a18450f76ad05d/README.md
+
+  '@ldapjs/protocol@1.2.1':
+    resolution: {integrity: sha512-O89xFDLW2gBoZWNXuXpBSM32/KealKCTb3JGtJdtUQc7RjAk8XzrRgyz02cPAwGKwKPxy0ivuC7UP9bmN87egQ==}
+    deprecated: This package has been decomissioned. See https://github.com/ldapjs/node-ldapjs/blob/8ffd0bc9c149088a10ec4c1ec6a18450f76ad05d/README.md
 
   '@opentelemetry/api@1.9.0':
     resolution: {integrity: sha512-3giAOQvZiH5F9bMlMiv8+GSPMeqg0dbaeo58/0SlA9sxSqZhnUtxzX9/2FzyhS9sWQf5S0GJE0AKBrFqjpeYcg==}
@@ -565,6 +613,9 @@ packages:
   '@types/jsonwebtoken@9.0.10':
     resolution: {integrity: sha512-asx5hIG9Qmf/1oStypjanR7iKTv0gXQ1Ov/jfrX6kS/EO0OFni8orbmGCn0672NHR3kXHwpAwR+B368ZGN/2rA==}
 
+  '@types/ldapjs@3.0.6':
+    resolution: {integrity: sha512-E2Tn1ltJDYBsidOT9QG4engaQeQzRQ9aYNxVmjCkD33F7cIeLPgrRDXAYs0O35mK2YDU20c/+ZkNjeAPRGLM0Q==}
+
   '@types/long@4.0.2':
     resolution: {integrity: sha512-MqTGEo5bj5t157U6fA/BiDynNkn0YknVdh48CMPkTSpFTVmvao5UQmm7uEF6xBEo7qIMAlY/JSleYaE6VOdpaA==}
 
@@ -625,6 +676,9 @@ packages:
 
   abortcontroller-polyfill@1.7.8:
     resolution: {integrity: sha512-9f1iZ2uWh92VcrU9Y8x+LdM4DLj75VE0MJB8zuF1iUnroEptStw+DQ8EQPMUdfe5k+PkB1uUfDQfWbhstH8LrQ==}
+
+  abstract-logging@2.0.1:
+    resolution: {integrity: sha512-2BjRTZxTPvheOvGbBslFSYOUkr+SjPtOnrLP33f+VIWLzezQpZcqVg7ja3L4dBXmzzgwT+a029jRx5PCi3JuiA==}
 
   accepts@1.3.8:
     resolution: {integrity: sha512-PYAthTa2m2VKxuvSD3DPC/Gy+U+sOA1LAuT8mkmRuvw+NACSaeXEQ+NHcVF7rONl6qcaxV3Uuemwawk+7+SJLw==}
@@ -704,6 +758,10 @@ packages:
 
   axios@1.12.2:
     resolution: {integrity: sha512-vMJzPewAlRyOgxV2dU0Cuz2O8zzzx9VYtbJOaBgXFeLc4IV/Eg50n4LowmehOOR61S8ZMpc2K5Sa7g6A4jfkUw==}
+
+  backoff@2.5.0:
+    resolution: {integrity: sha512-wC5ihrnUXmR2douXmXLCe5O3zg3GKIyvRi/hi58a/XyRxVI+3/yM0PYueQOZXPXQ9pxBislYkw+sF9b7C/RuMA==}
+    engines: {node: '>= 0.6'}
 
   base64-js@1.5.1:
     resolution: {integrity: sha512-AKpaYlHn8t4SVbOHCy+b5+KKgvR4vrsD8vbvrbiQJps7fKDTkjkDry6ji0rUJjC0kzbNePLwzxq8iypo41qeWA==}
@@ -1273,6 +1331,10 @@ packages:
   jws@4.0.0:
     resolution: {integrity: sha512-KDncfTmOZoOMTFG4mBlG0qUIOlc03fmzH+ru6RgYVZhPkyiy/92Owlt/8UEN+a4TXR1FQetfIpJE8ApdvdVxTg==}
 
+  ldapjs@3.0.7:
+    resolution: {integrity: sha512-1ky+WrN+4CFMuoekUOv7Y1037XWdjKpu0xAPwSP+9KdvmV9PG+qOKlssDV6a+U32apwxdD3is/BZcWOYzN30cg==}
+    deprecated: This package has been decomissioned. See https://github.com/ldapjs/node-ldapjs/blob/8ffd0bc9c149088a10ec4c1ec6a18450f76ad05d/README.md
+
   limiter@1.1.5:
     resolution: {integrity: sha512-FWWMIEOxz3GwUI4Ts/IvgVy6LPvoMPgjMdQ185nN6psJyBJ4yOpzqm695/h5umdLJg2vW3GR5iG11MAkR2AzJA==}
 
@@ -1501,6 +1563,13 @@ packages:
   possible-typed-array-names@1.1.0:
     resolution: {integrity: sha512-/+5VFTchJDoVj3bhoqi6UeymcD00DAwb1nJwamzPvHEszJ4FpF6SNNbUbOS8yI56qHzdV8eK0qEfOSiodkTdxg==}
     engines: {node: '>= 0.4'}
+
+  precond@0.2.3:
+    resolution: {integrity: sha512-QCYG84SgGyGzqJ/vlMsxeXd/pgL/I94ixdNFyh1PusWmTCyVfPJjZ1K1jvHtsbfnXQs2TSkEP2fR7QiMZAnKFQ==}
+    engines: {node: '>= 0.6'}
+
+  process-warning@2.3.2:
+    resolution: {integrity: sha512-n9wh8tvBe5sFmsqlg+XQhaQLumwpqoAUruLwjCopgTmUBjJ/fjtBsJzKleCaIGBOMXYEhp1YfKl4d7rJ5ZKJGA==}
 
   process@0.11.10:
     resolution: {integrity: sha512-cdGef/drWFoydD1JsMzuFf8100nZl+GT+yacc2bEced5f9Rjk4z+WtFUTBu9PhOi9j/jfmBPu0mMEY4wIdAF8A==}
@@ -1792,9 +1861,17 @@ packages:
     resolution: {integrity: sha512-BNGbWLfd0eUPabhkXUVm0j8uuvREyTh5ovRa/dyow/BqAbZJyC+5fU+IzQOzmAKzYqYRAISoRhdQr3eIZ/PXqg==}
     engines: {node: '>= 0.8'}
 
+  vasync@2.2.1:
+    resolution: {integrity: sha512-Hq72JaTpcTFdWiNA4Y22Amej2GH3BFmBaKPPlDZ4/oC8HNn2ISHLkFrJU4Ds8R3jcUi7oo5Y9jcMHKjES+N9wQ==}
+    engines: {'0': node >=0.6.0}
+
   verror@1.10.0:
     resolution: {integrity: sha512-ZZKSmDAEFOijERBLkmYfJ+vmk3w+7hOLYDNkRCuRuMJGEmqYNCNLyBBFwWKVMhfwaEF3WOd0Zlw86U/WC/+nYw==}
     engines: {'0': node >=0.6.0}
+
+  verror@1.10.1:
+    resolution: {integrity: sha512-veufcmxri4e3XSrT0xwfUR7kguIkaxBeosDg00yDWhk49wdwkSUrvvsm7nc75e1PUyvIeZj6nS8VQRYz2/S4Xg==}
+    engines: {node: '>=0.6.0'}
 
   web-streams-polyfill@4.0.0-beta.3:
     resolution: {integrity: sha512-QW95TCTaHmsYfHDybGMwO5IJIM93I/6vTRk+daHTWFPhwh+C8Cg7j7XyKrwrj8Ib6vYXe0ocYNrmzY4xAAN6ug==}
@@ -2371,6 +2448,50 @@ snapshots:
 
   '@js-sdsl/ordered-map@4.4.2': {}
 
+  '@ldapjs/asn1@1.2.0': {}
+
+  '@ldapjs/asn1@2.0.0': {}
+
+  '@ldapjs/attribute@1.0.0':
+    dependencies:
+      '@ldapjs/asn1': 2.0.0
+      '@ldapjs/protocol': 1.2.1
+      process-warning: 2.3.2
+
+  '@ldapjs/change@1.0.0':
+    dependencies:
+      '@ldapjs/asn1': 2.0.0
+      '@ldapjs/attribute': 1.0.0
+
+  '@ldapjs/controls@2.1.0':
+    dependencies:
+      '@ldapjs/asn1': 1.2.0
+      '@ldapjs/protocol': 1.2.1
+
+  '@ldapjs/dn@1.1.0':
+    dependencies:
+      '@ldapjs/asn1': 2.0.0
+      process-warning: 2.3.2
+
+  '@ldapjs/filter@2.1.1':
+    dependencies:
+      '@ldapjs/asn1': 2.0.0
+      '@ldapjs/protocol': 1.2.1
+      process-warning: 2.3.2
+
+  '@ldapjs/messages@1.3.0':
+    dependencies:
+      '@ldapjs/asn1': 2.0.0
+      '@ldapjs/attribute': 1.0.0
+      '@ldapjs/change': 1.0.0
+      '@ldapjs/controls': 2.1.0
+      '@ldapjs/dn': 1.1.0
+      '@ldapjs/filter': 2.1.1
+      '@ldapjs/protocol': 1.2.1
+      process-warning: 2.3.2
+
+  '@ldapjs/protocol@1.2.1': {}
+
   '@opentelemetry/api@1.9.0':
     optional: true
 
@@ -2765,6 +2886,10 @@ snapshots:
       '@types/ms': 2.1.0
       '@types/node': 20.19.22
 
+  '@types/ldapjs@3.0.6':
+    dependencies:
+      '@types/node': 20.19.22
+
   '@types/long@4.0.2': {}
 
   '@types/mime@1.3.5': {}
@@ -2834,6 +2959,8 @@ snapshots:
       event-target-shim: 5.0.1
 
   abortcontroller-polyfill@1.7.8: {}
+
+  abstract-logging@2.0.1: {}
 
   accepts@1.3.8:
     dependencies:
@@ -2923,6 +3050,10 @@ snapshots:
       proxy-from-env: 1.1.0
     transitivePeerDependencies:
       - debug
+
+  backoff@2.5.0:
+    dependencies:
+      precond: 0.2.3
 
   base64-js@1.5.1: {}
 
@@ -3629,6 +3760,23 @@ snapshots:
       jwa: 2.0.1
       safe-buffer: 5.2.1
 
+  ldapjs@3.0.7:
+    dependencies:
+      '@ldapjs/asn1': 2.0.0
+      '@ldapjs/attribute': 1.0.0
+      '@ldapjs/change': 1.0.0
+      '@ldapjs/controls': 2.1.0
+      '@ldapjs/dn': 1.1.0
+      '@ldapjs/filter': 2.1.1
+      '@ldapjs/messages': 1.3.0
+      '@ldapjs/protocol': 1.2.1
+      abstract-logging: 2.0.1
+      assert-plus: 1.0.0
+      backoff: 2.5.0
+      once: 1.4.0
+      vasync: 2.2.1
+      verror: 1.10.1
+
   limiter@1.1.5: {}
 
   lodash.camelcase@4.3.0: {}
@@ -3811,6 +3959,10 @@ snapshots:
   picocolors@1.1.1: {}
 
   possible-typed-array-names@1.1.0: {}
+
+  precond@0.2.3: {}
+
+  process-warning@2.3.2: {}
 
   process@0.11.10: {}
 
@@ -4154,7 +4306,17 @@ snapshots:
 
   vary@1.1.2: {}
 
+  vasync@2.2.1:
+    dependencies:
+      verror: 1.10.0
+
   verror@1.10.0:
+    dependencies:
+      assert-plus: 1.0.0
+      core-util-is: 1.0.2
+      extsprintf: 1.3.0
+
+  verror@1.10.1:
     dependencies:
       assert-plus: 1.0.0
       core-util-is: 1.0.2

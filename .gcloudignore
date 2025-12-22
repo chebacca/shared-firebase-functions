@@ -4,6 +4,9 @@
 # Dependencies (will be installed during build)
 node_modules/
 
+# IMPORTANT: Keep pnpm-lock.yaml for Cloud Build
+!pnpm-lock.yaml
+
 # Build outputs
 lib/
 dist/

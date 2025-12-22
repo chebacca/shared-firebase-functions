@@ -97,6 +97,9 @@ export * from './slack';
 // Export Google Drive integration functions
 export * from './google';
 
+// Export Apple Connect integration functions
+export * from './apple';
+
 // Export Webex integration functions
 export * from './webex';
 
