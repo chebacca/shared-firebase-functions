@@ -20,3 +20,4 @@ export { getMySubmissions, getMySubmissionsHttp } from './getMySubmissions';
 export { getApprovalHistory, getApprovalHistoryHttp } from './getApprovalHistory';
 export { getDirectReports, getDirectReportsHttp } from './getDirectReports';
 export { timecardApprovalApi } from './timecardApprovalApi';
+export { onTimecardStatusChange } from './onTimecardStatusChange';

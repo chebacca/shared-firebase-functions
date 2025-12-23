@@ -5,43 +5,50 @@
  * Handles context optimization, prompt engineering, and response formatting.
  */
 
-import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
+import { GoogleGenerativeAI, GenerativeModel, SchemaType } from '@google/generative-ai';
 import { defineSecret } from 'firebase-functions/params';
 import { GlobalContext } from './contextAggregation/GlobalContextService';
 import { workflowFunctionDeclarations } from './workflowTools';
 import { WorkflowFunctionExecutor } from './workflowFunctionExecutor';
+import { dataToolDeclarations } from './dataTools';
+import { DataToolExecutor } from './DataToolExecutor';
+import axios from 'axios';
 
+export interface AIAttachment {
+  url: string;
+  mimeType: string;
+}
 // Define secret for Gemini API key
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
 
 // Preview context modes - Complete list including all God Mode integrations
-export type PreviewContextMode = 
-    // Core
-    | 'none' | 'script' | 'projects' | 'callsheet' | 'media' | 'pdf' | 'graph'
-    // Phase 1: Shared Resources
-    | 'team' | 'contacts' | 'users' | 'files'
-    // Phase 2: Production Management
-    | 'sessions' | 'timecards' | 'tasks' | 'roles' | 'locations' | 'scenes'
-    // Phase 3: Financial & Music
-    | 'cuesheets' | 'budgets' | 'music'
-    // Phase 4: Additional
-    | 'stories' | 'table'
-    // Phase 5: High-Level Dashboards
-    | 'inventory' | 'cuemusic' | 'calendarevents' | 'scripting'
-    // Phase 1: Licensing & Billing
-    | 'licenses' | 'subscriptions' | 'invoices' | 'billing'
-    // Phase 2: Integrations
-    | 'integrations' | 'cloud-storage' | 'communications' | 'airtable'
-    // Phase 3: Workflow & Automation
-    | 'workflows' | 'automation'
-    // Phase 4: Network & Media Processing
-    | 'network-delivery' | 'edl' | 'transcription' | 'unified-files'
-    // Phase 5: Messaging & Collaboration
-    | 'conversations' | 'collaboration'
-    // Phase 6: AI & Analytics
-    | 'ai-analytics' | 'ai-training'
-    // Phase 7: System & Monitoring
-    | 'system-health' | 'notifications' | 'reports';
+export type PreviewContextMode =
+  // Core
+  | 'none' | 'script' | 'projects' | 'callsheet' | 'media' | 'pdf' | 'graph'
+  // Phase 1: Shared Resources
+  | 'team' | 'contacts' | 'users' | 'files'
+  // Phase 2: Production Management
+  | 'sessions' | 'timecards' | 'tasks' | 'roles' | 'locations' | 'scenes'
+  // Phase 3: Financial & Music
+  | 'cuesheets' | 'budgets' | 'music'
+  // Phase 4: Additional
+  | 'stories' | 'table'
+  // Phase 5: High-Level Dashboards
+  | 'inventory' | 'cuemusic' | 'calendarevents' | 'scripting'
+  // Phase 1: Licensing & Billing
+  | 'licenses' | 'subscriptions' | 'invoices' | 'billing'
+  // Phase 2: Integrations
+  | 'integrations' | 'cloud-storage' | 'communications' | 'airtable'
+  // Phase 3: Workflow & Automation
+  | 'workflows' | 'automation'
+  // Phase 4: Network & Media Processing
+  | 'network-delivery' | 'edl' | 'transcription' | 'unified-files'
+  // Phase 5: Messaging & Collaboration
+  | 'conversations' | 'collaboration'
+  // Phase 6: AI & Analytics
+  | 'ai-analytics' | 'ai-training'
+  // Phase 7: System & Monitoring
+  | 'system-health' | 'notifications' | 'reports';
 
 export interface AgentResponse {
   response: string;
@@ -71,8 +78,8 @@ export class GeminiService {
 
   constructor(apiKey: string) {
     this.genAI = new GoogleGenerativeAI(apiKey);
-    // Use gemini-2.5-flash - the correct model name from the API
-    this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    // Use gemini-1.5-pro for advanced reasoning and larger context window
+    this.model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
   }
 
   /**
@@ -81,7 +88,8 @@ export class GeminiService {
   async generateAgentResponse(
     message: string,
     globalContext: GlobalContext,
-    currentMode: PreviewContextMode = 'none'
+    currentMode: PreviewContextMode = 'none',
+    attachments: AIAttachment[] = []
   ): Promise<AgentResponse> {
     try {
       console.log('🧠 [Gemini Service] Starting response generation...');
@@ -91,7 +99,7 @@ export class GeminiService {
       // Check if this is a workflow building request
       const isWorkflowRequest = this.detectWorkflowIntent(message);
       if (isWorkflowRequest && currentMode === 'workflows') {
-        return await this.generateWorkflowResponse(message, globalContext);
+        return await this.generateWorkflowResponse(message, globalContext, attachments);
       }
 
       // Build optimized context summary
@@ -106,14 +114,63 @@ export class GeminiService {
       const userPrompt = `Current View: ${currentMode}\nUser Message: ${message}\n\nAnalyze the user's intent and provide a helpful response. Determine the best view mode for their request.`;
       console.log('💬 [Gemini Service] User prompt:', userPrompt);
 
+      // Prepare parts
+      const parts: any[] = [{ text: systemPrompt }];
+
+      // Process attachments
+      if (attachments && attachments.length > 0) {
+        console.log(`📎 [Gemini Service] Processing ${attachments.length} attachments...`);
+        for (const att of attachments) {
+          try {
+            const base64Data = await this.fetchAttachment(att.url);
+            parts.push({
+              inlineData: {
+                mimeType: att.mimeType,
+                data: base64Data
+              }
+            });
+            console.log(`📎 [Gemini Service] Added attachment: ${att.mimeType}`);
+          } catch (e) {
+            console.error(`❌ [Gemini Service] Failed to fetch attachment: ${att.url}`, e);
+            // Continue without failing the whole request
+          }
+        }
+      }
+
+      parts.push({ text: userPrompt });
+
       // Call Gemini API
-      console.log('🚀 [Gemini Service] Calling Gemini API...');
+      // Call Gemini API with Structured Output (JSON Mode)
+      console.log('🚀 [Gemini Service] Calling Gemini API (Structured Output)...');
 
+      const generationConfig = {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: SchemaType.OBJECT,
+          properties: {
+            response: { type: SchemaType.STRING },
+            suggestedContext: { type: SchemaType.STRING },
+            // contextData can be anything, so we can't strict type it easily in Gemini schema yet,
+            // but for now we'll ask for it as an OBJECT if possible, or handle it in prompt.
+            // Gemini SDK schema is strict. Let's omit complex 'any' fields for now and rely on prompt
+            // or define a generic object structure. 
+            // Actually, for flexibility, let's keep it simple or define key fields.
+            intent: { type: SchemaType.STRING },
+            suggestedDialog: { type: SchemaType.STRING },
+            reasoning: { type: SchemaType.STRING },
+            followUpSuggestions: {
+              type: SchemaType.ARRAY,
+              items: { type: SchemaType.STRING }
+            }
+          },
+          required: ['response', 'suggestedContext', 'reasoning']
+        }
+      };
 
-      const result = await this.model.generateContent([
-        { text: systemPrompt },
-        { text: userPrompt }
-      ]);
+      const result = await this.model.generateContent({
+        contents: parts,
+        generationConfig: generationConfig as any
+      });
 
       const responseText = result.response.text();
       console.log('✅ [Gemini Service] Raw API response:', responseText);
@@ -145,6 +202,18 @@ export class GeminiService {
   }
 
   /**
+   * Fetch attachment from URL and convert to Base64
+   */
+  private async fetchAttachment(url: string): Promise<string> {
+    try {
+      const response = await axios.get(url, { responseType: 'arraybuffer' });
+      return Buffer.from(response.data, 'binary').toString('base64');
+    } catch (error) {
+      throw new Error(`Failed to fetch attachment: ${error}`);
+    }
+  }
+
+  /**
    * Detect if user wants to build a workflow
    */
   private detectWorkflowIntent(message: string): boolean {
@@ -163,7 +232,8 @@ export class GeminiService {
    */
   private async generateWorkflowResponse(
     message: string,
-    globalContext: GlobalContext
+    globalContext: GlobalContext,
+    attachments: AIAttachment[] = []
   ): Promise<AgentResponse> {
     try {
       console.log('🔧 [Gemini Service] Generating workflow response...');
@@ -175,13 +245,33 @@ export class GeminiService {
       const workflowPrompt = this.buildWorkflowSystemPrompt(availableRoles);
 
       // Build user prompt with workflow requirements
+      // Build user prompt with workflow requirements
       const userPrompt = `User Request: ${message}\n\nGenerate a workflow template based on this description. Include nodes, edges, and role assignments.`;
 
+      // Prepare parts
+      const parts: any[] = [{ text: workflowPrompt }];
+
+      // Process attachments
+      if (attachments && attachments.length > 0) {
+        for (const att of attachments) {
+          try {
+            const base64Data = await this.fetchAttachment(att.url);
+            parts.push({
+              inlineData: {
+                mimeType: att.mimeType,
+                data: base64Data
+              }
+            });
+          } catch (e) {
+            console.error(`❌ [Gemini Service] Failed to fetch attachment for workflow`, e);
+          }
+        }
+      }
+
+      parts.push({ text: userPrompt });
+
       // Call Gemini API
-      const result = await this.model.generateContent([
-        { text: workflowPrompt },
-        { text: userPrompt }
-      ]);
+      const result = await this.model.generateContent(parts);
 
       const responseText = result.response.text();
       console.log('✅ [Gemini Service] Workflow response:', responseText.substring(0, 500));
@@ -222,7 +312,8 @@ export class GeminiService {
     message: string,
     globalContext: GlobalContext,
     conversationHistory: Array<{ role: string; parts: any[] }> = [],
-    maxTurns: number = 5
+    maxTurns: number = 5,
+    attachments: AIAttachment[] = []
   ): Promise<AgentResponse> {
     try {
       console.log('🔧 [Gemini Service] Starting function calling workflow generation...');
@@ -230,23 +321,26 @@ export class GeminiService {
       console.log('🔧 [Gemini Service] Conversation history length:', conversationHistory.length);
       console.log('🔧 [Gemini Service] Max turns:', maxTurns);
       console.log('🔧 [Gemini Service] Function declarations count:', workflowFunctionDeclarations.length);
-      
+
       // Validate API key
       if (!this.genAI) {
         throw new Error('Gemini AI client not initialized. API key may be missing.');
       }
-      
+
+      // Combine all tools
+      const allTools = [...workflowFunctionDeclarations, ...dataToolDeclarations];
+
       // Validate function declarations
-      if (!workflowFunctionDeclarations || workflowFunctionDeclarations.length === 0) {
-        throw new Error('No function declarations available for workflow generation');
+      if (!allTools || allTools.length === 0) {
+        throw new Error('No function declarations available for generation');
       }
-      
+
       // Create model with function declarations
       let model;
       try {
-        model = this.genAI.getGenerativeModel({ 
-          model: 'gemini-2.5-flash',
-          tools: [{ functionDeclarations: workflowFunctionDeclarations as any }]
+        model = this.genAI.getGenerativeModel({
+          model: 'gemini-1.5-pro',
+          tools: [{ functionDeclarations: allTools as any }]
         });
         console.log('✅ [Gemini Service] Model created successfully');
       } catch (modelError: any) {
@@ -256,12 +350,12 @@ export class GeminiService {
 
       let turnCount = 0;
       let functionResults: any[] = [];
-      
+
       // Transform conversation history from frontend format to Gemini SDK format
       // Frontend sends: { role: 'user' | 'assistant', content: string }
       // Gemini SDK expects: { role: 'user' | 'model', parts: [{ text: string }] }
       const history: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
-      
+
       // Only process non-empty conversation history
       if (conversationHistory && conversationHistory.length > 0) {
         conversationHistory.forEach((msg: any, index: number) => {
@@ -282,13 +376,13 @@ export class GeminiService {
                 text = firstPart;
               }
             }
-            
+
             // Skip if no text found
             if (!text || text.trim().length === 0) {
               console.warn(`⚠️ [Gemini Service] Skipping message ${index} - no text content found`);
               return;
             }
-            
+
             // Determine role - convert 'assistant' to 'model'
             let role: 'user' | 'model' = 'user';
             if (msg.role === 'assistant' || msg.role === 'model') {
@@ -296,7 +390,7 @@ export class GeminiService {
             } else if (msg.role === 'user') {
               role = 'user';
             }
-            
+
             // Create clean message object - ensure parts only contains { text: string }
             history.push({
               role,
@@ -308,7 +402,7 @@ export class GeminiService {
           }
         });
       }
-      
+
       console.log('🔧 [Gemini Service] Transformed history length:', history.length);
       if (history.length > 0) {
         console.log('🔧 [Gemini Service] First message structure:', JSON.stringify({
@@ -324,7 +418,7 @@ export class GeminiService {
             textValue: typeof history[0].parts[0].text === 'string' ? history[0].parts[0].text.substring(0, 50) : 'N/A'
           } : null
         }, null, 2));
-        
+
         // Validate each message in history
         history.forEach((msg: any, idx: number) => {
           if (!msg || !msg.role || !Array.isArray(msg.parts) || msg.parts.length === 0) {
@@ -338,11 +432,11 @@ export class GeminiService {
       // Get available roles
       const availableRoles = this.extractAvailableRoles(globalContext);
       console.log('🔧 [Gemini Service] Available roles count:', availableRoles.length);
-      
+
       // Get session context if available
       const sessionContext = globalContext.sessions;
       console.log('🔧 [Gemini Service] Has session context:', !!sessionContext?.currentSession);
-      
+
       // Add system prompt
       let systemPrompt: string;
       try {
@@ -352,45 +446,45 @@ export class GeminiService {
         console.error('❌ [Gemini Service] Error building system prompt:', promptError);
         throw new Error(`Failed to build system prompt: ${promptError.message}`);
       }
-      
+
       // For startChat, we need to format history correctly
       // The history should be an array of content objects: { role: 'user' | 'model', parts: [{ text: string }] }
       // But we should NOT include the system prompt in history - it should be in systemInstruction
       // And we should NOT include the current user message - that will be sent via sendMessage
       const chatHistory: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [...history];
-      
+
       // Validate chat history structure before passing to startChat
       const isValidChatHistory = chatHistory.every((msg: any) => {
-        return msg && 
-               (msg.role === 'user' || msg.role === 'model') &&
-               Array.isArray(msg.parts) &&
-               msg.parts.length > 0 &&
-               msg.parts[0] &&
-               typeof msg.parts[0] === 'object' &&
-               typeof msg.parts[0].text === 'string' &&
-               !msg.parts[0].role && // Ensure no nested role
-               !msg.parts[0].parts; // Ensure no nested parts
+        return msg &&
+          (msg.role === 'user' || msg.role === 'model') &&
+          Array.isArray(msg.parts) &&
+          msg.parts.length > 0 &&
+          msg.parts[0] &&
+          typeof msg.parts[0] === 'object' &&
+          typeof msg.parts[0].text === 'string' &&
+          !msg.parts[0].role && // Ensure no nested role
+          !msg.parts[0].parts; // Ensure no nested parts
       });
-      
+
       if (!isValidChatHistory && chatHistory.length > 0) {
         console.error('❌ [Gemini Service] Invalid chat history structure!');
         console.error('❌ [Gemini Service] First invalid message:', JSON.stringify(chatHistory.find((msg: any) => {
-          return !(msg && 
-                   (msg.role === 'user' || msg.role === 'model') &&
-                   Array.isArray(msg.parts) &&
-                   msg.parts.length > 0 &&
-                   msg.parts[0] &&
-                   typeof msg.parts[0] === 'object' &&
-                   typeof msg.parts[0].text === 'string' &&
-                   !msg.parts[0].role &&
-                   !msg.parts[0].parts);
+          return !(msg &&
+            (msg.role === 'user' || msg.role === 'model') &&
+            Array.isArray(msg.parts) &&
+            msg.parts.length > 0 &&
+            msg.parts[0] &&
+            typeof msg.parts[0] === 'object' &&
+            typeof msg.parts[0].text === 'string' &&
+            !msg.parts[0].role &&
+            !msg.parts[0].parts);
         }), null, 2));
         throw new Error('Invalid chat history structure for startChat');
       }
-      
+
       console.log('✅ [Gemini Service] Chat history prepared, length:', chatHistory.length);
       console.log('✅ [Gemini Service] System prompt will be included in systemInstruction');
-      
+
       // CRITICAL: startChat requires the first message in history to have role 'user'
       // If the history starts with a 'model' message, we need to skip leading model messages
       let validChatHistory = [...chatHistory];
@@ -407,7 +501,7 @@ export class GeminiService {
           validChatHistory = [];
         }
       }
-      
+
       // Final validation: ensure first message is from user if history is not empty
       if (validChatHistory.length > 0 && validChatHistory[0].role !== 'user') {
         console.error('❌ [Gemini Service] First message in history must be from user, got:', validChatHistory[0].role);
@@ -415,12 +509,12 @@ export class GeminiService {
         // Use empty history as fallback
         validChatHistory = [];
       }
-      
+
       console.log('✅ [Gemini Service] Final chat history length:', validChatHistory.length);
       if (validChatHistory.length > 0) {
         console.log('✅ [Gemini Service] First message role:', validChatHistory[0].role);
       }
-      
+
       // For function calling with multi-turn conversations, use startChat
       // System prompt should be passed as systemInstruction, not in history
       // If history is empty, pass empty array (not undefined)
@@ -432,22 +526,42 @@ export class GeminiService {
           parts: [{ text: systemPrompt }]
         }
       });
-      
+
       console.log('✅ [Gemini Service] Chat started with history length:', chatHistory.length);
-      
+
       // Track if we've sent the initial message
       let initialMessageSent = false;
-      
+
       while (turnCount < maxTurns) {
         console.log(`🔄 [Gemini Service] Turn ${turnCount + 1}/${maxTurns}`);
-        
+
         let result;
         let response;
         try {
           if (!initialMessageSent) {
             // Send the current user message (last item in fullHistory)
             console.log('🔧 [Gemini Service] Sending initial user message');
-            result = await chat.sendMessage(message);
+
+            // Prepare parts with attachments if they exist
+            const parts: any[] = [{ text: message }];
+
+            if (attachments && attachments.length > 0) {
+              for (const att of attachments) {
+                try {
+                  const base64Data = await this.fetchAttachment(att.url);
+                  parts.push({
+                    inlineData: {
+                      mimeType: att.mimeType,
+                      data: base64Data
+                    }
+                  });
+                } catch (e) {
+                  console.error(`❌ [Gemini Service] Failed to fetch attachment for function calling`, e);
+                }
+              }
+            }
+
+            result = await chat.sendMessage(parts);
             initialMessageSent = true;
           } else {
             // After function execution, continue the chat
@@ -456,7 +570,7 @@ export class GeminiService {
             // Send empty message to continue - the chat will use function results from history
             result = await chat.sendMessage('');
           }
-          
+
           response = result.response;
         } catch (genError: any) {
           console.error('❌ [Gemini Service] Error calling Gemini API:', genError);
@@ -472,7 +586,7 @@ export class GeminiService {
 
         // Check if agent wants to call a function
         const functionCalls = response.functionCalls();
-        
+
         if (!functionCalls || functionCalls.length === 0) {
           // Agent is done, return final response
           const text = response.text();
@@ -487,15 +601,29 @@ export class GeminiService {
         for (const functionCall of functionCalls) {
           console.log(`⚙️ [Gemini Service] Executing function: ${functionCall.name}`);
           console.log(`⚙️ [Gemini Service] Function args:`, JSON.stringify(functionCall.args, null, 2).substring(0, 500));
-          
+
           let functionResult;
           try {
-            functionResult = await WorkflowFunctionExecutor.executeFunction(
-              functionCall.name,
-              functionCall.args,
-              globalContext.organizationId,
-              globalContext.userId || ''
-            );
+            // Determine which executor to use
+            const isDataTool = dataToolDeclarations.some(t => t.name === functionCall.name);
+
+            if (isDataTool) {
+              console.log(`⚙️ [Gemini Service] Routing to DataToolExecutor: ${functionCall.name}`);
+              functionResult = await DataToolExecutor.executeTool(
+                functionCall.name,
+                functionCall.args,
+                globalContext.organizationId,
+                globalContext.userId || ''
+              );
+            } else {
+              console.log(`⚙️ [Gemini Service] Routing to WorkflowFunctionExecutor: ${functionCall.name}`);
+              functionResult = await WorkflowFunctionExecutor.executeFunction(
+                functionCall.name,
+                functionCall.args,
+                globalContext.organizationId,
+                globalContext.userId || ''
+              );
+            }
           } catch (execError: any) {
             console.error(`❌ [Gemini Service] Error executing function ${functionCall.name}:`, execError);
             console.error(`❌ [Gemini Service] Function execution error details:`, {
@@ -533,12 +661,12 @@ export class GeminiService {
         // The chat API handles this by calling sendMessage with function responses
         // But first, we need to get the model's response text (if any)
         const modelText = response.text() || '';
-        
+
         // For the next turn, the chat will automatically include function results
         // when we call sendMessage again, but we need to structure it correctly
         // The chat object maintains its own history, so we just need to continue
         console.log(`✅ [Gemini Service] Function results processed, will continue in next turn`);
-        
+
         turnCount++;
       }
 
@@ -556,7 +684,7 @@ export class GeminiService {
       // Declare variables in catch scope for error logging
       let turnCount = 0;
       let functionResults: any[] = [];
-      
+
       console.error('❌ [Gemini Service] Error in function calling:', error);
       console.error('❌ [Gemini Service] Error name:', error?.name);
       console.error('❌ [Gemini Service] Error message:', error?.message);
@@ -570,11 +698,11 @@ export class GeminiService {
         hasGlobalContext: !!globalContext,
         organizationId: globalContext?.organizationId
       });
-      
+
       // Include error details in response for debugging
       const errorMessage = error?.message || 'Unknown error';
       const errorDetails = error?.stack ? error.stack.substring(0, 500) : 'No stack trace available';
-      
+
       return {
         response: `I encountered an error while processing your workflow request: ${errorMessage}. Please try again or rephrase your request.`,
         suggestedContext: 'workflows',
@@ -603,7 +731,7 @@ export class GeminiService {
   private parseWorkflowResponseWithFunctions(text: string, functionResults: any[]): AgentResponse {
     // Parse text response and combine with function results
     const workflowData = this.extractWorkflowFromResults(functionResults);
-    
+
     return {
       response: text,
       workflowData: workflowData,
@@ -624,7 +752,7 @@ export class GeminiService {
     const rolesList = availableRoles.length > 0
       ? availableRoles.map(r => `${r.displayName} (${r.id})`).join(', ')
       : 'EDITOR, COLORIST, SOUND_DESIGNER, PRODUCER, POST_COORDINATOR, QC_SPECIALIST';
-    
+
     // Build session context section if available
     let sessionInfo = '';
     try {
@@ -716,7 +844,7 @@ RULES:
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
-        
+
         if (parsed.workflowData) {
           return {
             explanation: parsed.explanation || 'Workflow generated successfully',
@@ -1443,65 +1571,38 @@ RULES:
   }
 
   /**
-   * Parse Gemini response into structured format
+   * Parse agent response to extract structured data
+   * Now using native JSON parsing effectively
    */
   private parseAgentResponse(responseText: string, globalContext: GlobalContext): AgentResponse {
     try {
-      console.log('🔍 [Gemini Service] Parsing response...');
-      console.log('📄 [Gemini Service] Response text to parse:', responseText.substring(0, 200) + '...');
+      console.log('🧩 [Gemini Service] Parsing structured response');
+      const parsed = JSON.parse(responseText);
 
-      // Try to extract JSON from response
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      // Validate context mode
+      const validMode = this.validateContextMode(parsed.suggestedContext);
 
-      if (jsonMatch) {
-        console.log('✅ [Gemini Service] Found JSON in response');
-        console.log('📦 [Gemini Service] JSON match:', jsonMatch[0].substring(0, 200) + '...');
-
-        const parsed = JSON.parse(jsonMatch[0]);
-        console.log('✅ [Gemini Service] Successfully parsed JSON:', parsed);
-
-        // Validate and return
-        const result = {
-          response: parsed.response || responseText,
-          suggestedContext: this.validateContextMode(parsed.suggestedContext),
-          contextData: parsed.contextData || null,
-          followUpSuggestions: Array.isArray(parsed.followUpSuggestions)
-            ? parsed.followUpSuggestions.slice(0, 3)
-            : [],
-          reasoning: parsed.reasoning || 'AI analysis',
-          // NEW: Dialog system fields
-          intent: parsed.intent || undefined,
-          suggestedDialog: parsed.suggestedDialog || undefined,
-          prefillData: parsed.prefillData || undefined
-        };
-        console.log('🎯 [Gemini Service] Validated result:', result);
-        if (result.intent) {
-          console.log('🎯 [Gemini Service] Dialog intent detected:', result.intent, 'Dialog:', result.suggestedDialog);
-          console.log('📝 [Gemini Service] Prefill data:', result.prefillData);
-        }
-        return result;
-      }
-
-      // Fallback: treat entire response as natural language
-      console.warn('⚠️ [Gemini Service] No JSON found in response, using fallback');
       return {
-        response: responseText,
-        suggestedContext: 'none',
-        contextData: null,
-        followUpSuggestions: [],
-        reasoning: 'Natural language response without structured format'
+        response: parsed.response,
+        suggestedContext: validMode,
+        contextData: parsed.contextData || null,
+        followUpSuggestions: parsed.followUpSuggestions || [],
+        reasoning: parsed.reasoning || '',
+        intent: parsed.intent,
+        suggestedDialog: parsed.suggestedDialog,
+        prefillData: parsed.prefillData
       };
-
     } catch (error) {
-      console.error('❌ [Gemini Service] Error parsing response:', error);
-      console.error('❌ [Gemini Service] Failed to parse:', responseText.substring(0, 500));
+      console.error('❌ [Gemini Service] Error parsing JSON response:', error);
+      console.error('❌ [Gemini Service] Raw Text:', responseText);
 
+      // Fallback
       return {
         response: responseText,
         suggestedContext: 'none',
         contextData: null,
         followUpSuggestions: [],
-        reasoning: 'Failed to parse structured response'
+        reasoning: 'Failed to parse JSON'
       };
     }
   }

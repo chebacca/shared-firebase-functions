@@ -19,7 +19,7 @@ const auth = getAuth();
  */
 function detectQuickIntent(message: string): 'graph' | 'full' {
   const lower = message.toLowerCase().trim();
-  
+
   // Graph-specific keywords
   const graphKeywords = [
     'graph',
@@ -39,7 +39,7 @@ function detectQuickIntent(message: string): 'graph' | 'full' {
     'map',
     'network'
   ];
-  
+
   // Check if message contains graph-related keywords
   for (const keyword of graphKeywords) {
     if (lower.includes(keyword)) {
@@ -47,7 +47,7 @@ function detectQuickIntent(message: string): 'graph' | 'full' {
       return 'graph';
     }
   }
-  
+
   // Default to full context for ambiguous queries
   return 'full';
 }
@@ -95,7 +95,7 @@ export const callAIAgent = onCall(
       // 3. Gather Context (Optimized based on intent)
       // Extract sessionId from context if provided (for workflow creation)
       const sessionId = context?.sessionId || context?.session?.id;
-      
+
       let globalContext;
       if (quickIntent === 'graph') {
         console.log(`⚡ [AI AGENT] Using minimal context for graph request (optimization)`);
@@ -104,7 +104,7 @@ export const callAIAgent = onCall(
         console.log(`📊 [AI AGENT] Gathering full global context for org: ${organizationId}${sessionId ? ` (session: ${sessionId})` : ''}`);
         globalContext = await gatherGlobalContext(organizationId, uid, sessionId);
       }
-      
+
       // Ensure userId is set in globalContext
       if (!globalContext.userId) {
         globalContext.userId = uid;
@@ -118,6 +118,15 @@ export const callAIAgent = onCall(
       // Check if function calling mode is enabled for workflows
       const useFunctionCalling = context?.useFunctionCalling === true && currentMode === 'workflows';
 
+      // Extract attachments
+      const attachments = [];
+      if (context?.attachmentUrl && context?.attachmentMimeType) {
+        attachments.push({
+          url: context.attachmentUrl,
+          mimeType: context.attachmentMimeType
+        });
+      }
+
       let agentResponse;
       if (useFunctionCalling) {
         console.log('🔧 [AI AGENT] Using function calling mode for workflow generation');
@@ -125,13 +134,15 @@ export const callAIAgent = onCall(
           message,
           globalContext,
           context?.conversationHistory || [],
-          context?.maxTurns || 5
+          context?.maxTurns || 5,
+          attachments
         );
       } else {
         agentResponse = await geminiService.generateAgentResponse(
           message,
           globalContext,
-          currentMode
+          currentMode,
+          attachments
         );
       }
 

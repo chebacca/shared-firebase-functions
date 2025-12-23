@@ -12,6 +12,21 @@ export {
   testEmailConnectionHttp
 } from './notifications/sendEmail';
 
+// Export notification CRUD functions
+export {
+  getNotifications,
+  getUnreadNotifications,
+  getNotificationsByCategory,
+  createNotification,
+  updateNotification,
+  markNotificationAsRead,
+  markAllNotificationsAsRead,
+  deleteNotification,
+  clearAllNotifications,
+  getNotificationSettings,
+  updateNotificationSettings
+} from './notifications/crud';
+
 // Export automation executor  
 export {
   executeAutomation,
@@ -263,8 +278,23 @@ export {
   getApprovalHistoryHttp,
   getDirectReports,
   getDirectReportsHttp,
-  timecardApprovalApi
+  timecardApprovalApi,
+  onTimecardStatusChange
 } from './timecards';
+
+// Export budgeting functions
+export {
+  getBudgets,
+  getBudgetsHttp,
+  calculateBudgetVariance,
+  calculateBudgetVarianceHttp,
+  syncTimecardToBudget,
+  syncTimecardToBudgetHttp,
+  updateCommittedAmountHttp,
+  revertCommittedAmountHttp,
+  aggregateTimecardCosts,
+  aggregateTimecardCostsHttp
+} from './budgeting';
 
 // Export FCM functions
 export {
