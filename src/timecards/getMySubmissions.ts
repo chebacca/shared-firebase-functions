@@ -20,55 +20,83 @@ export const getMySubmissions = onCall(
   },
   async (request) => {
     try {
-      const { organizationId, userId, projectId, status, startDate, endDate } = request.data;
+      if (!request.auth) {
+        throw new Error('User must be authenticated');
+      }
+
+      const userId = request.auth.uid;
+      const { startDate, endDate } = request.data || {};
+
+      console.log(`⏰ [GET MY SUBMISSIONS] Getting submissions for user: ${userId}`);
+
+      // Get user's organizationId from users collection
+      const userDoc = await db.collection('users').doc(userId).get();
+      if (!userDoc.exists) {
+        throw new Error('User not found');
+      }
+
+      const userData = userDoc.data();
+      const organizationId = userData?.organizationId;
 
       if (!organizationId) {
-        throw new Error('Organization ID is required');
+        throw new Error('User organization not found');
       }
 
-      if (!userId) {
-        throw new Error('User ID is required');
-      }
-
-      console.log(`⏰ [GET MY SUBMISSIONS] Getting submissions for user: ${userId} in org: ${organizationId}`);
-
-      let query = db.collection('timecards')
+      // Query timecard_entries for this user
+      // Note: Can't use orderBy with 'in' query, so we'll query and sort in memory
+      let query = db.collection('timecard_entries')
         .where('organizationId', '==', organizationId)
-        .where('userId', '==', userId);
+        .where('userId', '==', userId)
+        .where('status', 'in', ['SUBMITTED', 'PENDING', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'submitted', 'pending', 'approved', 'rejected']);
 
-      // Apply additional filters
-      if (projectId) {
-        query = query.where('projectId', '==', projectId);
-      }
-
-      if (status) {
-        query = query.where('status', '==', status);
-      }
-
+      // Apply date filters if provided
       if (startDate) {
-        query = query.where('date', '>=', startDate);
+        query = query.where('date', '>=', new Date(startDate));
       }
-
       if (endDate) {
-        query = query.where('date', '<=', endDate);
+        query = query.where('date', '<=', new Date(endDate));
       }
 
-      query = query.orderBy('date', 'desc');
+      const snapshot = await query.get();
 
-      const timecardsSnapshot = await query.get();
-      const timecards = timecardsSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      // Transform entries to TimecardApprovalFlow format
+      const submissions = snapshot.docs.map(doc => {
+        const data = doc.data();
+        const entryDate = data.date?.toDate ? data.date.toDate() : (data.date instanceof Date ? data.date : new Date(data.date));
+        return {
+          id: doc.id,
+          timecardId: doc.id,
+          timecard: {
+            id: doc.id,
+            date: data.date,
+            totalHours: data.totalHours || 0,
+            status: data.status,
+            userId: data.userId,
+            organizationId: data.organizationId,
+            ...data
+          },
+          status: data.status || 'PENDING',
+          submittedAt: data.submittedAt || data.createdAt,
+          submittedBy: data.userId,
+          currentApproverId: data.approverId || null,
+          approvalHistory: [],
+          createdAt: data.createdAt,
+          updatedAt: data.updatedAt,
+          _sortDate: entryDate.getTime() // For sorting
+        };
+      });
 
-      console.log(`⏰ [GET MY SUBMISSIONS] Found ${timecards.length} submissions`);
+      // Sort by date descending (most recent first)
+      submissions.sort((a, b) => (b._sortDate || 0) - (a._sortDate || 0));
+      
+      // Remove temporary sort field
+      submissions.forEach(s => delete (s as any)._sortDate);
+
+      console.log(`⏰ [GET MY SUBMISSIONS] Found ${submissions.length} submissions for user ${userId}`);
 
       return createSuccessResponse({
-        timecards,
-        count: timecards.length,
-        organizationId,
-        userId,
-        filters: { projectId, status, startDate, endDate }
+        data: submissions,
+        count: submissions.length
       }, 'My submissions retrieved successfully');
 
     } catch (error: any) {

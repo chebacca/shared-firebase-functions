@@ -255,6 +255,14 @@ export {
   getTimecardUsersHttp,
   getTimecardConfigurations,
   getTimecardConfigurationsHttp,
+  getPendingApprovals,
+  getPendingApprovalsHttp,
+  getMySubmissions,
+  getMySubmissionsHttp,
+  getApprovalHistory,
+  getApprovalHistoryHttp,
+  getDirectReports,
+  getDirectReportsHttp,
   timecardApprovalApi
 } from './timecards';
 
