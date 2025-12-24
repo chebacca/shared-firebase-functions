@@ -8,7 +8,6 @@
     ],
     "allowJs": true,
     "outDir": "./lib",
-    "rootDir": "./src",
     "strict": false,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -18,20 +17,15 @@
     "sourceMap": true,
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
-    "noEmitOnError": false,
-    "paths": {
-      "shared-firebase-models": [
-        "../shared-firebase-models"
-      ]
-    }
+    "noEmitOnError": false
   },
   "include": [
-    "src/**/*"
+    "src/**/*",
+    "src/types/**/*"
   ],
   "exclude": [
     "node_modules",
     "lib",
-    "src/roles/**/*",
     "src/**/__tests__/**/*",
     "src/**/*.test.ts"
   ]

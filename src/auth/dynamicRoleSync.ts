@@ -1,5 +1,5 @@
 import * as admin from 'firebase-admin';
-import { UnifiedUser, TeamMember } from 'shared-firebase-models';
+import { UnifiedUser, TeamMember } from '../../../shared-firebase-models/src/index';
 
 /**
  * Resolves app-specific roles for a user without updating claims.

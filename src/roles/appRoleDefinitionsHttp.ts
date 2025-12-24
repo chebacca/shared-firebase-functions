@@ -386,7 +386,7 @@ app.post('/organizations/:orgId/app-roles/:appName/validate', authenticateFireba
 
 // Export the HTTP function
 export const appRoleDefinitionsApi = functions.onRequest({
-  memory: '256MiB',
+  memory: '512MiB',
   timeoutSeconds: 60,
   cors: true
 }, app);

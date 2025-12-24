@@ -4,13 +4,17 @@
  * Central Express router for all API endpoints
  */
 
-import { onRequest } from 'firebase-functions/v2/https';
+import { onRequest, onCall, HttpsError } from 'firebase-functions/v2/https';
 import express from 'express';
 import cors from 'cors';
 import * as admin from 'firebase-admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { authenticateToken } from '../shared/middleware';
-import { db, createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
+import { db, createSuccessResponse, createErrorResponse, handleError, getUserOrganizationId } from '../shared/utils';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+const pdf = require('pdf-parse');
+import * as mammoth from 'mammoth';
+import * as functions from 'firebase-functions';
 
 // Import all function modules
 // import * as auth from '../auth';
@@ -105,6 +109,9 @@ const corsOptions = {
 };
 
 // Handle all OPTIONS requests first (CORS preflight) - must be before other routes
+// Note: Commented out wildcard route as it causes path-to-regexp errors in Express
+// Using CORS middleware instead
+/*
 app.options('*', (req: express.Request, res: express.Response) => {
   const origin = req.headers.origin;
   const allowedOrigins = [
@@ -150,7 +157,9 @@ app.options('*', (req: express.Request, res: express.Response) => {
   res.set('Access-Control-Max-Age', '3600');
   res.status(200).send('');
 });
+*/
 
+// Use CORS middleware instead of manual OPTIONS handler
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -4336,7 +4345,9 @@ app.post('/user-activity/update', authenticateToken, async (req: express.Request
   }
 });
 
-// 404 handler - must be last
+// 404 handler - COMMENTED OUT due to path-to-regexp compatibility issues
+// Express will handle 404s automatically
+/*
 app.use('*', (req: express.Request, res: express.Response) => {
   console.log(`❌ [API 404] Endpoint not found: ${req.method} ${req.originalUrl}`);
   console.log(`❌ [API 404] Path: ${req.path}, Query:`, req.query);
@@ -4347,6 +4358,7 @@ app.use('*', (req: express.Request, res: express.Response) => {
     availableEndpoints: ['/health', '/docs', '/auth', '/projects', '/projects/public', '/datasets', '/sessions', '/sessions/:id', '/sessions/active-with-times', '/sessions/tags', '/licensing', '/payments', '/database', '/system', '/ai', '/team', '/debug', '/timecard-approval', '/timecard-admin', '/network-ip', '/networks', '/schemas', '/contacts', '/contacts/:id', '/workflow-templates', '/workflow-instances', '/workflow/sessions/:sessionId/all', '/workflow/sessions/:sessionId/status', '/unified-workflow/sessions/:sessionId/analytics', '/brain/health', '/brain/context', '/brain/chat', '/brain/sessions', '/user-activity/update', '/settings/user']
   });
 });
+*/
 
 // ====================
 // AGENT 1: Simple Endpoints (No Prisma)
@@ -27464,6 +27476,339 @@ app.delete('/workflow/sessions/:sessionId', authenticateToken, async (req: expre
 // End of Agent Sections
 // ====================
 
+// ====================
+// Network Delivery Bible Upload
+// ====================
+
+// Initialize Gemini AI
+let genAI: GoogleGenerativeAI | null = null;
+try {
+  const geminiKey = process.env.GEMINI_API_KEY || functions.config()?.api?.gemini_key;
+  if (geminiKey) {
+    genAI = new GoogleGenerativeAI(geminiKey);
+    console.log('✅ [ND BOT] Gemini AI initialized');
+  } else {
+    console.warn('⚠️ [ND BOT] Gemini API key not configured');
+  }
+} catch (error) {
+  console.error('❌ [ND BOT] Failed to initialize Gemini AI:', error);
+}
+
+// Helper function to extract text from files
+async function extractTextFromFile(fileBuffer: Buffer, contentType: string): Promise<string> {
+  try {
+    console.log(`📄 [ND BOT] Extracting text from file type: ${contentType}`);
+
+    if (contentType === 'application/pdf') {
+      const result = await pdf(fileBuffer);
+      return result.text;
+    } else if (contentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+      const { value } = await mammoth.extractRawText({ buffer: fileBuffer });
+      return value;
+    } else if (contentType === 'application/msword') {
+      const { value } = await mammoth.extractRawText({ buffer: fileBuffer });
+      return value;
+    } else if (contentType.startsWith('text/')) {
+      return fileBuffer.toString('utf8');
+    } else {
+      throw new Error(`Unsupported file type: ${contentType}`);
+    }
+  } catch (error) {
+    console.error('❌ [ND BOT] Text extraction error:', error);
+    throw new Error(`Failed to extract text: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+// Helper function to create structuring prompt for Gemini
+function createStructuringPrompt(rawText: string): string {
+  return `
+You are an expert document analyzer. Parse this delivery specification document and extract EVERY deliverable requirement, regardless of format, network, or industry.
+
+PARSING RULES:
+1. Extract ALL items that represent something to be delivered, submitted, or completed
+2. Look for ANY formatting: bullets (○●■▪•), dashes (-), numbers (1,2,3), letters (a,b,c), or plain text
+3. Parse nested lists and sub-items completely
+4. Extract items from ANY section: headers, paragraphs, lists, tables, footnotes
+5. Include procedural requirements, notifications, and workflow items
+6. Capture timing requirements and deadlines from context
+7. Do NOT make assumptions about industry or network - parse exactly what's written
+
+OUTPUT FORMAT:
+Return ONLY a JSON object with this EXACT structure:
+{
+  "deliverables": [
+    {
+      "deliverableName": "Clear, descriptive title from document (NEVER use 'Untitled' or generic names)",
+      "category": "Auto-categorize based on content",
+      "deadline": "Extract timing from context or 'Not specified'",
+      "specifications": ["List ALL requirements, formats, instructions"],
+      "priority": "high/medium/low based on urgency indicators",
+      "notes": "Any additional context or special instructions",
+      "sourceText": "The exact original text from the document that this deliverable was extracted from"
+    }
+  ]
+}
+
+CRITICAL: Each deliverableName MUST be a specific, meaningful title extracted from the document. Examples:
+- "Final Cut Pro Project File Delivery"
+- "Color Corrected Master File"
+- "Audio Stems and Mix Files"
+- "Legal Clearance Documentation"
+NEVER use generic names like "Deliverable 1" or "Untitled".
+
+CATEGORY GUIDELINES (choose most appropriate):
+- Legal: contracts, opinions, compliance, rights
+- Technical: files, formats, systems, workflows  
+- Audio: sound, music, mixing, stems
+- Video: picture, editing, color, effects
+- Documentation: reports, sheets, logs, forms
+- Creative: graphics, titles, artwork, design
+- Archive: storage, backup, preservation
+- Distribution: delivery, transmission, access
+- Quality Control: review, testing, approval
+- Project Management: schedules, coordination, communication
+- Metadata: information, descriptions, tags
+- Post-Production: editing, finishing, mastering
+
+DEADLINE EXTRACTION:
+- Look for phrases like "due by", "before", "after", "within", "no later than"
+- Extract specific dates, times, and relative timing
+- Include context like "same day as Picture Lock", "within 24 hours"
+- If no timing found, use "Not specified"
+
+SOURCE TEXT EXTRACTION:
+- For each deliverable, include the EXACT original text from the document
+- This should be the complete sentence or paragraph that mentions this deliverable
+- Include surrounding context if it helps clarify the requirement
+- This provides users with reference to what was actually written in the document
+
+SPECIFICATIONS EXTRACTION:
+- Include ALL technical requirements
+- List file formats, quality standards, delivery methods
+- Capture email addresses, contact information, distribution lists
+- Include procedural steps and workflow requirements
+- Note any special conditions or exceptions
+
+Document to analyze:
+---
+${rawText}
+---
+
+Return ONLY the JSON object, no other text.
+`;
+}
+
+// Network Delivery Bible Upload Endpoint
+app.post('/network-delivery/upload-bible', authenticateToken, async (req, res) => {
+  try {
+    console.log('📚 [ND BOT] Processing bible upload...');
+
+    const userId = req.user?.uid;
+    const { fileName, fileContent, fileType, projectId } = req.body;
+
+    if (!fileName || !fileContent || !fileType) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: fileName, fileContent, fileType'
+      });
+    }
+
+    // Get user's organization - check token first, then fallback to database lookup
+    const userEmail = req.user?.email || '';
+    let organizationId = (req.user as any)?.organizationId;
+    
+    console.log(`🔍 [ND BOT] Organization lookup starting:`, {
+      userId,
+      userEmail,
+      tokenOrgId: organizationId,
+      hasTokenOrgId: !!organizationId
+    });
+    
+    // If not in token, try database lookup
+    if (!organizationId) {
+      console.log(`🔍 [ND BOT] Organization ID not in token, trying database lookup...`);
+      organizationId = await getUserOrganizationId(userId, userEmail);
+      console.log(`🔍 [ND BOT] Database lookup result: ${organizationId}`);
+    }
+
+    if (!organizationId) {
+      console.error(`❌ [ND BOT] User not associated with an organization: ${userEmail}`);
+      return res.status(400).json({
+        success: false,
+        error: 'User not associated with an organization'
+      });
+    }
+    
+    console.log(`✅ [ND BOT] Using organization ID: ${organizationId} for user: ${userEmail}`);
+
+    // Create bible document
+    const bibleId = `bible_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const bibleData = {
+      id: bibleId,
+      fileName,
+      fileType,
+      status: 'processing',
+      organizationId,
+      projectId: projectId || null,
+      uploadedBy: userId,
+      uploadedAt: FieldValue.serverTimestamp(),
+      rawText: null,
+      deliverableCount: 0
+    };
+
+    await db.collection('networkDeliveryBibles').doc(bibleId).set(bibleData);
+
+    // Process file content (assuming it's base64 encoded)
+    const fileBuffer = Buffer.from(fileContent, 'base64');
+
+    // Extract text
+    const rawText = await extractTextFromFile(fileBuffer, fileType);
+
+    // Update bible with extracted text
+    await db.collection('networkDeliveryBibles').doc(bibleId).update({
+      rawText,
+      status: 'text_extracted'
+    });
+
+    console.log(`✅ [ND BOT] Text extracted for bible: ${bibleId}`);
+
+    // Parse with Gemini
+    if (genAI) {
+      try {
+        console.log(`🤖 [ND BOT] Starting Gemini analysis for: ${fileName}`);
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const prompt = createStructuringPrompt(rawText);
+
+        console.log(`🤖 [ND BOT] Sending request to Gemini...`);
+        const result = await model.generateContent(prompt);
+        const responseText = result.response.text();
+
+        // Clean up response text with robust JSON extraction
+        let cleanedResponse = responseText
+          .replace(/```json/g, '')
+          .replace(/```/g, '')
+          .trim();
+
+        // Find the first { and extract valid JSON
+        const startIndex = cleanedResponse.indexOf('{');
+        if (startIndex === -1) {
+          throw new Error('No JSON object found in Gemini response');
+        }
+
+        // Extract JSON by counting braces
+        let braceCount = 0;
+        let endIndex = startIndex;
+        for (let i = startIndex; i < cleanedResponse.length; i++) {
+          if (cleanedResponse[i] === '{') braceCount++;
+          if (cleanedResponse[i] === '}') braceCount--;
+          if (braceCount === 0) {
+            endIndex = i;
+            break;
+          }
+        }
+
+        if (braceCount !== 0) {
+          throw new Error('Incomplete JSON object in Gemini response');
+        }
+
+        cleanedResponse = cleanedResponse.substring(startIndex, endIndex + 1);
+        const structuredData = JSON.parse(cleanedResponse);
+
+        // Validate structure
+        if (!structuredData || !structuredData.deliverables || !Array.isArray(structuredData.deliverables)) {
+          throw new Error('Gemini response missing deliverables array');
+        }
+
+        const deliverables = structuredData.deliverables;
+        console.log(`🎯 [ND BOT] Extracted ${deliverables.length} deliverables from ${fileName}`);
+
+        // Store deliverables in sub-collection
+        const batch = db.batch();
+        deliverables.forEach((deliverable: any, index: number) => {
+          const deliverableId = `${bibleId}_deliverable_${index}`;
+          const deliverableData = {
+            id: deliverableId,
+            bibleId,
+            organizationId,
+            projectId: projectId || null,
+            deliverableName: deliverable.deliverableName || `Deliverable ${index + 1}`,
+            title: deliverable.deliverableName || `Deliverable ${index + 1}`,
+            category: deliverable.category || 'Documentation',
+            deadline: deliverable.deadline || 'Not specified',
+            specifications: deliverable.specifications || [],
+            priority: deliverable.priority || 'medium',
+            notes: deliverable.notes || '',
+            sourceText: deliverable.sourceText || '',
+            userComments: '',
+            status: 'not_started',
+            createdAt: FieldValue.serverTimestamp()
+          };
+
+          const docRef = db.collection('networkDeliveryBibles').doc(bibleId)
+            .collection('deliverables').doc(deliverableId);
+          batch.set(docRef, deliverableData);
+        });
+
+        await batch.commit();
+
+        // Update bible status
+        await db.collection('networkDeliveryBibles').doc(bibleId).update({
+          status: 'parsed_successfully',
+          deliverableCount: deliverables.length,
+          parsedAt: FieldValue.serverTimestamp()
+        });
+
+        console.log(`✅ [ND BOT] Successfully parsed ${deliverables.length} deliverables for bible: ${bibleId}`);
+
+        return res.json({
+          success: true,
+          data: {
+            bibleId,
+            fileName,
+            status: 'parsed_successfully',
+            deliverableCount: deliverables.length,
+            deliverables
+          }
+        });
+
+      } catch (parseError) {
+        console.error('❌ [ND BOT] Gemini parsing error:', parseError);
+
+        await db.collection('networkDeliveryBibles').doc(bibleId).update({
+          status: 'parse_failed',
+          error: parseError instanceof Error ? parseError.message : 'Unknown parsing error'
+        });
+
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to parse deliverables with AI',
+          errorDetails: parseError instanceof Error ? parseError.message : 'Unknown error'
+        });
+      }
+    } else {
+      console.warn('⚠️ [ND BOT] Gemini API not configured, returning text extraction only');
+
+      return res.json({
+        success: true,
+        data: {
+          bibleId,
+          fileName,
+          status: 'text_extracted',
+          message: 'Text extracted successfully, but AI parsing is not available'
+        }
+      });
+    }
+
+  } catch (error: any) {
+    console.error('❌ [ND BOT] Bible upload error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to process bible upload',
+      errorDetails: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
 // Error handler
 app.use((error: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('❌ [API ERROR]', error);
@@ -27472,6 +27817,487 @@ app.use((error: any, req: express.Request, res: express.Response, next: express.
     message: error.message,
     timestamp: new Date().toISOString()
   });
+});
+
+// Get deliverables for a specific bible - HTTP Endpoint
+app.get('/network-delivery/bibles/:bibleId/deliverables', authenticateToken, async (req, res) => {
+  try {
+    console.log('📋 [ND BOT] ===== GETTING DELIVERABLES (HTTP ENDPOINT) =====');
+
+    const userId = req.user?.uid;
+    const userEmail = (req.user?.email || '').toLowerCase().trim();
+    const { bibleId } = req.params;
+
+    if (!bibleId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Bible ID is required'
+      });
+    }
+
+    console.log(`📋 [ND BOT] User: ${userEmail} (${userId})`);
+    console.log(`📋 [ND BOT] Requesting deliverables for bible: ${bibleId}`);
+
+    // Try to get organization from token first
+    let organizationId = (req.user as any)?.organizationId;
+    
+    // If not in token, use dynamic lookup helper
+    if (!organizationId) {
+      console.log(`📋 [ND BOT] Organization not in token, using lookup helper...`);
+      organizationId = await getUserOrganizationId(userId || '', userEmail);
+    } else {
+      console.log(`📋 [ND BOT] Using organization from token: ${organizationId}`);
+    }
+
+    if (!organizationId) {
+      console.error(`❌ [ND BOT] User not associated with an organization: ${userEmail}`);
+      return res.status(400).json({
+        success: false,
+        error: 'User not associated with an organization'
+      });
+    }
+
+    console.log(`📋 [ND BOT] Loading deliverables for bible: ${bibleId}, org: ${organizationId}`);
+
+    // Check if bible exists and user has access
+    const bibleDoc = await db.collection('networkDeliveryBibles').doc(bibleId).get();
+
+    if (!bibleDoc.exists) {
+      console.error(`❌ [ND BOT] Bible not found: ${bibleId}`);
+      return res.status(404).json({
+        success: false,
+        error: 'Bible not found'
+      });
+    }
+
+    const bibleData = bibleDoc.data();
+
+    // Check organization access
+    if (bibleData?.organizationId !== organizationId) {
+      console.error(`❌ [ND BOT] Access denied - Bible org: ${bibleData?.organizationId}, User org: ${organizationId}`);
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied to this bible'
+      });
+    }
+
+    // Get deliverables from subcollection
+    const deliverablesSnapshot = await db.collection('networkDeliveryBibles')
+      .doc(bibleId)
+      .collection('deliverables')
+      .orderBy('createdAt', 'asc')
+      .get();
+
+    if (deliverablesSnapshot.empty) {
+      return res.json({
+        success: true,
+        data: [],
+        count: 0,
+        bibleInfo: {
+          id: bibleId,
+          fileName: bibleData?.fileName,
+          status: bibleData?.status,
+          deliverableCount: bibleData?.deliverableCount
+        }
+      });
+    }
+
+    const deliverables = deliverablesSnapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        bibleId: bibleId,
+        organizationId: data.organizationId || organizationId || 'unknown',
+        projectId: data.projectId,
+        deliverableName: data.deliverableName,
+        title: data.deliverableName || data.title || 'Untitled Deliverable',
+        description: data.description || '',
+        category: data.category || 'General',
+        priority: data.priority || 'medium',
+        status: data.status || 'not_started',
+        deadline: data.deadline,
+        assignedTo: data.assignedTo,
+        estimatedCompletion: data.estimatedCompletion,
+        actualCompletion: data.actualCompletion,
+        relatedSessions: data.relatedSessions || [],
+        relatedMedia: data.relatedMedia || [],
+        gaps: data.gaps || [],
+        recommendations: data.recommendations || [],
+        specifications: data.specifications || [],
+        specificationCompletion: data.specificationCompletion || [],
+        notes: data.notes || '',
+        sourceText: data.sourceText || '',
+        userComments: data.userComments || '',
+        createdAt: data.createdAt
+      };
+    });
+
+    return res.json({
+      success: true,
+      data: deliverables,
+      count: deliverables.length,
+      bibleInfo: {
+        id: bibleId,
+        fileName: bibleData?.fileName,
+        status: bibleData?.status,
+        deliverableCount: bibleData?.deliverableCount
+      }
+    });
+
+  } catch (error: any) {
+    console.error('❌ [ND BOT] Error getting deliverables:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to get deliverables',
+      errorDetails: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+// Get deliverables for a specific bible - Callable Function (preferred)
+export const getNetworkDeliveryDeliverables = onCall(async (request) => {
+  try {
+    const { bibleId } = request.data;
+
+    if (!bibleId) {
+      throw new HttpsError('invalid-argument', 'Bible ID is required');
+    }
+
+    const userId = request.auth?.uid;
+    const userEmail = (request.auth?.token.email || '').toLowerCase().trim();
+
+    if (!userId || !userEmail) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    console.log(`📋 [ND BOT CALLABLE] User: ${userEmail} (${userId}), Bible: ${bibleId}`);
+
+    // Try to get organization from token first
+    let organizationId = (request.auth?.token as any)?.organizationId;
+    
+    // If not in token, use dynamic lookup helper
+    if (!organizationId) {
+      organizationId = await getUserOrganizationId(userId, userEmail);
+    }
+
+    if (!organizationId) {
+      console.error(`❌ [ND BOT CALLABLE] User not associated with an organization: ${userEmail}`);
+      throw new HttpsError('failed-precondition', 'User not associated with an organization');
+    }
+
+    console.log(`📋 [ND BOT CALLABLE] Loading deliverables for bible: ${bibleId}, org: ${organizationId}`);
+
+    // Check if bible exists and user has access
+    const bibleDoc = await db.collection('networkDeliveryBibles').doc(bibleId).get();
+
+    if (!bibleDoc.exists) {
+      throw new HttpsError('not-found', 'Bible not found');
+    }
+
+    const bibleData = bibleDoc.data();
+
+    // Check organization access
+    if (bibleData?.organizationId !== organizationId) {
+      throw new HttpsError('permission-denied', 'Access denied to this bible');
+    }
+
+    // Get deliverables from subcollection
+    const deliverablesSnapshot = await db.collection('networkDeliveryBibles')
+      .doc(bibleId)
+      .collection('deliverables')
+      .orderBy('createdAt', 'asc')
+      .get();
+
+    if (deliverablesSnapshot.empty) {
+      return {
+        success: true,
+        data: [],
+        count: 0,
+        bibleInfo: {
+          id: bibleId,
+          fileName: bibleData?.fileName,
+          status: bibleData?.status,
+          deliverableCount: bibleData?.deliverableCount
+        }
+      };
+    }
+
+    const deliverables = deliverablesSnapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        bibleId: bibleId,
+        organizationId: data.organizationId || organizationId || 'unknown',
+        projectId: data.projectId,
+        deliverableName: data.deliverableName,
+        title: data.deliverableName || data.title || 'Untitled Deliverable',
+        description: data.description || '',
+        category: data.category || 'General',
+        priority: data.priority || 'medium',
+        status: data.status || 'not_started',
+        deadline: data.deadline,
+        assignedTo: data.assignedTo,
+        estimatedCompletion: data.estimatedCompletion,
+        actualCompletion: data.actualCompletion,
+        relatedSessions: data.relatedSessions || [],
+        relatedMedia: data.relatedMedia || [],
+        gaps: data.gaps || [],
+        recommendations: data.recommendations || [],
+        specifications: data.specifications || [],
+        specificationCompletion: data.specificationCompletion || [],
+        notes: data.notes || '',
+        sourceText: data.sourceText || '',
+        userComments: data.userComments || '',
+        createdAt: data.createdAt
+      };
+    });
+
+    return {
+      success: true,
+      data: deliverables,
+      count: deliverables.length,
+      bibleInfo: {
+        id: bibleId,
+        fileName: bibleData?.fileName,
+        status: bibleData?.status,
+        deliverableCount: bibleData?.deliverableCount
+      }
+    };
+
+  } catch (error: any) {
+    console.error('❌ [ND BOT CALLABLE] Error getting deliverables:', error);
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError('internal', 'Failed to get deliverables', error.message);
+  }
+});
+
+// Firebase Callable Function for Network Delivery Bible Upload
+export const uploadNetworkDeliveryBible = onCall(async (request) => {
+  try {
+    console.log('📚 [ND BOT] Processing bible upload (callable)...');
+
+    const { fileName, fileContent, fileType, projectId } = request.data;
+
+    if (!fileName || !fileContent || !fileType) {
+      throw new HttpsError('invalid-argument', 'Missing required fields: fileName, fileContent, fileType');
+    }
+
+    const userId = request.auth?.uid;
+    if (!userId) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const userEmail = request.auth?.token.email || '';
+    let organizationId = (request.auth?.token as any)?.organizationId;
+    
+    console.log(`🔍 [ND BOT] Organization lookup starting:`, {
+      userId,
+      userEmail,
+      tokenOrgId: organizationId,
+      hasTokenOrgId: !!organizationId
+    });
+    
+    // If not in token, try database lookup
+    if (!organizationId) {
+      console.log(`🔍 [ND BOT] Organization ID not in token, trying database lookup...`);
+      organizationId = await getUserOrganizationId(userId, userEmail);
+      console.log(`🔍 [ND BOT] Database lookup result: ${organizationId}`);
+    }
+
+    if (!organizationId) {
+      console.error(`❌ [ND BOT] User not associated with an organization: ${userEmail}`);
+      throw new HttpsError('failed-precondition', 'User not associated with an organization');
+    }
+    
+    console.log(`✅ [ND BOT] Using organization ID: ${organizationId} for user: ${userEmail}`);
+
+    // Create bible document - declare outside try so it's accessible in catch
+    let bibleId: string | undefined;
+    try {
+      bibleId = `bible_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const bibleData = {
+        id: bibleId,
+        fileName,
+        fileType,
+        status: 'processing',
+        organizationId,
+        projectId: projectId || null,
+        uploadedBy: userId,
+        uploadedAt: FieldValue.serverTimestamp(),
+        rawText: null,
+        deliverableCount: 0
+      };
+
+      await db.collection('networkDeliveryBibles').doc(bibleId).set(bibleData);
+
+      // Process file content (assuming it's base64 encoded)
+      const fileBuffer = Buffer.from(fileContent, 'base64');
+
+    // Extract text
+    const rawText = await extractTextFromFile(fileBuffer, fileType);
+
+    // Update bible with extracted text
+    await db.collection('networkDeliveryBibles').doc(bibleId).update({
+      rawText,
+      status: 'text_extracted'
+    });
+
+    console.log(`✅ [ND BOT] Text extracted for bible: ${bibleId}`);
+
+    // Parse with Gemini
+    if (genAI) {
+      try {
+        console.log(`🤖 [ND BOT] Starting Gemini analysis for: ${fileName}`);
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const prompt = createStructuringPrompt(rawText);
+
+        console.log(`🤖 [ND BOT] Sending request to Gemini...`);
+        const result = await model.generateContent(prompt);
+        const responseText = result.response.text();
+
+        // Clean up response text with robust JSON extraction
+        let cleanedResponse = responseText
+          .replace(/```json/g, '')
+          .replace(/```/g, '')
+          .trim();
+
+        // Find the first { and extract valid JSON
+        const startIndex = cleanedResponse.indexOf('{');
+        if (startIndex === -1) {
+          throw new Error('No JSON object found in Gemini response');
+        }
+
+        // Extract JSON by counting braces
+        let braceCount = 0;
+        let endIndex = startIndex;
+        for (let i = startIndex; i < cleanedResponse.length; i++) {
+          if (cleanedResponse[i] === '{') braceCount++;
+          if (cleanedResponse[i] === '}') braceCount--;
+          if (braceCount === 0) {
+            endIndex = i;
+            break;
+          }
+        }
+
+        if (braceCount !== 0) {
+          throw new Error('Incomplete JSON object in Gemini response');
+        }
+
+        cleanedResponse = cleanedResponse.substring(startIndex, endIndex + 1);
+        const structuredData = JSON.parse(cleanedResponse);
+
+        // Validate structure
+        if (!structuredData || !structuredData.deliverables || !Array.isArray(structuredData.deliverables)) {
+          throw new Error('Gemini response missing deliverables array');
+        }
+
+        const deliverables = structuredData.deliverables;
+        console.log(`🎯 [ND BOT] Extracted ${deliverables.length} deliverables from ${fileName}`);
+
+        // Store deliverables in sub-collection
+        const batch = db.batch();
+        deliverables.forEach((deliverable: any, index: number) => {
+          const deliverableId = `${bibleId}_deliverable_${index}`;
+          const deliverableData = {
+            id: deliverableId,
+            bibleId,
+            organizationId,
+            projectId: projectId || null,
+            deliverableName: deliverable.deliverableName || `Deliverable ${index + 1}`,
+            title: deliverable.deliverableName || `Deliverable ${index + 1}`,
+            category: deliverable.category || 'Documentation',
+            deadline: deliverable.deadline || 'Not specified',
+            specifications: deliverable.specifications || [],
+            priority: deliverable.priority || 'medium',
+            notes: deliverable.notes || '',
+            sourceText: deliverable.sourceText || '',
+            userComments: '',
+            status: 'not_started',
+            createdAt: FieldValue.serverTimestamp()
+          };
+
+          const docRef = db.collection('networkDeliveryBibles').doc(bibleId)
+            .collection('deliverables').doc(deliverableId);
+          batch.set(docRef, deliverableData);
+        });
+
+        await batch.commit();
+
+        // Update bible status
+        await db.collection('networkDeliveryBibles').doc(bibleId).update({
+          status: 'parsed_successfully',
+          deliverableCount: deliverables.length,
+          parsedAt: FieldValue.serverTimestamp()
+        });
+
+        console.log(`✅ [ND BOT] Successfully parsed ${deliverables.length} deliverables for bible: ${bibleId}`);
+
+        return {
+          success: true,
+          data: {
+            bibleId,
+            fileName,
+            status: 'parsed_successfully',
+            deliverableCount: deliverables.length,
+            deliverables
+          }
+        };
+
+      } catch (parseError) {
+        console.error('❌ [ND BOT] Gemini parsing error:', parseError);
+
+        await db.collection('networkDeliveryBibles').doc(bibleId).update({
+          status: 'parse_failed',
+          error: parseError instanceof Error ? parseError.message : 'Unknown parsing error'
+        });
+
+        throw new HttpsError('internal', 'Failed to parse deliverables with AI', {
+          errorDetails: parseError instanceof Error ? parseError.message : 'Unknown error'
+        });
+      }
+    } else {
+      console.warn('⚠️ [ND BOT] Gemini API not configured, returning text extraction only');
+
+      return {
+        success: true,
+        data: {
+          bibleId,
+          fileName,
+          status: 'text_extracted',
+          message: 'Text extracted successfully, but AI parsing is not available'
+        }
+      };
+    }
+    } catch (error: any) {
+      console.error('❌ [ND BOT] Bible upload error:', error);
+    
+      // Attempt to update status to error if we have a bibleId
+      if (typeof bibleId !== 'undefined' && bibleId) {
+        try {
+          await db.collection('networkDeliveryBibles').doc(bibleId).update({
+            status: 'error',
+            error: error instanceof Error ? error.message : String(error)
+          });
+        } catch (updateError) {
+          console.error('❌ [ND BOT] Failed to update error status:', updateError);
+        }
+      }
+
+      if (error instanceof HttpsError) {
+        throw error;
+      }
+      throw new HttpsError('internal', 'Failed to process bible upload', {
+        errorDetails: error instanceof Error ? error.message : String(error)
+      });
+    }
+  } catch (outerError: any) {
+    console.error('❌ [ND BOT] Outer error handler:', outerError);
+    throw new HttpsError('internal', 'Failed to process bible upload', {
+      errorDetails: outerError instanceof Error ? outerError.message : String(outerError)
+    });
+  }
 });
 
 // Export the main API function

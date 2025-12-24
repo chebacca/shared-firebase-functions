@@ -242,7 +242,7 @@ export {
 } from './migrations/migrateCloudIntegrations';
 
 // Export main API function
-export { api } from './api';
+export { api, uploadNetworkDeliveryBible, getNetworkDeliveryDeliverables } from './api';
 
 // Export timecard functions
 export {

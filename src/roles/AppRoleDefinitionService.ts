@@ -44,7 +44,22 @@ const DashboardRole = {
   LICENSING_SPECIALIST: 'LICENSING_SPECIALIST',
   MEDIA_MANAGER: 'MEDIA_MANAGER',
   PRODUCTION_ASSISTANT: 'PRODUCTION_ASSISTANT',
-  VIEWER: 'VIEWER'
+  VIEWER: 'VIEWER',
+  // NEW roles
+  AUDIO_POST: 'AUDIO_POST',
+  AUDIO_PRODUCTION: 'AUDIO_PRODUCTION',
+  AUDIO_MIXER: 'AUDIO_MIXER',
+  SOUND_ENGINEER: 'SOUND_ENGINEER',
+  COLORIST: 'COLORIST',
+  GFX_ARTIST: 'GFX_ARTIST',
+  CAMERA_OPERATOR: 'CAMERA_OPERATOR',
+  QC_SPECIALIST: 'QC_SPECIALIST',
+  DIT: 'DIT',
+  LOCATION_MANAGER: 'LOCATION_MANAGER',
+  PRODUCTION_MANAGER: 'PRODUCTION_MANAGER',
+  POST_SUPERVISOR: 'POST_SUPERVISOR',
+  POST_PA: 'POST_PA',
+  GUEST: 'GUEST'
 } as const;
 
 const ClipShowProRole = {
@@ -155,6 +170,7 @@ export class AppRoleDefinitionService {
 
   /**
    * Get system default app role definitions
+   * Always uses enum as source of truth, merges with Firestore if available
    */
   async getSystemDefaults(appName: AppName, useCache: boolean = true): Promise<AppRoleDefinition[]> {
     // Check cache first
@@ -162,28 +178,53 @@ export class AppRoleDefinitionService {
       return this.systemDefaultsCache.get(appName)!;
     }
 
+    // Always start with enum values as source of truth
+    const enumRoles = this.getSystemDefaultsFromEnum(appName);
+    const enumRoleMap = new Map(enumRoles.map(role => [role.roleValue, role]));
+
     try {
+      // Try to get Firestore roles and merge with enum (Firestore may have custom metadata)
       const snapshot = await db.collection('appRoleDefinitions')
         .where('organizationId', '==', null)
         .where('appName', '==', appName)
         .where('isActive', '==', true)
         .get();
 
-      const roles = snapshot.docs.map(doc => ({
+      const firestoreRoles = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
         createdAt: doc.data().createdAt?.toDate() || new Date(),
         updatedAt: doc.data().updatedAt?.toDate() || new Date()
       })) as AppRoleDefinition[];
 
-      // Cache the results
-      this.systemDefaultsCache.set(appName, roles);
+      // Merge: Use Firestore roles if they exist and match enum, otherwise use enum
+      // This ensures all enum roles are always present
+      const mergedRoles: AppRoleDefinition[] = [];
+      
+      // Add all enum roles (source of truth)
+      for (const enumRole of enumRoles) {
+        const firestoreRole = firestoreRoles.find(r => r.roleValue === enumRole.roleValue);
+        if (firestoreRole) {
+          // Use Firestore version (may have custom metadata) but ensure it's marked as system default
+          mergedRoles.push({
+            ...firestoreRole,
+            isSystemDefault: true
+          });
+        } else {
+          // Use enum version
+          mergedRoles.push(enumRole);
+        }
+      }
 
-      return roles;
+      // Cache the results
+      this.systemDefaultsCache.set(appName, mergedRoles);
+
+      return mergedRoles;
     } catch (error) {
       console.error(`[AppRoleDefinitionService] Error getting system defaults for ${appName}:`, error);
       // Fallback to enum values if Firestore query fails
-      return this.getSystemDefaultsFromEnum(appName);
+      this.systemDefaultsCache.set(appName, enumRoles);
+      return enumRoles;
     }
   }
 

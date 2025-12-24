@@ -64,11 +64,21 @@ export const validateOrganizationAccess = async (
 export const getUserOrganizationId = async (userId: string, userEmail: string): Promise<string | null> => {
   let organizationId: string | null = null;
   
+  console.log(`🔍 [ORG LOOKUP] Starting lookup - userId: ${userId}, userEmail: "${userEmail}"`);
+  
   // Special case: Handle enterprise user's dual organization issue
   if (userEmail === 'enterprise.user@enterprisemedia.com') {
-    console.log(`[ORG LOOKUP] Special handling for enterprise user`);
+    console.log(`✅ [ORG LOOKUP] Special handling for enterprise user - returning enterprise-media-org`);
     return 'enterprise-media-org';
   }
+
+  // Special case: Handle admin.clipshow user organization
+  if (userEmail === 'admin.clipshow@example.com') {
+    console.log(`✅ [ORG LOOKUP] Special handling for admin.clipshow user - returning clip-show-pro-productions`);
+    return 'clip-show-pro-productions';
+  }
+  
+  console.log(`🔍 [ORG LOOKUP] No special case match, proceeding with database lookup...`);
   
   // Try to get from users collection first
   try {
