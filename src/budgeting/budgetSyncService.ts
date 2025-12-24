@@ -66,7 +66,7 @@ function determinePhase(timecardDate: string | Date): 'pre_production' | 'produc
  */
 function determineSubcategory(role?: string): string {
   const roleUpper = (role || '').toUpperCase();
-  
+
   if (roleUpper.includes('TALENT') || roleUpper.includes('ACTOR')) {
     return 'talent';
   } else if (roleUpper.includes('DIRECTOR') || roleUpper.includes('PRODUCER') || roleUpper.includes('EXEC')) {
@@ -195,7 +195,7 @@ async function createOrUpdateBudgetLineItem(budgetId: string, timecard: Timecard
       unit: 'hours',
       quantity: totalHours,
       rate: hourlyRate,
-      department: timecard.department,
+      department: timecard.department || '',
       phase: determinePhase(timecard.weekStartDate || new Date()),
       notes: `Auto-generated from approved timecard ${timecard.id}`
     };
@@ -253,7 +253,7 @@ export async function updateBudgetFromTimecard(budgetId: string, timecard: Timec
     for (const tcDoc of allTimecards.docs) {
       const tc = tcDoc.data();
       const pay = tc.totalPay || tc.stats?.totalPay || 0;
-      
+
       // Check if this timecard is linked to this budget
       if (tc.projectId && budget?.projectId === tc.projectId) {
         totalActualSpend += pay;

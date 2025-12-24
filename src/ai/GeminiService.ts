@@ -48,7 +48,9 @@ export type PreviewContextMode =
   // Phase 6: AI & Analytics
   | 'ai-analytics' | 'ai-training'
   // Phase 7: System & Monitoring
-  | 'system-health' | 'notifications' | 'reports';
+  | 'system-health' | 'notifications' | 'reports'
+  // Phase 8: Context Engine
+  | 'explorer' | 'briefing' | 'knowledge_base';
 
 export interface AgentResponse {
   response: string;
@@ -115,7 +117,8 @@ export class GeminiService {
       console.log('💬 [Gemini Service] User prompt:', userPrompt);
 
       // Prepare parts
-      const parts: any[] = [{ text: systemPrompt }];
+      // Prepare parts
+      const parts: any[] = [];
 
       // Process attachments
       if (attachments && attachments.length > 0) {
@@ -168,7 +171,8 @@ export class GeminiService {
       };
 
       const result = await this.model.generateContent({
-        contents: parts,
+        systemInstruction: systemPrompt,
+        contents: [{ role: 'user', parts: parts }],
         generationConfig: generationConfig as any
       });
 
@@ -1196,6 +1200,20 @@ RULES:
             - Purpose: Generated reports and analytics
             - Use when: User asks about reports, generated reports, or report history
             - Keywords: reports, report history, generated reports, analytics reports
+
+        PHASE 8: CONTEXT ENGINE:
+        45. "explorer" - ContextExplorerWrapper
+            - Purpose: Deep ecosystem exploration and relationship traversing
+            - Use when: User wants to explore the graph, relationships, or deep context
+            - Keywords: explorer, context, graph explorer, ecosystem, connections
+        46. "briefing" - BriefingWrapper
+            - Purpose: Daily intelligence briefing and summary where everything is aggregated
+            - Use when: User asks for a daily briefing, summary or "what's new"
+            - Keywords: briefing, daily summary, update, what's new, intelligence
+        47. "knowledge_base" - KnowledgeBaseWrapper
+            - Purpose: Knowledge Base Search Results (RAG)
+            - Use when: User asks questions about SOPs, manuals, scripts, or documents that require retrieval
+            - Keywords: search, knowledge base, SOP, manual, guide, docs, find document
         
         RESPONSE GUIDELINES:
         1. **CRITICAL OVERRIDE FOR RELATIONSHIP QUERIES**: If the user asks about activity or connections for a SPECIFIC person or project (e.g., "What is [Person/Project] up to?", "Show me what [Entity] is doing", "[Entity] activity", "[Entity] connections"), you MUST IMMEDIATELY use the "graph" context with \`mode: "relationship"\` and the entity name as the \`query\`. DO NOT ask for clarification. COMPLETELY IGNORE the "team" or "contacts" context in these cases, even if a person's name is mentioned.
@@ -1637,7 +1655,9 @@ RULES:
       // Phase 6: AI & Analytics
       'ai-analytics', 'ai-training',
       // Phase 7: System & Monitoring
-      'system-health', 'notifications', 'reports'
+      'system-health', 'notifications', 'reports',
+      // Phase 8: Context Engine
+      'explorer', 'briefing', 'knowledge_base'
     ];
     return validModes.includes(mode as PreviewContextMode) ? mode as PreviewContextMode : 'none';
   }
