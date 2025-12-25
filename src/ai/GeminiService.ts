@@ -80,8 +80,10 @@ export class GeminiService {
 
   constructor(apiKey: string) {
     this.genAI = new GoogleGenerativeAI(apiKey);
-    // Use gemini-1.5-pro for advanced reasoning and larger context window
-    this.model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
+    // 🔥 FIX: Use gemini-1.5-flash for v1beta API compatibility
+    // The model name 'gemini-1.5-pro' is not available in v1beta API
+    // gemini-1.5-flash is faster, cheaper, and available in v1beta
+    this.model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
   }
 
   /**
@@ -191,16 +193,37 @@ export class GeminiService {
       return parsedResponse;
 
     } catch (error) {
-      console.error('❌ [Gemini Service] Error generating response:', error);
-      console.error('❌ [Gemini Service] Error details:', JSON.stringify(error, null, 2));
+      // 🔥 IMPROVED: Better error logging to diagnose issues
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      const errorName = error instanceof Error ? error.name : 'UnknownError';
+      
+      console.error('❌ [Gemini Service] Error generating response:', {
+        name: errorName,
+        message: errorMessage,
+        stack: errorStack,
+        currentMode,
+        messageLength: message.length,
+        hasContext: !!globalContext,
+        organizationId: globalContext?.organizationId
+      });
+
+      // 🔥 IMPROVED: More helpful error message that includes the actual error
+      const userFriendlyMessage = errorMessage.includes('API key') 
+        ? "I'm having trouble connecting to the AI service. Please check the API configuration."
+        : errorMessage.includes('quota') || errorMessage.includes('rate limit')
+        ? "The AI service is currently busy. Please try again in a moment."
+        : errorMessage.includes('timeout')
+        ? "The request took too long to process. Please try again with a shorter message."
+        : "I'm having trouble processing your request right now. Please try again.";
 
       // Fallback response
       return {
-        response: "I'm having trouble processing your request right now. Please try again.",
+        response: userFriendlyMessage,
         suggestedContext: currentMode,
         contextData: null,
         followUpSuggestions: ['Try rephrasing your question', 'Check system status'],
-        reasoning: 'Error occurred during AI processing'
+        reasoning: `Error occurred during AI processing: ${errorMessage}`
       };
     }
   }

@@ -137,5 +137,5 @@ coverage/
 !.env.example
 
 # Firebase Service Account Keys (NEVER commit these!)
-*firebase*.json
+# *firebase*.json - Removed this line to allow viewing config files
 backbone-logic-*.json

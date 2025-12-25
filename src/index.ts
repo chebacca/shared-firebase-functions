@@ -357,7 +357,8 @@ export {
   getPublishedCallSheets,
   authenticateTeamMember,
   authenticateTeamMemberHttp,  // 🔧 CRITICAL FIX: Export HTTP function for CORS support
-  cleanupExpiredCallSheets
+  cleanupExpiredCallSheets,
+  updateCallSheetAccessCode  // Temporary function to update access codes
 } from './callSheets';
 
 // Export team management functions
