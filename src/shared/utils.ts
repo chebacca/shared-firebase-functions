@@ -36,10 +36,10 @@ export const createErrorResponse = (
 
 export const handleError = (error: any, context: string): ApiResponse => {
   console.error(`[${context}] Error:`, error);
-  
+
   const errorMessage = error.message || 'Internal server error';
   const errorDetails = error.stack || error.toString();
-  
+
   return createErrorResponse(errorMessage, errorDetails);
 };
 
@@ -52,7 +52,7 @@ export const validateOrganizationAccess = async (
     if (!userDoc.exists) {
       return false;
     }
-    
+
     const userData = userDoc.data();
     return userData?.organizationId === organizationId;
   } catch (error) {
@@ -63,9 +63,9 @@ export const validateOrganizationAccess = async (
 
 export const getUserOrganizationId = async (userId: string, userEmail: string): Promise<string | null> => {
   let organizationId: string | null = null;
-  
+
   console.log(`🔍 [ORG LOOKUP] Starting lookup - userId: ${userId}, userEmail: "${userEmail}"`);
-  
+
   // Special case: Handle enterprise user's dual organization issue
   if (userEmail === 'enterprise.user@enterprisemedia.com') {
     console.log(`✅ [ORG LOOKUP] Special handling for enterprise user - returning enterprise-media-org`);
@@ -77,9 +77,9 @@ export const getUserOrganizationId = async (userId: string, userEmail: string): 
     console.log(`✅ [ORG LOOKUP] Special handling for admin.clipshow user - returning clip-show-pro-productions`);
     return 'clip-show-pro-productions';
   }
-  
+
   console.log(`🔍 [ORG LOOKUP] No special case match, proceeding with database lookup...`);
-  
+
   // Try to get from users collection first
   try {
     const userDoc = await db.collection('users').doc(userId).get();
@@ -94,14 +94,14 @@ export const getUserOrganizationId = async (userId: string, userEmail: string): 
   } catch (error) {
     console.error('Error getting organization from users collection:', error);
   }
-  
+
   // Try to get from teamMembers collection
   try {
     const teamMemberQuery = await db.collection('teamMembers')
       .where('userId', '==', userId)
       .limit(1)
       .get();
-    
+
     if (!teamMemberQuery.empty) {
       const teamMemberDoc = teamMemberQuery.docs[0];
       const teamMemberData = teamMemberDoc.data();
@@ -114,7 +114,7 @@ export const getUserOrganizationId = async (userId: string, userEmail: string): 
   } catch (error) {
     console.error('Error getting organization from teamMembers collection:', error);
   }
-  
+
   console.log(`[ORG LOOKUP] No organization found for user: ${userId}`);
   return null;
 };
@@ -130,13 +130,13 @@ export const validateProjectAccess = async (
     if (!hasOrgAccess) {
       return false;
     }
-    
+
     // Check if project belongs to the organization
     const projectDoc = await db.collection('projects').doc(projectId).get();
     if (!projectDoc.exists) {
       return false;
     }
-    
+
     const projectData = projectDoc.data();
     return projectData?.organizationId === organizationId;
   } catch (error) {
@@ -156,13 +156,13 @@ export const validateDatasetAccess = async (
     if (!hasOrgAccess) {
       return false;
     }
-    
+
     // Check if dataset belongs to the organization
     const datasetDoc = await db.collection('datasets').doc(datasetId).get();
     if (!datasetDoc.exists) {
       return false;
     }
-    
+
     const datasetData = datasetDoc.data();
     return datasetData?.organizationId === organizationId;
   } catch (error) {
@@ -182,13 +182,13 @@ export const validateSessionAccess = async (
     if (!hasOrgAccess) {
       return false;
     }
-    
+
     // Check if session belongs to the organization
     const sessionDoc = await db.collection('sessions').doc(sessionId).get();
     if (!sessionDoc.exists) {
       return false;
     }
-    
+
     const sessionData = sessionDoc.data();
     return sessionData?.organizationId === organizationId;
   } catch (error) {
@@ -222,13 +222,13 @@ export const validateEmail = (email: string): boolean => {
 
 export const validateRequiredFields = (data: any, requiredFields: string[]): string[] => {
   const missingFields: string[] = [];
-  
+
   for (const field of requiredFields) {
     if (data[field] === undefined || data[field] === null || data[field] === '') {
       missingFields.push(field);
     }
   }
-  
+
   return missingFields;
 };
 
@@ -247,7 +247,7 @@ export const createFieldValue = () => admin.firestore.FieldValue;
 
 export const batchWrite = async (operations: any[]): Promise<void> => {
   const batch = db.batch();
-  
+
   for (const operation of operations) {
     if (operation.type === 'set') {
       batch.set(operation.ref, operation.data, operation.options);
@@ -257,7 +257,7 @@ export const batchWrite = async (operations: any[]): Promise<void> => {
       batch.delete(operation.ref);
     }
   }
-  
+
   await batch.commit();
 };
 
@@ -267,16 +267,16 @@ export const paginateQuery = async (
   limit: number = 10
 ): Promise<{ docs: admin.firestore.QueryDocumentSnapshot[], total: number }> => {
   const offset = (page - 1) * limit;
-  
+
   // Get total count
   const countQuery = query.limit(1000); // Firestore limit for counting
   const countSnapshot = await countQuery.get();
   const total = countSnapshot.size;
-  
+
   // Get paginated results
   const paginatedQuery = query.offset(offset).limit(limit);
   const snapshot = await paginatedQuery.get();
-  
+
   return {
     docs: snapshot.docs,
     total
@@ -290,7 +290,7 @@ export const createPaginatedResponse = <T>(
   total: number
 ) => {
   const totalPages = Math.ceil(total / limit);
-  
+
   return {
     data,
     pagination: {
@@ -363,23 +363,23 @@ export const updateCustomClaimsWithDualRoleSupport = async (
   try {
     const userRecord = await auth.getUser(userId);
     const currentClaims = userRecord.customClaims || {};
-    
+
     // Determine licensing role (Tier 1: Organizational)
     // Priority: provided parameter > existing licensingRole > existing role > teamMemberRole
-    const determinedLicensingRole = licensingRole || 
-      currentClaims.licensingRole || 
-      currentClaims.role || 
+    const determinedLicensingRole = licensingRole ||
+      currentClaims.licensingRole ||
+      currentClaims.role ||
       (currentClaims.teamMemberRole ? currentClaims.teamMemberRole.toUpperCase() : 'MEMBER');
-    
+
     // Determine if user is an owner
-    const isOwner = determinedLicensingRole === 'OWNER' || 
-      currentClaims.role === 'OWNER' || 
+    const isOwner = determinedLicensingRole === 'OWNER' ||
+      currentClaims.role === 'OWNER' ||
       currentClaims.isOrganizationOwner === true;
     const ownerHierarchy = isOwner ? 100 : 0;
-    
+
     // Calculate effective hierarchy (max of owner and project hierarchy)
     const effectiveHierarchy = Math.max(ownerHierarchy, projectHierarchy || 0);
-    
+
     // Preserve existing project assignments
     const existingProjectAssignments = currentClaims.projectAssignments || {};
     const updatedProjectAssignments = {
@@ -392,43 +392,43 @@ export const updateCustomClaimsWithDualRoleSupport = async (
         syncedFromLicensing: true
       }
     };
-    
+
     // Create enhanced custom claims that preserve ownership
     const enhancedClaims = {
       ...currentClaims, // Preserve all existing claims
-      
+
       // Tier 1: Licensing Website Role (Organizational)
       licensingRole: determinedLicensingRole,
-      
+
       // Tier 2: App-Specific Roles (Functional)
       dashboardRole: currentClaims.dashboardRole || projectRole, // Use projectRole as dashboardRole if not set
       clipShowProRole: currentClaims.clipShowProRole,
       callSheetRole: currentClaims.callSheetRole,
-      
+
       // Enhanced hierarchy system
       hierarchy: effectiveHierarchy,
       effectiveHierarchy: effectiveHierarchy,
       dashboardHierarchy: effectiveHierarchy,
-      
+
       // Dual role system
       hasOwnershipRole: isOwner,
       hasProjectRoles: Object.keys(updatedProjectAssignments).length > 0,
-      
+
       // Project assignments
       projectAssignments: updatedProjectAssignments,
       currentProjectId: projectId,
       currentProjectRole: projectRole,
       currentProjectHierarchy: projectHierarchy,
-      
+
       // Admin access preservation
       isAdmin: effectiveHierarchy >= 90,
       canManageOrganization: isOwner || effectiveHierarchy >= 90,
       canAccessTimecardAdmin: effectiveHierarchy >= 90,
-      
+
       // Legacy compatibility (keep for backward compatibility)
       role: determinedLicensingRole, // Primary role maps to licensingRole
       teamMemberRole: currentClaims.teamMemberRole || determinedLicensingRole.toLowerCase(),
-      
+
       // Enhanced permissions
       permissions: [
         ...(currentClaims.permissions || []),
@@ -436,14 +436,14 @@ export const updateCustomClaimsWithDualRoleSupport = async (
         'write:projects',
         ...(effectiveHierarchy >= 90 ? ['admin:organization', 'admin:timecard'] : [])
       ].filter((perm, index, arr) => arr.indexOf(perm) === index), // Remove duplicates
-      
+
       // Update metadata
       lastUpdated: Date.now(),
       dualRoleSystemEnabled: true
     };
-    
+
     await auth.setCustomUserClaims(userId, enhancedClaims);
-    
+
     console.log(`[DUAL ROLE CLAIMS] Enhanced claims updated for user: ${userId}`);
     console.log(`   - Licensing Role (Tier 1): ${determinedLicensingRole}`);
     console.log(`   - Dashboard Role (Tier 2): ${enhancedClaims.dashboardRole}`);
@@ -451,7 +451,7 @@ export const updateCustomClaimsWithDualRoleSupport = async (
     console.log(`   - Is Owner: ${isOwner}`);
     console.log(`   - Admin Access: ${effectiveHierarchy >= 90}`);
     console.log(`   - Project Assignments: ${Object.keys(updatedProjectAssignments).length}`);
-    
+
     return enhancedClaims;
   } catch (error) {
     console.error(`[DUAL ROLE CLAIMS] Error updating claims for user ${userId}:`, error);
@@ -475,7 +475,7 @@ export const hasProjectAccess = (user: any, projectId: string): boolean => {
   if (isAdminUser(user)) {
     return true;
   }
-  
+
   const projectAssignments = user.projectAssignments || {};
   return projectId in projectAssignments;
 };
@@ -499,19 +499,23 @@ export const setCorsHeaders = (req: any, res: any): void => {
     'https://backbone-callsheet-standalone.web.app',
     'https://dashboard-1c3a5.web.app',
     'https://clipshowpro.web.app', // Added Clip Show Pro origin
-    'http://localhost:3000',
-    'http://localhost:3001',
+    'http://localhost:4000',
+    'http://localhost:4001',
     'http://localhost:4002', // Licensing website
     'http://localhost:4003',
+    'http://localhost:4004',
+    'http://localhost:4005', // CNS
     'http://localhost:4006', // Standalone Call Sheet App (dev port)
     'http://localhost:4007', // Standalone Call Sheet App
+    'http://localhost:4008',
+    'http://localhost:4009',
     'http://localhost:4010',
     'http://localhost:5173',
     'null'
   ];
-  
+
   const origin = req.headers.origin;
-  
+
   // Always allow the origin that made the request in development mode
   if (process.env.NODE_ENV === 'development' || process.env.FUNCTIONS_EMULATOR === 'true') {
     res.set('Access-Control-Allow-Origin', origin || '*');
@@ -524,7 +528,7 @@ export const setCorsHeaders = (req: any, res: any): void => {
     // In production, be more restrictive but still allow the request to proceed
     res.set('Access-Control-Allow-Origin', 'https://backbone-client.web.app');
   }
-  
+
   // Set other CORS headers
   res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Application-Mode, X-Requested-With, Cache-Control, Pragma, Expires, x-request-started-at, X-Request-Started-At, request-started-at, X-Request-ID, x-auth-token, X-Client-Type, x-client-type, X-Client-Version, x-client-version, Origin');

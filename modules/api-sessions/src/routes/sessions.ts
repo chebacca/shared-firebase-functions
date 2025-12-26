@@ -1,6 +1,6 @@
 import express from 'express';
-import { db } from '../../../src/shared/utils';
-import { authenticateToken } from '../../../src/shared/middleware';
+import { db } from '../shared/utils';
+import { authenticateToken } from '../shared/middleware';
 import { FieldValue } from 'firebase-admin/firestore';
 
 const router = express.Router();
@@ -506,8 +506,8 @@ router.put('/:sessionId/steps/:stepId/documentation', authenticateToken, async (
             updateData.notes = documentationData.notes;
         }
         if (documentationData.files !== undefined) {
-            updateData.files = Array.isArray(documentationData.files) 
-                ? documentationData.files 
+            updateData.files = Array.isArray(documentationData.files)
+                ? documentationData.files
                 : JSON.stringify(documentationData.files || []);
         }
         if (documentationData.workNotes !== undefined) {

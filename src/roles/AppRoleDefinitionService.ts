@@ -180,7 +180,6 @@ export class AppRoleDefinitionService {
 
     // Always start with enum values as source of truth
     const enumRoles = this.getSystemDefaultsFromEnum(appName);
-    const enumRoleMap = new Map(enumRoles.map(role => [role.roleValue, role]));
 
     try {
       // Try to get Firestore roles and merge with enum (Firestore may have custom metadata)

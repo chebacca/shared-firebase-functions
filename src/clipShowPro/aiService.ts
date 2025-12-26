@@ -1,13 +1,11 @@
-/**
- * AI Service Utility
- * Handles AI integrations for Clip Show Pro
- */
-
-import OpenAI from 'openai';
+import { GeminiService } from '../ai/GeminiService';
+import { getAIApiKey } from '../ai/utils/aiHelpers';
 
 interface ScriptGenerationRequest {
   storyId: string;
   templateId?: string;
+  organizationId: string;
+  userId?: string;
   storyData: {
     clipTitle: string;
     show: string;
@@ -26,47 +24,28 @@ interface ScriptTemplate {
 }
 
 class AIService {
-  private openai: OpenAI;
-
-  constructor() {
-    this.openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY || 'your-openai-api-key'
-    });
+  private async getGemini(organizationId: string, userId?: string): Promise<GeminiService> {
+    const keyData = await getAIApiKey(organizationId, 'gemini', userId);
+    if (!keyData || !keyData.apiKey) {
+      throw new Error('Gemini API key not configured for this organization');
+    }
+    return new GeminiService(keyData.apiKey);
   }
 
   async generateScript(request: ScriptGenerationRequest): Promise<string> {
     try {
-      const { storyData, templateId } = request;
-      
-      // Get script template if provided
+      const { storyData, templateId, organizationId, userId } = request;
+      const geminiSvc = await this.getGemini(organizationId, userId);
+
       let template: ScriptTemplate | null = null;
       if (templateId) {
         template = await this.getScriptTemplate(templateId);
       }
 
-      // Create prompt for AI script generation
       const prompt = this.createScriptPrompt(storyData, template);
+      const systemPrompt = "You are a professional script writer for television clip shows. Generate engaging, professional scripts based on the provided story information.";
 
-      // Generate script using OpenAI
-      const completion = await this.openai.chat.completions.create({
-        model: "gpt-4",
-        messages: [
-          {
-            role: "system",
-            content: "You are a professional script writer for television clip shows. Generate engaging, professional scripts based on the provided story information."
-          },
-          {
-            role: "user",
-            content: prompt
-          }
-        ],
-        max_tokens: 2000,
-        temperature: 0.7
-      });
-
-      const generatedScript = completion.choices[0]?.message?.content || '';
-      
-      // Post-process the script
+      const generatedScript = await geminiSvc.generateText(prompt, systemPrompt);
       return this.postProcessScript(generatedScript, storyData);
     } catch (error) {
       console.error('Error generating script:', error);
@@ -104,7 +83,6 @@ Please generate a complete script that follows standard television formatting co
   }
 
   private postProcessScript(script: string, storyData: any): string {
-    // Add metadata header
     const header = `SCRIPT: ${storyData.clipTitle}
 SHOW: ${storyData.show}
 SEASON: ${storyData.season}
@@ -114,10 +92,9 @@ GENERATED: ${new Date().toISOString()}
 
 `;
 
-    // Clean up the script
     let processedScript = script
-      .replace(/^\s*```.*$/gm, '') // Remove markdown code blocks
-      .replace(/^\s*---.*$/gm, '') // Remove markdown separators
+      .replace(/^\s*```.*$/gm, '')
+      .replace(/^\s*---.*$/gm, '')
       .trim();
 
     return header + processedScript;
@@ -125,8 +102,6 @@ GENERATED: ${new Date().toISOString()}
 
   private async getScriptTemplate(templateId: string): Promise<ScriptTemplate | null> {
     try {
-      // This would typically fetch from Firestore
-      // For now, return a default template
       return {
         id: templateId,
         name: 'Standard Clip Show Template',
@@ -139,8 +114,9 @@ GENERATED: ${new Date().toISOString()}
     }
   }
 
-  async generateStoryIdeas(pitchData: any): Promise<string[]> {
+  async generateStoryIdeas(pitchData: any, organizationId: string, userId?: string): Promise<string[]> {
     try {
+      const geminiSvc = await this.getGemini(organizationId, userId);
       const prompt = `
 Based on the following pitch information, generate 3 creative story ideas:
 
@@ -154,45 +130,29 @@ Generate creative story angles that would work well for television production.
 Each idea should be 2-3 sentences and focus on different aspects of the content.
     `;
 
-      const completion = await this.openai.chat.completions.create({
-        model: "gpt-4",
-        messages: [
-          {
-            role: "system",
-            content: "You are a creative television producer. Generate engaging story ideas for clip shows."
-          },
-          {
-            role: "user",
-            content: prompt
-          }
-        ],
-        max_tokens: 500,
-        temperature: 0.8
-      });
+      const response = await geminiSvc.generateText(prompt, "You are a creative television producer. Generate engaging story ideas for clip shows.");
 
-      const response = completion.choices[0]?.message?.content || '';
-      
-      // Parse the response into individual ideas
       const ideas = response
         .split('\n')
         .filter(line => line.trim().length > 0)
         .map(line => line.replace(/^\d+\.\s*/, '').trim())
         .filter(idea => idea.length > 10);
 
-      return ideas.slice(0, 3); // Return top 3 ideas
+      return ideas.slice(0, 3);
     } catch (error) {
       console.error('Error generating story ideas:', error);
       return [];
     }
   }
 
-  async analyzePitchContent(pitchData: any): Promise<{
+  async analyzePitchContent(pitchData: any, organizationId: string, userId?: string): Promise<{
     sentiment: 'positive' | 'neutral' | 'negative';
     keywords: string[];
     suggestedCategories: string[];
     riskLevel: 'low' | 'medium' | 'high';
   }> {
     try {
+      const geminiSvc = await this.getGemini(organizationId, userId);
       const prompt = `
 Analyze the following pitch content and provide insights:
 
@@ -210,28 +170,13 @@ Please analyze:
 Respond in JSON format.
     `;
 
-      const completion = await this.openai.chat.completions.create({
-        model: "gpt-4",
-        messages: [
-          {
-            role: "system",
-            content: "You are a content analyst for television production. Analyze pitches for sentiment, keywords, and clearance risk."
-          },
-          {
-            role: "user",
-            content: prompt
-          }
-        ],
-        max_tokens: 300,
-        temperature: 0.3
-      });
+      const responseText = await geminiSvc.generateText(prompt, "You are a content analyst for television production. Analyze pitches for sentiment, keywords, and clearance risk. RETURN ONLY JSON.");
 
-      const response = completion.choices[0]?.message?.content || '';
-      
       try {
-        return JSON.parse(response);
+        let cleanedResponse = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+        const startIndex = cleanedResponse.indexOf('{');
+        return JSON.parse(cleanedResponse.substring(startIndex));
       } catch (parseError) {
-        // Fallback if JSON parsing fails
         return {
           sentiment: 'neutral',
           keywords: pitchData.categories || [],

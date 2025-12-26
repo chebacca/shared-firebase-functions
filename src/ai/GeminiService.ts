@@ -5,6 +5,7 @@
  * Handles context optimization, prompt engineering, and response formatting.
  */
 
+import axios from 'axios';
 import { GoogleGenerativeAI, GenerativeModel, SchemaType } from '@google/generative-ai';
 import { defineSecret } from 'firebase-functions/params';
 import { GlobalContext } from './contextAggregation/GlobalContextService';
@@ -12,7 +13,7 @@ import { workflowFunctionDeclarations } from './workflowTools';
 import { WorkflowFunctionExecutor } from './workflowFunctionExecutor';
 import { dataToolDeclarations } from './dataTools';
 import { DataToolExecutor } from './DataToolExecutor';
-import axios from 'axios';
+import { CoreGeminiService, TranscriptionResult, NetworkBibleResult } from './CoreGeminiService';
 
 export interface AIAttachment {
   url: string;
@@ -74,16 +75,9 @@ export interface AgentResponse {
 /**
  * Gemini Service Class
  */
-export class GeminiService {
-  private genAI: GoogleGenerativeAI;
-  private model: GenerativeModel;
-
+export class GeminiService extends CoreGeminiService {
   constructor(apiKey: string) {
-    this.genAI = new GoogleGenerativeAI(apiKey);
-    // 🔥 FIX: Use gemini-1.5-flash for v1beta API compatibility
-    // The model name 'gemini-1.5-pro' is not available in v1beta API
-    // gemini-1.5-flash is faster, cheaper, and available in v1beta
-    this.model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    super(apiKey);
   }
 
   /**
@@ -197,7 +191,7 @@ export class GeminiService {
       const errorMessage = error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : undefined;
       const errorName = error instanceof Error ? error.name : 'UnknownError';
-      
+
       console.error('❌ [Gemini Service] Error generating response:', {
         name: errorName,
         message: errorMessage,
@@ -209,13 +203,13 @@ export class GeminiService {
       });
 
       // 🔥 IMPROVED: More helpful error message that includes the actual error
-      const userFriendlyMessage = errorMessage.includes('API key') 
+      const userFriendlyMessage = errorMessage.includes('API key')
         ? "I'm having trouble connecting to the AI service. Please check the API configuration."
         : errorMessage.includes('quota') || errorMessage.includes('rate limit')
-        ? "The AI service is currently busy. Please try again in a moment."
-        : errorMessage.includes('timeout')
-        ? "The request took too long to process. Please try again with a shorter message."
-        : "I'm having trouble processing your request right now. Please try again.";
+          ? "The AI service is currently busy. Please try again in a moment."
+          : errorMessage.includes('timeout')
+            ? "The request took too long to process. Please try again with a shorter message."
+            : "I'm having trouble processing your request right now. Please try again.";
 
       // Fallback response
       return {
@@ -938,6 +932,19 @@ RULES:
         ${pwsWorkflows.statistics.mostUsedTemplate ? `- Most Used: "${pwsWorkflows.statistics.mostUsedTemplate}"` : ''}
     ` : '';
 
+    // Budget & Inventory Information
+    const budgets = globalContext.budgets;
+    const budgetInfo = budgets ? `
+        - Budgets: ${budgets.activeBudgets} active / ${budgets.totalBudgets} total
+        - Financial Health: $${(budgets.totalSpent || 0).toLocaleString()} spent of $${(budgets.totalBudgeted || 0).toLocaleString()} budgeted
+    ` : '';
+
+    const inventory = globalContext.inventory;
+    const inventoryInfo = inventory ? `
+        - Inventory: ${inventory.availableItems} available, ${inventory.checkedOutItems} checked out (${inventory.totalItems} total)
+        - Alerts: ${inventory.lowStockItems} low stock items
+    ` : '';
+
     return `
         CONTEXT SUMMARY:
         - Organization: ${globalContext.organizationId || 'Unknown'}
@@ -946,12 +953,15 @@ RULES:
         - Team Members: ${globalContext.team?.activeMembers || 0}
         - Velocity: ${velocityMetrics?.completionRate || 0}% completion rate (${velocityMetrics?.itemsCompleted || 0} items completed)
         ${workflowInfo}
+        ${budgetInfo}
+        ${inventoryInfo}
         
         SYSTEM CAPABILITIES:
         - Can switch views: "media" (Gallery), "script" (Script Editor), "graph" (Knowledge Graph), "pws-workflows" (Workflow System)
         - Can filter data based on user intent
         - Can suggest follow-up actions
         - Can query and analyze workflows (read-only)
+        - Can analyze budgets and inventory status
         - NOTE: Workflow CREATION must be done in PWS Workflow Architect, not here
         `;
   }
@@ -1702,6 +1712,8 @@ RULES:
     // Default to none (Mission Control)
     return 'none';
   }
+
+
 }
 
 /**

@@ -6,6 +6,7 @@
  */
 
 import { getAIApiKey } from '../utils/aiHelpers';
+import { GeminiService } from '../GeminiService';
 
 export interface EmbeddingResult {
   embedding: number[];
@@ -17,7 +18,7 @@ export interface EmbeddingResult {
 }
 
 /**
- * Generate embedding for text using OpenAI
+ * Generate embedding for text using Gemini (Unified Service)
  */
 export async function generateEmbedding(
   text: string,
@@ -26,39 +27,21 @@ export async function generateEmbedding(
     model?: string;
   }
 ): Promise<EmbeddingResult> {
-  const { model = 'text-embedding-3-small' } = options || {};
+  const { model = 'text-embedding-004' } = options || {};
 
   try {
-    // Get OpenAI API key
-    const apiKey = await getAIApiKey(organizationId, 'openai');
-    if (!apiKey) {
-      throw new Error('OpenAI API key not found');
+    // Get Gemini API key
+    const keyData = await getAIApiKey(organizationId, 'gemini');
+    if (!keyData || !keyData.apiKey) {
+      throw new Error('Gemini API key not found');
     }
 
-    // Call OpenAI embeddings API
-    const response = await fetch('https://api.openai.com/v1/embeddings', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model,
-        input: text
-      })
-    });
+    const geminiSvc = new GeminiService(keyData.apiKey);
+    const embedding = await geminiSvc.generateEmbedding(text);
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`OpenAI API error: ${error}`);
-    }
-
-    const data = await response.json() as any;
-    
     return {
-      embedding: data.data[0].embedding,
-      model: data.model,
-      usage: data.usage
+      embedding,
+      model: model, // Current Gemini default
     };
   } catch (error) {
     console.error('Error generating embedding:', error);
@@ -77,49 +60,17 @@ export async function generateEmbeddingsBatch(
     batchSize?: number;
   }
 ): Promise<EmbeddingResult[]> {
-  const { model = 'text-embedding-3-small', batchSize = 100 } = options || {};
+  const { batchSize = 10 } = options || {}; // Gemini batching might be smaller
 
   const results: EmbeddingResult[] = [];
-  
-  // Process in batches to avoid rate limits
-  for (let i = 0; i < texts.length; i += batchSize) {
-    const batch = texts.slice(i, i + batchSize);
-    
+
+  // Process sequentially to avoid rate limits, or in parallel chunks
+  for (const text of texts) {
     try {
-      const apiKey = await getAIApiKey(organizationId, 'openai');
-      if (!apiKey) {
-        throw new Error('OpenAI API key not found');
-      }
-
-      const response = await fetch('https://api.openai.com/v1/embeddings', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model,
-          input: batch
-        })
-      });
-
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`OpenAI API error: ${error}`);
-      }
-
-      const data = await response.json() as any;
-      
-      data.data.forEach((item: any, index: number) => {
-        results.push({
-          embedding: item.embedding,
-          model: data.model,
-          usage: index === 0 ? data.usage : undefined // Usage is for the entire batch
-        });
-      });
+      const res = await generateEmbedding(text, organizationId, options);
+      results.push(res);
     } catch (error) {
-      console.error(`Error generating embeddings for batch ${i}:`, error);
-      // Continue with other batches even if one fails
+      console.error(`Error generating embedding for item:`, error);
     }
   }
 

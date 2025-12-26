@@ -58,10 +58,10 @@ jspm_packages/
 .yarn-integrity
 
 # dotenv environment variables file
-.env
-.env.test
-.env.local
-.env.production
+# .env
+# .env.test
+# .env.local
+# .env.production
 .secret.local
 
 # parcel-bundler cache (https://parceljs.org/)
@@ -139,3 +139,40 @@ coverage/
 # Firebase Service Account Keys (NEVER commit these!)
 # *firebase*.json - Removed this line to allow viewing config files
 backbone-logic-*.json
+
+# ============================================================================
+# SENSITIVE FILES - NEVER COMMIT THESE
+# ============================================================================
+
+# Firebase Service Account Keys (NEVER COMMIT)
+*firebase*adminsdk*.json
+*service-account*.json
+*serviceAccount*.json
+firebase-service-account.json
+backbone-logic-*.json
+
+# Environment Files
+.env
+.env.*
+!.env.example
+*.env.local
+*.env.bak
+
+# API Keys and Secrets
+*api-key*
+*secret-key*
+secrets.json
+credentials.json
+
+# Auth Tokens
+*token*.txt
+*.token
+*.auth
+*.secret
+*.password
+
+# Certificates
+*.pem
+*.crt
+*.key
+

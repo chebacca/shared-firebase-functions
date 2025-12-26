@@ -1,7 +1,7 @@
 import { onRequest, onCall } from 'firebase-functions/v2/https';
 import express from 'express';
 import cors from 'cors';
-import { authenticateToken } from '../../../src/shared/middleware';
+import { authenticateToken } from './shared/middleware';
 import networkDeliveryRouter, { uploadNetworkDeliveryBible, getNetworkDeliveryDeliverables } from './routes/networkDelivery';
 
 // Create Express app for network delivery API

@@ -35,7 +35,7 @@ const storage = getStorage();
 export const notifyPitchStatusChange = onCall(async (request) => {
   try {
     const { pitchId, newStatus, reason, userId } = request.data;
-    
+
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
     }
@@ -47,7 +47,7 @@ export const notifyPitchStatusChange = onCall(async (request) => {
     }
 
     const pitch = pitchDoc.data();
-    
+
     // Get user data
     const userDoc = await db.collection('users').doc(userId).get();
     const user = userDoc.data();
@@ -56,9 +56,9 @@ export const notifyPitchStatusChange = onCall(async (request) => {
     if (user?.email) {
       try {
         const emailData = emailService.generatePitchStatusChangeEmail(
-          pitch, 
-          user, 
-          newStatus, 
+          pitch,
+          user,
+          newStatus,
           reason
         );
         await emailService.sendEmail(emailData);
@@ -82,7 +82,7 @@ export const notifyPitchStatusChange = onCall(async (request) => {
 export const notifyPitchAssignment = onCall(async (request) => {
   try {
     const { pitchId, producerId, message } = request.data;
-    
+
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
     }
@@ -94,7 +94,7 @@ export const notifyPitchAssignment = onCall(async (request) => {
     }
 
     const pitch = pitchDoc.data();
-    
+
     // Get producer data
     const producerDoc = await db.collection('users').doc(producerId).get();
     const producer = producerDoc.data();
@@ -103,8 +103,8 @@ export const notifyPitchAssignment = onCall(async (request) => {
     if (producer?.email) {
       try {
         const emailData = emailService.generatePitchAssignmentEmail(
-          pitch, 
-          producer, 
+          pitch,
+          producer,
           producer?.name || producer?.email
         );
         await emailService.sendEmail(emailData);
@@ -128,7 +128,7 @@ export const notifyPitchAssignment = onCall(async (request) => {
 export const notifyLicensingSpecialist = onCall(async (request) => {
   try {
     const { pitchId, specialistId, message } = request.data;
-    
+
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
     }
@@ -140,7 +140,7 @@ export const notifyLicensingSpecialist = onCall(async (request) => {
     }
 
     const pitch = pitchDoc.data();
-    
+
     // Get specialist data
     const specialistDoc = await db.collection('users').doc(specialistId).get();
     const specialist = specialistDoc.data();
@@ -149,8 +149,8 @@ export const notifyLicensingSpecialist = onCall(async (request) => {
     if (specialist?.email) {
       try {
         const emailData = emailService.generateLicensingSpecialistEmail(
-          pitch, 
-          specialist, 
+          pitch,
+          specialist,
           specialist?.name || specialist?.email
         );
         await emailService.sendEmail(emailData);
@@ -178,7 +178,7 @@ export const notifyLicensingSpecialist = onCall(async (request) => {
 export const generateScript = onCall(async (request) => {
   try {
     const { storyId, templateId } = request.data;
-    
+
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
     }
@@ -190,7 +190,7 @@ export const generateScript = onCall(async (request) => {
     }
 
     const story = storyDoc.data();
-    
+
     // Get template data
     const templateDoc = await db.collection('clipShowScriptTemplates').doc(templateId).get();
     if (!templateDoc.exists) {
@@ -203,6 +203,8 @@ export const generateScript = onCall(async (request) => {
     const scriptRequest = {
       storyId,
       templateId,
+      organizationId: story?.organizationId || request.auth.token.organizationId,
+      userId: request.auth.uid,
       storyData: {
         clipTitle: story?.clipTitle,
         show: story?.show,
@@ -214,7 +216,7 @@ export const generateScript = onCall(async (request) => {
     };
 
     const generatedScriptContent = await aiService.generateScript(scriptRequest);
-    
+
     const generatedScript = {
       content: generatedScriptContent,
       template: template?.name,
@@ -236,8 +238,8 @@ export const generateScript = onCall(async (request) => {
       updatedAt: new Date()
     });
 
-    return { 
-      success: true, 
+    return {
+      success: true,
       scriptId: scriptDoc.id,
       script: generatedScript
     };
@@ -253,7 +255,7 @@ export const generateScript = onCall(async (request) => {
 export const uploadToBoxForClipShow = onCall(async (request) => {
   try {
     const { fileData, fileName, pitchId, fileType } = request.data;
-    
+
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
     }
@@ -275,8 +277,8 @@ export const uploadToBoxForClipShow = onCall(async (request) => {
       updatedAt: new Date()
     });
 
-    return { 
-      success: true, 
+    return {
+      success: true,
       documentId: docRef.id,
       boxFileId,
       boxUrl
@@ -298,11 +300,11 @@ export const autoCreateStory = onDocumentUpdated('clipShowPitches/{pitchId}', as
   try {
     const before = event.data?.before?.data();
     const after = event.data?.after?.data();
-    
+
     // Check if status changed to "Ready for Script"
     if (before?.status !== 'Ready for Script' && after?.status === 'Ready for Script') {
       const pitchId = event.params.pitchId;
-      
+
       // Create story from pitch
       const storyData = {
         clipPitchId: pitchId,
@@ -327,7 +329,7 @@ export const autoCreateStory = onDocumentUpdated('clipShowPitches/{pitchId}', as
       };
 
       await db.collection('clipShowStories').add(storyData);
-      
+
       console.log(`Auto-created story for pitch ${pitchId}`);
     }
   } catch (error) {
@@ -342,24 +344,24 @@ export const syncPitchFromStory = onDocumentUpdated('clipShowStories/{storyId}',
   try {
     const before = event.data?.before?.data();
     const after = event.data?.after?.data();
-    
+
     // Check if story status changed
     if (before?.status !== after?.status) {
       const storyId = event.params.storyId;
-      
+
       // Update corresponding pitch
       const pitchQuery = await db.collection('clipShowPitches')
         .where('storyId', '==', storyId)
         .limit(1)
         .get();
-      
+
       if (!pitchQuery.empty) {
         const pitchDoc = pitchQuery.docs[0];
         await pitchDoc.ref.update({
           status: after.status,
           updatedAt: new Date()
         });
-        
+
         console.log(`Synced pitch ${pitchDoc.id} status to ${after.status}`);
       }
     }
@@ -392,7 +394,7 @@ export const getPitchAnalytics = onCall(async (request) => {
       .get();
 
     const pitches = pitchesSnapshot.docs.map(doc => doc.data());
-    
+
     // Calculate analytics
     const analytics = {
       totalPitches: pitches.length,
@@ -436,7 +438,7 @@ function calculateSuccessRate(pitches: any[]): number {
 export const analyzePitchContent = onCall(async (request) => {
   try {
     const { pitchId } = request.data;
-    
+
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
     }
@@ -448,13 +450,15 @@ export const analyzePitchContent = onCall(async (request) => {
     }
 
     const pitch = pitchDoc.data();
-    
+
+    const organizationId = request.auth.token.organizationId;
+
     // Analyze pitch content using AI
-    const analysis = await aiService.analyzePitchContent(pitch);
-    
+    const analysis = await aiService.analyzePitchContent(pitch, organizationId, request.auth.uid);
+
     // Generate story ideas
-    const storyIdeas = await aiService.generateStoryIdeas(pitch);
-    
+    const storyIdeas = await aiService.generateStoryIdeas(pitch, organizationId, request.auth.uid);
+
     // Save analysis results
     await db.collection('clipShowDocuments').add({
       type: 'analysis',
@@ -465,8 +469,8 @@ export const analyzePitchContent = onCall(async (request) => {
       version: 1
     });
 
-    return { 
-      success: true, 
+    return {
+      success: true,
       analysis,
       storyIdeas,
       message: 'Pitch analysis completed'

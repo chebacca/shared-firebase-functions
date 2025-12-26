@@ -11,7 +11,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import * as admin from 'firebase-admin';
 import * as https from 'https';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GeminiService } from '../ai/GeminiService';
 import { getAIApiKey } from '../ai/utils/aiHelpers';
 
 // Note: YouTube transcript extraction now works without API key or OAuth
@@ -73,13 +73,13 @@ function parseYouTubeTranscript(data: string, format: 'xml' | 'json' = 'xml'): {
       const events = json.events || [];
       let fullText = '';
       const timestamps: Array<{ start: number; end: number; text: string }> = [];
-      
+
       for (const event of events) {
         if (event.segs && event.segs.length > 0) {
           const segmentText = event.segs.map((seg: any) => seg.utf8 || '').join('');
           if (segmentText.trim()) {
             fullText += segmentText + ' ';
-            
+
             if (event.tStartMs !== undefined && event.dDurationMs !== undefined) {
               timestamps.push({
                 start: event.tStartMs / 1000,
@@ -90,7 +90,7 @@ function parseYouTubeTranscript(data: string, format: 'xml' | 'json' = 'xml'): {
           }
         }
       }
-      
+
       return {
         text: fullText.trim(),
         timestamps: timestamps.length > 0 ? timestamps : undefined
@@ -99,7 +99,7 @@ function parseYouTubeTranscript(data: string, format: 'xml' | 'json' = 'xml'): {
       // XML format parsing - handle multiple YouTube XML formats
       let fullText = '';
       const timestamps: Array<{ start: number; end: number; text: string }> = [];
-      
+
       // Try format 1: <text start="X.X" dur="X.X">text</text>
       const textMatches1 = data.match(/<text[^>]*start="([^"]+)"[^>]*dur="([^"]+)"[^>]*>([^<]+)<\/text>/g) || [];
       if (textMatches1.length > 0) {
@@ -120,17 +120,17 @@ function parseYouTubeTranscript(data: string, format: 'xml' | 'json' = 'xml'): {
           }
         });
       }
-      
+
       // Try format 2: <text start="X.X">text</text> with dur attribute separately
       if (timestamps.length === 0) {
         const textMatches2 = data.match(/<text[^>]*>([^<]+)<\/text>/g) || [];
         const timeMatches = data.match(/start="([^"]+)"[^>]*dur="([^"]+)"/g) || [];
-        
+
         textMatches2.forEach((match, index) => {
           const textContent = match.replace(/<[^>]+>/g, '').trim();
           if (textContent) {
             fullText += textContent + ' ';
-            
+
             if (timeMatches[index]) {
               const timeMatch = timeMatches[index].match(/start="([^"]+)"[^>]*dur="([^"]+)"/);
               if (timeMatch) {
@@ -146,7 +146,7 @@ function parseYouTubeTranscript(data: string, format: 'xml' | 'json' = 'xml'): {
           }
         });
       }
-      
+
       // If still no timestamps, extract text only
       if (timestamps.length === 0 && fullText.trim().length === 0) {
         // Last resort: extract all text from XML
@@ -155,7 +155,7 @@ function parseYouTubeTranscript(data: string, format: 'xml' | 'json' = 'xml'): {
           .replace(/\s+/g, ' ')
           .trim();
       }
-      
+
       return {
         text: fullText.trim(),
         timestamps: timestamps.length > 0 ? timestamps : undefined
@@ -183,7 +183,7 @@ async function fetchYouTubeTranscript(videoId: string, language: string = 'en'):
     // Try different formats: xml3 (recommended), srv3, ttml, srv1
     const transcriptUrl = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=${language}&fmt=xml3`;
     console.log('Fetching transcript from:', transcriptUrl);
-    
+
     const transcriptData = await new Promise<string>((resolve, reject) => {
       const request = https.get(transcriptUrl, {
         headers: {
@@ -224,7 +224,7 @@ async function fetchYouTubeTranscript(videoId: string, language: string = 'en'):
             return;
           }
         }
-        
+
         if (res.statusCode !== 200) {
           // Check for specific error cases
           if (res.statusCode === 404 || res.statusCode === 403) {
@@ -234,7 +234,7 @@ async function fetchYouTubeTranscript(videoId: string, language: string = 'en'):
           }
           return;
         }
-        
+
         let data = '';
         res.on('data', (chunk) => { data += chunk; });
         res.on('end', () => {
@@ -246,7 +246,7 @@ async function fetchYouTubeTranscript(videoId: string, language: string = 'en'):
           resolve(data);
         });
       });
-      
+
       request.on('error', reject);
       request.end();
     });
@@ -255,12 +255,12 @@ async function fetchYouTubeTranscript(videoId: string, language: string = 'en'):
     if (!transcriptData || transcriptData.trim().length === 0) {
       throw new Error('Video does not have captions available. The video may not have captions enabled.');
     }
-    
+
     // Parse XML transcript data - YouTube can return different formats
     if (transcriptData) {
       // Log first 500 chars for debugging
       console.log('Received transcript data (first 500 chars):', transcriptData.substring(0, 500));
-      
+
       // Try XML format first - YouTube typically returns XML
       if (transcriptData.includes('<transcript>') || transcriptData.includes('<?xml') || transcriptData.includes('<text') || transcriptData.includes('</text>')) {
         try {
@@ -272,7 +272,7 @@ async function fetchYouTubeTranscript(videoId: string, language: string = 'en'):
           console.error('XML parsing failed:', xmlError);
         }
       }
-      
+
       // Try JSON format (less common for YouTube)
       if (transcriptData.trim().startsWith('{') || transcriptData.trim().startsWith('[')) {
         try {
@@ -281,7 +281,7 @@ async function fetchYouTubeTranscript(videoId: string, language: string = 'en'):
           console.error('JSON parse failed:', jsonError);
         }
       }
-      
+
       // Try parsing as plain text/HTML - extract text from any HTML-like structure
       const textOnly = transcriptData
         .replace(/<[^>]+>/g, ' ') // Remove HTML tags
@@ -292,7 +292,7 @@ async function fetchYouTubeTranscript(videoId: string, language: string = 'en'):
         .replace(/&quot;/g, '"')
         .replace(/\s+/g, ' ') // Normalize whitespace
         .trim();
-      
+
       if (textOnly.length > 10) {
         // If we got meaningful text, return it
         console.log('Extracted plain text transcript (length):', textOnly.length);
@@ -302,16 +302,16 @@ async function fetchYouTubeTranscript(videoId: string, language: string = 'en'):
         };
       }
     }
-    
+
     // If all parsing fails, log the actual response for debugging
     console.error('Failed to parse transcript data. Length:', transcriptData?.length || 0);
     console.error('First 1000 chars:', transcriptData?.substring(0, 1000));
-    
+
     // Check if this is an empty response indicating no captions
     if (!transcriptData || transcriptData.trim().length === 0) {
       throw new Error('Video does not have captions available. The video may not have captions enabled.');
     }
-    
+
     throw new Error(`Could not parse transcript data. Received ${transcriptData?.length || 0} characters. Video may not have captions available.`);
   } catch (error: any) {
     // If primary language fails, try English (most common)
@@ -323,10 +323,10 @@ async function fetchYouTubeTranscript(videoId: string, language: string = 'en'):
         if (enError.message?.includes('does not have captions')) {
           throw enError;
         }
-        
+
         // If English also fails, try to get any available language
         const transcriptUrl = `https://www.youtube.com/api/timedtext?v=${videoId}&fmt=xml3`;
-        
+
         try {
           const transcriptData = await new Promise<string>((resolve, reject) => {
             https.get(transcriptUrl, {
@@ -350,7 +350,7 @@ async function fetchYouTubeTranscript(videoId: string, language: string = 'en'):
               });
             }).on('error', reject);
           });
-          
+
           if (transcriptData && (transcriptData.includes('<transcript>') || transcriptData.includes('<?xml') || transcriptData.includes('<text'))) {
             return parseYouTubeTranscript(transcriptData, 'xml');
           }
@@ -360,12 +360,12 @@ async function fetchYouTubeTranscript(videoId: string, language: string = 'en'):
         }
       }
     }
-    
+
     // Check if this is a "no captions" error - return user-friendly error instead of 500
     if (error.message?.includes('does not have captions') || error.message?.includes('may not have captions')) {
       throw new HttpsError('failed-precondition', error.message);
     }
-    
+
     // For other errors, still use internal but with better message
     throw new HttpsError('internal', `Failed to fetch YouTube transcript: ${error.message}`);
   }
@@ -384,7 +384,7 @@ async function transcribeWithGemini(
 ): Promise<{ text: string; timestamps?: Array<{ start: number; end: number; text: string }> }> {
   try {
     console.log(`[Gemini Transcription] Starting transcription for ${platform} video: ${videoId}`);
-    
+
     // Get Gemini API key
     const keyData = await getAIApiKey(organizationId, 'gemini', userId);
     if (!keyData || !keyData.apiKey) {
@@ -392,19 +392,18 @@ async function transcribeWithGemini(
     }
 
     const apiKey = keyData.apiKey;
-    const model = keyData.model || 'gemini-1.5-flash';
-    
+    const model = keyData.model || 'gemini-2.5-flash';
+
     console.log(`[Gemini Transcription] Using model: ${model}`);
 
-    // Initialize Gemini
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const geminiModel = genAI.getGenerativeModel({ model });
+    // Initialize Gemini Service
+    const geminiSvc = new GeminiService(apiKey);
 
     // Note: Gemini API requires file uploads, not URLs
     // For YouTube videos and direct video URLs, we would need to download the video/audio first
     // This is a placeholder for future enhancement
     // TODO: Enhance to download and process video/audio files for Gemini
-    
+
     if (platform === 'YouTube') {
       // YouTube videos require downloading first - not yet implemented
       throw new Error('Gemini transcription for YouTube videos requires video download. This feature will be enhanced in a future update. Please use YouTube\'s built-in transcript feature if available.');
@@ -573,7 +572,7 @@ export const extractTranscript = onCall(
 
       // Normalize video URL
       const normalizedUrl = videoUrl.trim();
-      
+
       // Extract video ID if not provided
       let extractedVideoId = videoId;
       if (!extractedVideoId) {
@@ -621,18 +620,18 @@ export const extractTranscript = onCall(
         extractedBy = `gemini:${request.auth.uid}`;
       } else if (platform === 'YouTube') {
         try {
-        transcriptData = await fetchYouTubeTranscript(extractedVideoId);
-        language = 'en'; // Default to English for YouTube
+          transcriptData = await fetchYouTubeTranscript(extractedVideoId);
+          language = 'en'; // Default to English for YouTube
         } catch (youtubeError: any) {
           // Check if this is a "no captions" error
-          const isNoCaptionsError = youtubeError.message?.includes('captions') || 
-                                    youtubeError.message?.includes('caption') ||
-                                    youtubeError.message?.includes('does not have captions') ||
-                                    youtubeError.message?.includes('may not have captions');
-          
+          const isNoCaptionsError = youtubeError.message?.includes('captions') ||
+            youtubeError.message?.includes('caption') ||
+            youtubeError.message?.includes('does not have captions') ||
+            youtubeError.message?.includes('may not have captions');
+
           // YouTube transcript failed, try Gemini fallback if available
           console.log('[extractTranscript] YouTube transcript failed, attempting Gemini fallback:', youtubeError.message);
-          
+
           try {
             const geminiKeyData = await getAIApiKey(organizationId, 'gemini', request.auth.uid);
             if (geminiKeyData && geminiKeyData.apiKey) {
@@ -652,11 +651,11 @@ export const extractTranscript = onCall(
           } catch (geminiError: any) {
             // Gemini also failed - if it's a "no captions" error, throw appropriate HttpsError
             console.error('[extractTranscript] Gemini fallback also failed:', geminiError.message);
-            
+
             // Check if Gemini failed because it can't handle YouTube videos (requires video download)
-            const isGeminiYouTubeLimitation = geminiError.message?.includes('requires video download') || 
-                                               geminiError.message?.includes('video download');
-            
+            const isGeminiYouTubeLimitation = geminiError.message?.includes('requires video download') ||
+              geminiError.message?.includes('video download');
+
             // Always throw the "no captions" error if that's what the YouTube error was about
             // This ensures we return the proper error code even if Gemini can't help (e.g., YouTube videos need download)
             if (isNoCaptionsError) {
@@ -664,27 +663,27 @@ export const extractTranscript = onCall(
               const errorMessage = isGeminiYouTubeLimitation
                 ? 'Video does not have captions available. Gemini transcription for YouTube videos requires video download, which is not yet implemented. Please use YouTube\'s built-in transcript feature if available, or enter the transcript manually.'
                 : youtubeError.message || 'Video does not have captions available. The video may not have captions enabled.';
-              
+
               throw new HttpsError('failed-precondition', errorMessage);
             }
-            
+
             // If the original error wasn't about captions, check if geminiError is an HttpsError and re-throw it
             if (geminiError instanceof HttpsError) {
               throw geminiError;
             }
-            
+
             // Otherwise, re-throw the original YouTube error
             throw youtubeError;
           }
         }
       } else if (platform === 'Vimeo') {
         try {
-        transcriptData = await fetchVimeoTranscript(extractedVideoId);
-        language = 'en'; // Default to English for Vimeo
+          transcriptData = await fetchVimeoTranscript(extractedVideoId);
+          language = 'en'; // Default to English for Vimeo
         } catch (vimeoError: any) {
           // Vimeo transcript failed, try Gemini fallback if available
           console.log('[extractTranscript] Vimeo transcript failed, attempting Gemini fallback:', vimeoError.message);
-          
+
           try {
             const geminiKeyData = await getAIApiKey(organizationId, 'gemini', request.auth.uid);
             if (geminiKeyData && geminiKeyData.apiKey) {
@@ -741,7 +740,7 @@ export const extractTranscript = onCall(
       };
     } catch (error: any) {
       console.error('Error extracting transcript:', error);
-      
+
       if (error instanceof HttpsError) {
         throw error;
       }

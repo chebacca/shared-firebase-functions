@@ -69,7 +69,8 @@ export const aiPredictiveAutomation = onCall(async (request): Promise<Predictive
     }
 
     // Get API key
-    const provider = preferredProvider || 'openai';
+    // Get API key
+    const provider = preferredProvider || 'gemini';
     const apiKeyData = await getAIApiKey(organizationId, provider, userId);
     if (!apiKeyData) {
       throw new HttpsError(
@@ -143,7 +144,7 @@ Format as JSON array.`;
           action: `Update status to "${status}"`,
           description: `Move ${entityType} to ${status} status`,
           confidence: transition ? Math.min(transition.count / 10, 0.9) : 0.5,
-          rationale: transition 
+          rationale: transition
             ? `This transition happened ${transition.count} times in similar items`
             : 'This is a valid next status in the workflow',
           data: {

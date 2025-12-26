@@ -78,7 +78,7 @@ export const aiAutomationSuggestions = onCall(async (request): Promise<Automatio
     }
 
     // Get API key
-    const provider = preferredProvider || 'openai';
+    const provider = preferredProvider || 'gemini';
     const apiKeyData = await getAIApiKey(organizationId, provider, userId);
     if (!apiKeyData) {
       throw new HttpsError(

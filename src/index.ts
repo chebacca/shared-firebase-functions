@@ -232,6 +232,24 @@ export {
 // Export AI functions
 export * from './ai';
 
+// Export Clip Show Pro AI and Workflow functions
+export {
+  generateScript,
+  analyzePitchContent,
+  notifyPitchStatusChange,
+  notifyPitchAssignment,
+  notifyLicensingSpecialist,
+  getPitchAnalytics,
+  clipShowProHealthCheck,
+  autoCreateStory,
+  syncPitchFromStory,
+  onPitchCreated,
+  onPitchUpdated,
+  onStoryUpdated,
+  onClearanceCreated,
+  onClearanceUpdated
+} from './clipShowPro';
+
 // Export System Alerts
 export * from './utils/systemAlerts';
 

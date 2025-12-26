@@ -1,6 +1,6 @@
 import express from 'express';
-import { db } from '../../../src/shared/utils';
-import { authenticateToken } from '../../../src/shared/middleware';
+import { db } from '../shared/utils';
+import { authenticateToken } from '../shared/middleware';
 import { FieldValue } from 'firebase-admin/firestore';
 
 const router = express.Router();

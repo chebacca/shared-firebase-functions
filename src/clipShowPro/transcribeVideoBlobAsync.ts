@@ -12,10 +12,8 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
 import * as admin from 'firebase-admin';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getAIApiKey } from '../ai/utils/aiHelpers';
-import FormData from 'form-data';
-import axios from 'axios';
+import { GeminiService } from '../ai/GeminiService';
 
 // Define encryption key secret for Gemini API key decryption
 const encryptionKeySecret = defineSecret('INTEGRATIONS_ENCRYPTION_KEY');
@@ -87,156 +85,21 @@ async function transcribeVideoBlobWithGemini(
   mimeType: string,
   organizationId: string,
   userId: string | undefined,
-  model: string = 'gemini-1.5-flash'
+  model: string = 'gemini-2.5-flash'
 ): Promise<{ text: string; timestamps?: Array<{ start: number; end: number; text: string }> }> {
-  try {
-    console.log(`[Gemini Transcription] Starting blob transcription for file: ${fileName}`);
-    
-    // Get Gemini API key
-    const keyData = await getAIApiKey(organizationId, 'gemini', userId);
-    if (!keyData || !keyData.apiKey) {
-      throw new Error('Gemini API key not configured for this organization');
-    }
-
-    const apiKey = keyData.apiKey;
-    const geminiModel = keyData.model || model;
-    
-    console.log(`[Gemini Transcription] Using model: ${geminiModel}`);
-
-    // Initialize Gemini
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const geminiModelInstance = genAI.getGenerativeModel({ model: geminiModel });
-
-    const fileSizeMB = Math.round(videoBuffer.length / 1024 / 1024);
-    console.log(`[Gemini Transcription] Video size: ${fileSizeMB}MB`);
-
-    // Use file upload API for files larger than 1MB or Pro models
-    const maxSizeInline = 1 * 1024 * 1024; // 1MB
-    const useFileUpload = videoBuffer.length > maxSizeInline || geminiModel.includes('pro');
-
-    let fileUri: string | null = null;
-
-    if (useFileUpload) {
-      console.log(`[Gemini Transcription] Using file upload API for ${fileSizeMB}MB file`);
-      
-      // Upload file to Gemini using File API via HTTP
-      const formData = new FormData();
-      
-      formData.append('metadata', JSON.stringify({
-        file: { displayName: fileName || 'video' },
-        purpose: 'FILE_DATA'
-      }));
-      formData.append('file', videoBuffer, {
-        filename: fileName || 'video.mp4',
-        contentType: mimeType || 'video/mp4',
-      });
-
-      const uploadUrl = `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`;
-      const uploadResponse = await axios.post(uploadUrl, formData, {
-        headers: formData.getHeaders(),
-        maxContentLength: Infinity,
-        maxBodyLength: Infinity,
-      });
-
-      const uploadedFile = uploadResponse.data.file;
-      if (!uploadedFile || !uploadedFile.name) {
-        throw new Error('Failed to get file name from Gemini upload');
-      }
-
-      // Gemini API returns name - normalize it to ensure it has exactly one "files/" prefix
-      // The API might return just the ID (e.g., "sa87goykixqm") or with prefix (e.g., "files/sa87goykixqm")
-      let fileId = uploadedFile.name;
-      // Remove any existing "files/" prefix
-      if (fileId.startsWith('files/')) {
-        fileId = fileId.substring(6); // Remove "files/" prefix
-      }
-      // Ensure we have exactly one "files/" prefix
-      fileUri = `files/${fileId}`;
-      console.log(`[Gemini Transcription] File uploaded - raw name: "${uploadedFile.name}", normalized URI: ${fileUri}`);
-
-      // Wait for file to be processed
-      let fileReady = false;
-      let attempts = 0;
-      const maxAttempts = 300; // 5 minutes max wait for very large files
-      
-      while (!fileReady && attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
-        
-        const statusUrl = `https://generativelanguage.googleapis.com/v1beta/${fileUri}?key=${apiKey}`;
-        const statusResponse = await axios.get(statusUrl);
-        
-        if (statusResponse.data.state === 'ACTIVE') {
-          fileReady = true;
-          break;
-        } else if (statusResponse.data.state === 'FAILED') {
-          throw new Error('File processing failed in Gemini');
-        }
-        
-        attempts++;
-      }
-
-      if (!fileReady) {
-        throw new Error('File processing timeout - file did not become ready in time');
-      }
-
-      console.log('[Gemini Transcription] File is ready for transcription');
-
-      // Generate content using file URI
-      const result = await geminiModelInstance.generateContent([
-        {
-          fileData: {
-            mimeType: mimeType || 'video/mp4',
-            fileUri: fileUri,
-          },
-        },
-        {
-          text: 'Please transcribe this video and provide a detailed transcript with timestamps if possible. Format the response as a transcript with time markers.',
-        },
-      ]);
-
-      // Clean up uploaded file
-      try {
-        const deleteUrl = `https://generativelanguage.googleapis.com/v1beta/${fileUri}?key=${apiKey}`;
-        await axios.delete(deleteUrl);
-        console.log('[Gemini Transcription] Cleaned up uploaded file');
-      } catch (cleanupError) {
-        console.warn('[Gemini Transcription] Failed to cleanup file:', cleanupError);
-      }
-
-      const response = await result.response;
-      const transcriptText = response.text();
-
-      return {
-        text: transcriptText,
-      };
-    } else {
-      // Use inline data for small files
-      console.log('[Gemini Transcription] Using inline data API');
-      
-      const base64Data = videoBuffer.toString('base64');
-      const result = await geminiModelInstance.generateContent([
-        {
-          inlineData: {
-            data: base64Data,
-            mimeType: mimeType || 'video/mp4',
-          },
-        },
-        {
-          text: 'Please transcribe this video and provide a detailed transcript with timestamps if possible. Format the response as a transcript with time markers.',
-        },
-      ]);
-
-      const response = await result.response;
-      const transcriptText = response.text();
-
-      return {
-        text: transcriptText,
-      };
-    }
-  } catch (error: any) {
-    console.error('[Gemini Transcription] Error:', error);
-    throw new Error(`Gemini transcription failed: ${error.message || 'Unknown error'}`);
+  const keyData = await getAIApiKey(organizationId, 'gemini', userId);
+  if (!keyData || !keyData.apiKey) {
+    throw new Error('Gemini API key not configured for this organization');
   }
+
+  const geminiSvc = new GeminiService(keyData.apiKey);
+  const result = await geminiSvc.transcribeMedia(
+    videoBuffer.toString('base64'),
+    mimeType,
+    fileName,
+    keyData.model || model
+  );
+  return result;
 }
 
 /**
@@ -271,14 +134,14 @@ export const createTranscriptionTask = onCall(
 
       // Use provided task ID or generate new one
       const taskId = providedTaskId || `transcription_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
+
       let storagePath: string | undefined;
       let videoSizeMB = 0;
-      
+
       if (providedStoragePath) {
         // Use provided Storage path (client uploaded directly)
         storagePath = providedStoragePath;
-        
+
         // Get file size from Storage metadata
         try {
           const bucket = storage.bucket();
@@ -295,7 +158,7 @@ export const createTranscriptionTask = onCall(
         const videoBuffer = Buffer.from(videoData, 'base64');
         videoSizeMB = Math.round(videoBuffer.length / 1024 / 1024);
         const maxSizeMB = model?.includes('pro') ? 2048 : 20; // 2GB for Pro, 20MB for Flash
-        
+
         if (videoSizeMB > maxSizeMB) {
           throw new HttpsError(
             'invalid-argument',
@@ -307,7 +170,7 @@ export const createTranscriptionTask = onCall(
         const bucket = storage.bucket();
         storagePath = `transcription-tasks/${organizationId}/${taskId}/${fileName || 'video.mp4'}`;
         const file = bucket.file(storagePath);
-        
+
         await file.save(videoBuffer, {
           metadata: {
             contentType: mimeType || 'video/mp4',
@@ -318,7 +181,7 @@ export const createTranscriptionTask = onCall(
             },
           },
         });
-        
+
         console.log(`[createTranscriptionTask] Stored video in Storage: ${storagePath} (${videoSizeMB}MB)`);
       }
 
@@ -330,7 +193,7 @@ export const createTranscriptionTask = onCall(
         storagePath, // Always use Storage path
         fileName: fileName || 'video',
         mimeType: mimeType || 'video/mp4',
-        model: model || 'gemini-1.5-flash',
+        model: model || 'gemini-2.5-flash',
         status: 'pending',
         createdAt: FieldValue.serverTimestamp(),
       };
@@ -345,7 +208,7 @@ export const createTranscriptionTask = onCall(
       };
     } catch (error: any) {
       console.error('[createTranscriptionTask] Error:', error);
-      
+
       if (error instanceof HttpsError) {
         throw error;
       }
@@ -397,7 +260,7 @@ export const processTranscriptionTask = onDocumentCreated(
 
       // Get video data
       let videoBuffer: Buffer;
-      
+
       try {
         if (taskData.storagePath) {
           // Download from Storage
@@ -437,19 +300,19 @@ export const processTranscriptionTask = onDocumentCreated(
           apiKeyLength: keyData?.apiKey?.length || 0,
           model: keyData?.model || 'none',
         });
-        
+
         if (!keyData) {
           throw new Error('getAIApiKey returned null - API key not found in Firestore');
         }
-        
+
         if (!keyData.apiKey) {
           throw new Error('API key data exists but apiKey field is missing or empty');
         }
-        
+
         if (typeof keyData.apiKey !== 'string' || keyData.apiKey.trim().length === 0) {
           throw new Error(`Invalid API key format: expected non-empty string, got ${typeof keyData.apiKey}`);
         }
-        
+
         console.log(`[processTranscriptionTask] ✅ API key retrieved successfully (length: ${keyData.apiKey.length}, model: ${keyData.model || 'default'})`);
       } catch (keyError: any) {
         console.error(`[processTranscriptionTask] ❌ Failed to get API key:`, {
@@ -463,20 +326,20 @@ export const processTranscriptionTask = onDocumentCreated(
       }
 
       const apiKey = keyData.apiKey;
-      let geminiModel = keyData.model || taskData.model || 'gemini-1.5-flash';
-      
+      let geminiModel = keyData.model || taskData.model || 'gemini-2.5-flash';
+
       // Validate and normalize model name (fix invalid model names like gemini-2.5-flash)
-      const validModels = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash-exp', 'gemini-2.0-flash-thinking-exp-001'];
+      const validModels = ['gemini-2.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash-exp', 'gemini-2.0-flash-thinking-exp-001'];
       if (!validModels.includes(geminiModel)) {
-        console.warn(`[processTranscriptionTask] ⚠️ Invalid model name "${geminiModel}", defaulting to gemini-1.5-flash`);
-        geminiModel = 'gemini-1.5-flash';
+        console.warn(`[processTranscriptionTask] ⚠️ Invalid model name "${geminiModel}", defaulting to gemini-2.5-flash`);
+        geminiModel = 'gemini-2.5-flash';
       }
-      
+
       // Validate API key format (Gemini keys typically start with AIza)
       if (!apiKey.startsWith('AIza') && apiKey.length < 20) {
         console.warn(`[processTranscriptionTask] ⚠️ API key format looks unusual (length: ${apiKey.length}, starts with: ${apiKey.substring(0, 4)})`);
       }
-      
+
       console.log(`[processTranscriptionTask] Using Gemini model: ${geminiModel}`);
 
       // Check file size limits (Gemini Flash supports up to 20MB, Pro supports up to 2GB)
@@ -485,250 +348,20 @@ export const processTranscriptionTask = onDocumentCreated(
         throw new Error(`Video file is too large (${fileSizeMB}MB). Maximum size for ${geminiModel} is ${maxSizeMB}MB.`);
       }
 
-      // Upload video to Gemini
-      console.log(`[processTranscriptionTask] 📤 Starting video upload to Gemini API`);
-      console.log(`[processTranscriptionTask] Upload details:`, {
-        fileSizeMB,
-        fileName: taskData.fileName,
-        mimeType: taskData.mimeType,
-        model: geminiModel,
-      });
-      let fileUri: string;
+      let transcriptText: string = '';
+      let timestamps: any[] = [];
 
-      try {
-        const formData = new FormData();
-        formData.append('metadata', JSON.stringify({
-          file: { displayName: taskData.fileName || 'video' },
-          purpose: 'FILE_DATA'
-        }));
-        formData.append('file', videoBuffer, {
-          filename: taskData.fileName || 'video.mp4',
-          contentType: taskData.mimeType || 'video/mp4',
-        });
+      // Use GeminiService
+      const geminiSvc = new GeminiService(apiKey);
+      const result = await geminiSvc.transcribeMedia(
+        videoBuffer.toString('base64'),
+        taskData.mimeType,
+        taskData.fileName,
+        geminiModel
+      );
 
-        const uploadUrl = `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`;
-        const uploadResponse = await axios.post(uploadUrl, formData, {
-          headers: formData.getHeaders(),
-          maxContentLength: Infinity,
-          maxBodyLength: Infinity,
-          timeout: 300000, // 5 minutes timeout for large files
-        });
-
-        const uploadedFile = uploadResponse.data?.file;
-        if (!uploadedFile || !uploadedFile.name) {
-          console.error(`[processTranscriptionTask] Upload response:`, JSON.stringify(uploadResponse.data, null, 2));
-          throw new Error('Failed to get file name from Gemini upload response');
-        }
-
-        // Gemini API returns name - normalize it to ensure it has exactly one "files/" prefix
-        let fileId = uploadedFile.name;
-        if (fileId.startsWith('files/')) {
-          fileId = fileId.substring(6); // Remove "files/" prefix
-        }
-        fileUri = `files/${fileId}`;
-        console.log(`[processTranscriptionTask] File uploaded to Gemini - raw name: "${uploadedFile.name}", normalized URI: ${fileUri}`);
-      } catch (uploadError: any) {
-        console.error(`[processTranscriptionTask] ❌ Upload failed:`, {
-          error: uploadError.message,
-          stack: uploadError.stack,
-          name: uploadError.name,
-          response: uploadError.response?.data,
-          status: uploadError.response?.status,
-          statusText: uploadError.response?.statusText,
-        });
-        
-        const statusCode = uploadError.response?.status;
-        const apiError = uploadError.response?.data?.error;
-        const errorMessage = uploadError.message || 'Unknown error';
-        
-        // Provide specific error messages
-        if (statusCode === 400) {
-          const apiMsg = apiError?.message || 'Invalid file format or size';
-          throw new Error(`Gemini API rejected the file: ${apiMsg}. Please ensure the video is in a supported format (MP4, MOV, etc.) and within size limits (20MB for Flash, 2GB for Pro).`);
-        } else if (statusCode === 401 || statusCode === 403) {
-          throw new Error('Gemini API authentication failed: Invalid API key or insufficient permissions. Please check your API key configuration in organization settings.');
-        } else if (statusCode === 429) {
-          throw new Error('Gemini API rate limit exceeded: Too many requests. Please try again later or upgrade your API plan.');
-        } else if (uploadError.code === 'ECONNABORTED' || errorMessage.includes('timeout')) {
-          throw new Error('Upload request timed out. The file may be too large or the connection is slow. Please try again.');
-        } else if (uploadError.code === 'ENOTFOUND' || errorMessage.includes('network')) {
-          throw new Error('Network error during upload. Please check your internet connection and try again.');
-        }
-        
-        const apiMsg = apiError?.message || errorMessage;
-        throw new Error(`Failed to upload video to Gemini: ${apiMsg}`);
-      }
-
-      // Wait for file to be processed
-      console.log(`[processTranscriptionTask] ⏳ Waiting for Gemini to process file (max ${300 * 2 / 60} minutes)...`);
-      let fileReady = false;
-      let attempts = 0;
-      const maxAttempts = 300; // 10 minutes max (300 * 2 seconds)
-      
-      try {
-        while (!fileReady && attempts < maxAttempts) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          
-          const statusUrl = `https://generativelanguage.googleapis.com/v1beta/${fileUri}?key=${apiKey}`;
-          const statusResponse = await axios.get(statusUrl, {
-            timeout: 10000, // 10 second timeout
-          });
-          
-          const state = statusResponse.data?.state;
-          console.log(`[processTranscriptionTask] File processing status (attempt ${attempts + 1}/${maxAttempts}): ${state}`);
-          
-          if (state === 'ACTIVE') {
-            fileReady = true;
-            break;
-          } else if (state === 'FAILED') {
-            const errorMessage = statusResponse.data?.error?.message || 'Unknown error';
-            throw new Error(`File processing failed in Gemini: ${errorMessage}`);
-          }
-          
-          attempts++;
-        }
-
-        if (!fileReady) {
-          throw new Error(`File processing timeout - file did not become ready after ${maxAttempts * 2} seconds`);
-        }
-      } catch (processingError: any) {
-        console.error(`[processTranscriptionTask] ❌ File processing error:`, {
-          error: processingError.message,
-          stack: processingError.stack,
-          name: processingError.name,
-          response: processingError.response?.data,
-          status: processingError.response?.status,
-        });
-        
-        // Clean up uploaded file
-        try {
-          const deleteUrl = `https://generativelanguage.googleapis.com/v1beta/${fileUri}?key=${apiKey}`;
-          await axios.delete(deleteUrl);
-          console.log('[processTranscriptionTask] Cleaned up Gemini file after processing error');
-        } catch (cleanupError) {
-          console.warn('[processTranscriptionTask] Failed to cleanup Gemini file:', cleanupError);
-        }
-        
-        // Provide specific error message
-        const errorMessage = processingError.message || 'Unknown error';
-        if (errorMessage.includes('timeout') || processingError.code === 'ECONNABORTED') {
-          throw new Error('File processing timed out. The video may be too long or the service may be busy. Please try again with a shorter video.');
-        } else if (processingError.response?.status === 404) {
-          throw new Error('Uploaded file not found in Gemini. The upload may have failed. Please try again.');
-        }
-        throw new Error(`File processing failed: ${errorMessage}`);
-      }
-
-      console.log('[processTranscriptionTask] ✅ File is ready for transcription');
-
-      // Update progress
-      console.log(`[processTranscriptionTask] 📊 Updating progress to 30%`);
-      await event.data.ref.update({ progress: 30 });
-
-      // Transcribe entire video at once (no chunking) using the already-uploaded file
-      console.log(`[processTranscriptionTask] 🎬 Starting transcription of entire video (${fileSizeMB}MB) in one pass`);
-      
-      let transcriptText: string;
-      let timestamps: Array<{ start: number; end: number; text: string }> | undefined;
-
-      try {
-        // Use Gemini API directly with the uploaded file URI
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const geminiModelInstance = genAI.getGenerativeModel({ model: geminiModel });
-
-        console.log(`[processTranscriptionTask] Generating transcription with model: ${geminiModel}`);
-
-        // Generate content using file URI
-        const result = await geminiModelInstance.generateContent([
-          {
-            fileData: {
-              mimeType: taskData.mimeType || 'video/mp4',
-              fileUri: fileUri,
-            },
-          },
-          {
-            text: 'Please transcribe this video and provide a detailed transcript with timestamps if possible. Format the response as a transcript with time markers.',
-          },
-        ]);
-
-        const response = await result.response;
-        transcriptText = response.text();
-        
-        if (!transcriptText || transcriptText.trim().length === 0) {
-          throw new Error('Transcription returned empty result');
-        }
-
-        timestamps = undefined; // Gemini doesn't provide structured timestamps in this format
-
-        console.log(`[processTranscriptionTask] ✅ Transcription completed successfully`);
-        console.log(`[processTranscriptionTask] Transcript details:`, {
-          length: transcriptText.length,
-          preview: transcriptText.substring(0, 100) + '...',
-        });
-      } catch (transcriptionError: any) {
-        console.error(`[processTranscriptionTask] ❌ Transcription failed:`, {
-          error: transcriptionError.message,
-          stack: transcriptionError.stack,
-          name: transcriptionError.name,
-          response: transcriptionError.response?.data,
-          status: transcriptionError.response?.status,
-          statusText: transcriptionError.response?.statusText,
-        });
-        
-        // Clean up uploaded file
-        try {
-          const deleteUrl = `https://generativelanguage.googleapis.com/v1beta/${fileUri}?key=${apiKey}`;
-          await axios.delete(deleteUrl);
-          console.log('[processTranscriptionTask] Cleaned up Gemini file after transcription error');
-        } catch (cleanupError) {
-          console.warn('[processTranscriptionTask] Failed to cleanup Gemini file:', cleanupError);
-        }
-        
-        // Provide more specific error messages based on error type
-        const errorMessage = transcriptionError.message || 'Unknown error';
-        const errorString = errorMessage.toLowerCase();
-        const statusCode = transcriptionError.response?.status;
-        const apiError = transcriptionError.response?.data?.error;
-        
-        // API key errors
-        if (statusCode === 401 || statusCode === 403 || errorString.includes('api key') || errorString.includes('authentication') || errorString.includes('unauthorized')) {
-          throw new Error('Gemini API key is invalid or has insufficient permissions. Please check your API key configuration in organization settings.');
-        }
-        
-        // Quota/rate limit errors
-        if (statusCode === 429 || errorString.includes('quota') || errorString.includes('rate limit') || errorString.includes('resource exhausted')) {
-          throw new Error('Gemini API quota exceeded or rate limit reached. Please try again later or upgrade your API plan.');
-        }
-        
-        // Invalid format/size errors
-        if (statusCode === 400 || errorString.includes('invalid') || errorString.includes('format') || errorString.includes('unsupported') || errorString.includes('too large')) {
-          const apiMessage = apiError?.message || errorMessage;
-          throw new Error(`Video format or file is invalid: ${apiMessage}. Please ensure the video is in a supported format (MP4, MOV, etc.) and within size limits.`);
-        }
-        
-        // Timeout errors
-        if (errorString.includes('timeout') || errorString.includes('timed out') || transcriptionError.code === 'ECONNABORTED') {
-          throw new Error('Transcription request timed out. The video may be too long or the service may be busy. Please try again with a shorter video or wait a few minutes.');
-        }
-        
-        // Network errors
-        if (errorString.includes('network') || errorString.includes('connection') || errorString.includes('econnrefused') || transcriptionError.code === 'ENOTFOUND') {
-          throw new Error('Network error connecting to Gemini API. Please check your internet connection and try again.');
-        }
-        
-        // Generic error with API details if available
-        const apiMessage = apiError?.message || errorMessage;
-        throw new Error(`Transcription failed: ${apiMessage}`);
-      }
-
-      // Clean up uploaded file from Gemini
-      try {
-        const deleteUrl = `https://generativelanguage.googleapis.com/v1beta/${fileUri}?key=${apiKey}`;
-        await axios.delete(deleteUrl);
-        console.log('[processTranscriptionTask] Cleaned up Gemini file');
-      } catch (cleanupError) {
-        console.warn('[processTranscriptionTask] Failed to cleanup Gemini file:', cleanupError);
-      }
+      transcriptText = result.text;
+      timestamps = result.timestamps || [];
 
       // Update progress
       console.log(`[processTranscriptionTask] 📊 Updating progress to 90%`);
@@ -773,10 +406,10 @@ export const processTranscriptionTask = onDocumentCreated(
         name: error.name,
         code: error.code,
       });
-      
+
       // Extract detailed error message
       let errorMessage = error.message || 'Unknown error occurred';
-      
+
       // If it's an axios error, try to extract more details
       if (error.response) {
         const apiError = error.response.data?.error;
@@ -786,7 +419,7 @@ export const processTranscriptionTask = onDocumentCreated(
           errorMessage = `HTTP ${error.response.status}: ${errorMessage}`;
         }
       }
-      
+
       // Update task with failure status and detailed error
       try {
         await event.data.ref.update({
@@ -843,7 +476,7 @@ export const getTranscriptionTaskStatus = onCall(
       };
     } catch (error: any) {
       console.error('[getTranscriptionTaskStatus] Error:', error);
-      
+
       if (error instanceof HttpsError) {
         throw error;
       }

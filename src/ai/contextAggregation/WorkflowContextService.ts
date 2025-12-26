@@ -15,7 +15,7 @@ const db = getFirestore();
 
 export interface WorkflowContext {
   // Current phase distribution
-  phaseDistribution: Map<string, number>; // phase -> count
+  phaseDistribution: Record<string, number>; // phase -> count
 
   // Bottlenecks
   bottlenecks: Array<{
@@ -42,14 +42,14 @@ export interface WorkflowContext {
   // Workflow velocity metrics
   velocityMetrics: {
     averageTimeToComplete: number; // seconds
-    averageTimePerPhase: Map<string, number>; // phase -> seconds
+    averageTimePerPhase: Record<string, number>; // phase -> seconds
     completionRate: number; // 0-1
     itemsInProgress: number;
     itemsCompleted: number;
   };
 
   // Items by phase
-  itemsByPhase: Map<string, Array<{
+  itemsByPhase: Record<string, Array<{
     entityType: 'pitch' | 'story';
     entityId: string;
     title: string;
@@ -158,29 +158,29 @@ export async function gatherWorkflowContext(
   });
 
   // Build phase distribution
-  const phaseDistribution = new Map<string, number>();
-  const itemsByPhase = new Map<string, Array<{
+  const phaseDistribution: Record<string, number> = {};
+  const itemsByPhase: Record<string, Array<{
     entityType: 'pitch' | 'story';
     entityId: string;
     title: string;
     status: string;
     daysInStatus: number;
-  }>>();
+  }>> = {};
 
   pitches.forEach(pitch => {
     const status = pitch.status || 'Unknown';
     const phase = PITCH_PHASES[status] || 'Unknown';
-    
-    phaseDistribution.set(phase, (phaseDistribution.get(phase) || 0) + 1);
-    
-    if (!itemsByPhase.has(phase)) {
-      itemsByPhase.set(phase, []);
+
+    phaseDistribution[phase] = (phaseDistribution[phase] || 0) + 1;
+
+    if (!itemsByPhase[phase]) {
+      itemsByPhase[phase] = [];
     }
 
     const updatedAt = pitch.updatedAt?.toDate ? pitch.updatedAt.toDate() : new Date(pitch.updatedAt || pitch.createdAt || now);
     const daysInStatus = Math.floor((now.getTime() - updatedAt.getTime()) / (24 * 60 * 60 * 1000));
 
-    itemsByPhase.get(phase)!.push({
+    itemsByPhase[phase].push({
       entityType: 'pitch',
       entityId: pitch.id,
       title: pitch.clipTitle || 'Untitled',
@@ -192,17 +192,17 @@ export async function gatherWorkflowContext(
   stories.forEach(story => {
     const status = story.status || 'Unknown';
     const phase = STORY_PHASES[status] || 'Unknown';
-    
-    phaseDistribution.set(phase, (phaseDistribution.get(phase) || 0) + 1);
-    
-    if (!itemsByPhase.has(phase)) {
-      itemsByPhase.set(phase, []);
+
+    phaseDistribution[phase] = (phaseDistribution[phase] || 0) + 1;
+
+    if (!itemsByPhase[phase]) {
+      itemsByPhase[phase] = [];
     }
 
     const updatedAt = story.updatedAt?.toDate ? story.updatedAt.toDate() : new Date(story.updatedAt || story.createdAt || now);
     const daysInStatus = Math.floor((now.getTime() - updatedAt.getTime()) / (24 * 60 * 60 * 1000));
 
-    itemsByPhase.get(phase)!.push({
+    itemsByPhase[phase].push({
       entityType: 'story',
       entityId: story.id,
       title: story.title || story.clipTitle || 'Untitled',
@@ -310,7 +310,7 @@ export async function gatherWorkflowContext(
   // Workflow velocity metrics
   const velocityMetrics: WorkflowContext['velocityMetrics'] = {
     averageTimeToComplete: 0,
-    averageTimePerPhase: new Map(),
+    averageTimePerPhase: {},
     completionRate: 0,
     itemsInProgress: 0,
     itemsCompleted: 0

@@ -17,12 +17,11 @@ async function listModels() {
 
         // Try different model names
         const modelsToTry = [
-            'gemini-pro',
-            'gemini-1.5-pro-latest',
+            'gemini-2.5-flash',
+            'gemini-2.5-pro',
+            'gemini-2.0-flash',
             'gemini-1.5-flash',
-            'gemini-1.5-flash-latest',
-            'models/gemini-pro',
-            'models/gemini-1.5-pro-latest'
+            'gemini-pro'
         ];
 
         for (const modelName of modelsToTry) {
@@ -34,7 +33,7 @@ async function listModels() {
                 console.log(`   Response: ${result.response.text().substring(0, 50)}...`);
                 break; // Stop after first working model
             } catch (error) {
-                console.log(`❌ ${modelName} failed: ${error.message.substring(0, 100)}`);
+                console.log(`❌ ${modelName} failed: ${error.message}`);
             }
         }
 

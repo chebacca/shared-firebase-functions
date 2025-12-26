@@ -1,7 +1,7 @@
 import { onRequest } from 'firebase-functions/v2/https';
 import express from 'express';
 import cors from 'cors';
-import { authenticateToken } from '../../../src/shared/middleware';
+import { authenticateToken } from './shared/middleware';
 import sessionsRouter from './routes/sessions';
 
 // Create Express app for sessions API

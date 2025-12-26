@@ -22,6 +22,8 @@ import { gatherBridgeContext, BridgeContext } from './BridgeContextService';
 import { gatherTeamContext, TeamContext } from './TeamContextService';
 import { gatherPWSWorkflowContext, PWSWorkflowContext } from './PWSWorkflowContextService';
 import { gatherSessionContext, SessionContext } from './SessionContextService';
+import { gatherBudgetContext, BudgetContext } from './BudgetContextService';
+import { gatherInventoryContext, InventoryContext } from './InventoryContextService';
 
 export interface GlobalContext {
   organizationId: string;
@@ -38,6 +40,8 @@ export interface GlobalContext {
   team: TeamContext;
   pwsWorkflows: PWSWorkflowContext; // PWS workflow context for CNS
   sessions: SessionContext; // Session context for workflow creation
+  budgets: BudgetContext;
+  inventory: InventoryContext;
 }
 
 /**
@@ -53,9 +57,8 @@ export async function gatherGlobalContext(
 ): Promise<GlobalContext> {
   const now = new Date();
 
-  // Parallel fetch of all contexts using existing services
+  // Parallel fetch of all contexts using existing services with individual error handling
   // Each service follows the same patterns as its corresponding frontend app
-  // Session context is fetched separately with error handling to prevent failures
   const [
     dashboardContext,
     licensingContext,
@@ -64,19 +67,83 @@ export async function gatherGlobalContext(
     workflowContext,
     scheduleContext,
     teamContext,
-    pwsWorkflowContext
+    pwsWorkflowContext,
+    budgetContext,
+    inventoryContext
   ] = await Promise.all([
-    gatherDashboardContext(organizationId),
-    gatherLicensingContext(organizationId),
-    gatherCallSheetContext(organizationId),
-    gatherBridgeContext(organizationId),
-    gatherWorkflowContext(organizationId),
-    gatherScheduleContext(organizationId, { userId }),
-    gatherTeamContext(organizationId),
-    gatherPWSWorkflowContext(organizationId) // PWS workflow context
+    // Dashboard Context
+    gatherDashboardContext(organizationId).catch(error => {
+      console.error('❌ [GlobalContext] Error gathering Dashboard context:', error);
+      return { activeProjects: 0, totalProjects: 0, projects: [] };
+    }),
+
+    // Licensing Context
+    gatherLicensingContext(organizationId).catch(error => {
+      console.error('❌ [GlobalContext] Error gathering Licensing context:', error);
+      return { activeLicenses: 0, totalLicenses: 0, licenses: [] };
+    }),
+
+    // Call Sheet Context
+    gatherCallSheetContext(organizationId).catch(error => {
+      console.error('❌ [GlobalContext] Error gathering Call Sheet context:', error);
+      return { activePersonnel: 0, personnel: [] };
+    }),
+
+    // Bridge Context
+    gatherBridgeContext(organizationId).catch(error => {
+      console.error('❌ [GlobalContext] Error gathering Bridge context:', error);
+      return { activeFolders: 0, folders: [] };
+    }),
+
+    // Workflow Context (Clip Show)
+    gatherWorkflowContext(organizationId).catch(error => {
+      console.error('❌ [GlobalContext] Error gathering Workflow context:', error);
+      return {
+        phaseDistribution: {},
+        bottlenecks: [],
+        statusTransitions: [],
+        velocityMetrics: { averageTimeToComplete: 0, averageTimePerPhase: {}, completionRate: 0, itemsInProgress: 0, itemsCompleted: 0 },
+        itemsByPhase: {}
+      };
+    }),
+
+    // Schedule Context
+    gatherScheduleContext(organizationId, { userId }).catch(error => {
+      console.error('❌ [GlobalContext] Error gathering Schedule context:', error);
+      return { linkedEvents: [], overdueItems: [], conflicts: [], atRiskItems: [], activeItemsTimeline: [] };
+    }),
+
+    // Team Context
+    gatherTeamContext(organizationId).catch(error => {
+      console.error('❌ [GlobalContext] Error gathering Team context:', error);
+      return { totalMembers: 0, activeMembers: 0, pendingMembers: 0, ownerCount: 0, adminCount: 0, memberCount: 0, viewerCount: 0, recentlyActive: 0 };
+    }),
+
+    // PWS Workflow Context
+    gatherPWSWorkflowContext(organizationId).catch(error => {
+      console.error('❌ [GlobalContext] Error gathering PWS Workflow context:', error);
+      return {
+        templates: [],
+        sessionWorkflows: [],
+        userWorkflows: [],
+        statistics: { totalTemplates: 0, totalActiveWorkflows: 0, averageWorkflowComplexity: 0, mostUsedTemplate: '' }
+      };
+    }),
+
+    // Budget Context
+    gatherBudgetContext(organizationId).catch(error => {
+      console.error('❌ [GlobalContext] Error gathering Budget context:', error);
+      return { totalBudgets: 0, activeBudgets: 0, totalBudgeted: 0, totalSpent: 0, budgets: [] };
+    }),
+
+    // Inventory Context
+    gatherInventoryContext(organizationId).catch(error => {
+      console.error('❌ [GlobalContext] Error gathering Inventory context:', error);
+      return { totalItems: 0, checkedOutItems: 0, availableItems: 0, lowStockItems: 0, items: [] };
+    })
   ]);
 
-  // Fetch session context separately with error handling to prevent it from breaking the entire context gathering
+  // Fetch session context separately with error handling (already handled in gatherSessionContext, but adding extra safety)
   let sessionContext: SessionContext;
   try {
     sessionContext = await gatherSessionContext(organizationId, sessionId);
@@ -92,7 +159,7 @@ export async function gatherGlobalContext(
     };
   }
 
-  return {
+  const globalContext: GlobalContext = {
     organizationId,
     timestamp: now.toISOString(),
     userId,
@@ -104,8 +171,13 @@ export async function gatherGlobalContext(
     schedule: scheduleContext,
     team: teamContext,
     pwsWorkflows: pwsWorkflowContext,
-    sessions: sessionContext
+    sessions: sessionContext,
+    budgets: budgetContext,
+    inventory: inventoryContext
   };
+
+  console.log(`✅ [GlobalContext] Context aggregation complete for org ${organizationId}`);
+  return globalContext;
 }
 
 /**
@@ -150,17 +222,17 @@ export async function gatherMinimalContextForGraph(
       folders: []
     },
     clipShow: {
-      phaseDistribution: new Map(),
+      phaseDistribution: {},
       bottlenecks: [],
       statusTransitions: [],
       velocityMetrics: {
         averageTimeToComplete: 0,
-        averageTimePerPhase: new Map(),
+        averageTimePerPhase: {},
         completionRate: 0,
         itemsInProgress: 0,
         itemsCompleted: 0
       },
-      itemsByPhase: new Map()
+      itemsByPhase: {}
     },
     schedule: {
       linkedEvents: [],
@@ -188,6 +260,20 @@ export async function gatherMinimalContextForGraph(
         sessionsByPhase: {},
         activeWorkflows: 0
       }
+    },
+    budgets: {
+      totalBudgets: 0,
+      activeBudgets: 0,
+      totalBudgeted: 0,
+      totalSpent: 0,
+      budgets: []
+    },
+    inventory: {
+      totalItems: 0,
+      checkedOutItems: 0,
+      availableItems: 0,
+      lowStockItems: 0,
+      items: []
     }
   };
 }

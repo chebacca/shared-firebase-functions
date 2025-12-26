@@ -1,20 +1,12 @@
 import express from 'express';
 import { db, getUserOrganizationId } from '../../shared/utils';
 import { authenticateToken } from '../../shared/middleware';
+import { GeminiService } from '../../ai/GeminiService';
 import { FieldValue } from 'firebase-admin/firestore';
 import * as functions from 'firebase-functions';
 // Lazy load heavy dependencies
-let GoogleGenerativeAI: any = null;
 let pdf: any = null;
 let mammoth: any = null;
-
-async function loadGenAI() {
-    if (!GoogleGenerativeAI) {
-        const mod = await import('@google/generative-ai');
-        GoogleGenerativeAI = mod.GoogleGenerativeAI;
-    }
-    return GoogleGenerativeAI;
-}
 
 async function loadPdf() {
     if (!pdf) {
@@ -32,26 +24,6 @@ async function loadMammoth() {
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 
 const router = express.Router();
-
-let genAI: any = null;
-
-// Initialize Gemini AI (Lazy)
-async function getGenAI() {
-    if (genAI) return genAI;
-    try {
-        const { GoogleGenerativeAI } = await import('@google/generative-ai');
-        const geminiKey = process.env.GEMINI_API_KEY || functions.config()?.api?.gemini_key;
-        if (geminiKey) {
-            genAI = new GoogleGenerativeAI(geminiKey);
-            console.log('✅ [ND BOT] Gemini AI initialized');
-        } else {
-            console.warn('⚠️ [ND BOT] Gemini API key not configured');
-        }
-    } catch (error) {
-        console.error('❌ [ND BOT] Failed to initialize Gemini AI:', error);
-    }
-    return genAI;
-}
 
 // Helper function to extract text from files
 async function extractTextFromFile(fileBuffer: Buffer, contentType: string): Promise<string> {
@@ -77,48 +49,7 @@ async function extractTextFromFile(fileBuffer: Buffer, contentType: string): Pro
     }
 }
 
-// Helper function to create structuring prompt for Gemini
-function createStructuringPrompt(rawText: string): string {
-    return `
-You are an expert document analyzer. Parse this delivery specification document and extract EVERY deliverable requirement, regardless of format, network, or industry.
 
-PARSING RULES:
-1. Extract ALL items that represent something to be delivered, submitted, or completed
-2. Look for ANY formatting: bullets (○●■▪•), dashes (-), numbers (1,2,3), letters (a,b,c), or plain text
-3. Parse nested lists and sub-items completely
-4. Extract items from ANY section: headers, paragraphs, lists, tables, footnotes
-5. Include procedural requirements, notifications, and workflow items
-6. Capture timing requirements and deadlines from context
-7. Do NOT make assumptions about industry or network - parse exactly what's written
-
-OUTPUT FORMAT:
-Return ONLY a JSON object with this EXACT structure:
-{
-  "deliverables": [
-    {
-      "deliverableName": "Clear, descriptive title from document (NEVER use 'Untitled' or generic names)",
-      "category": "Auto-categorize based on content",
-      "deadline": "Extract timing from context or 'Not specified'",
-      "specifications": ["List ALL requirements, formats, instructions"],
-      "priority": "high/medium/low based on urgency indicators",
-      "notes": "Any additional context or special instructions",
-      "sourceText": "The exact original text from the document that this deliverable was extracted from"
-    }
-  ]
-}
-
-SPECIFIC RULES FOR FIELDS:
-- category: Legal, Technical, Audio, Video, Documentation, Creative, Archive, Distribution, Quality Control, Project Management, Metadata, Post-Production
-- sourceText: EXACT original text for reference
-
-Document to analyze:
----
-${rawText}
----
-
-Return ONLY the JSON object, no other text.
-`;
-}
 
 // Upload endpoint
 router.post('/upload-bible', authenticateToken, async (req, res) => {
@@ -158,47 +89,40 @@ router.post('/upload-bible', authenticateToken, async (req, res) => {
             status: 'text_extracted'
         });
 
-        const ai = await getGenAI();
-        if (ai) {
-            try {
-                const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
-                const result = await model.generateContent(createStructuringPrompt(rawText));
-                const responseText = result.response.text();
+        const geminiKey = process.env.GEMINI_API_KEY || (functions.config()?.api && functions.config().api.gemini_key);
+        if (!geminiKey) throw new Error('Gemini API key not configured');
+        const geminiSvc = new GeminiService(geminiKey);
 
-                let cleanedResponse = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-                const startIndex = cleanedResponse.indexOf('{');
-                const structuredData = JSON.parse(cleanedResponse.substring(startIndex));
+        try {
+            const structuredData = await geminiSvc.parseNetworkBible(rawText);
 
-                const batch = db.batch();
-                structuredData.deliverables.forEach((deliverable: any, index: number) => {
-                    const deliverableId = `${bibleId}_deliverable_${index}`;
-                    const docRef = db.collection('networkDeliveryBibles').doc(bibleId).collection('deliverables').doc(deliverableId);
-                    batch.set(docRef, {
-                        ...deliverable,
-                        id: deliverableId,
-                        bibleId,
-                        organizationId,
-                        projectId: projectId || null,
-                        status: 'not_started',
-                        createdAt: FieldValue.serverTimestamp()
-                    });
+            const batch = db.batch();
+            structuredData.deliverables.forEach((deliverable: any, index: number) => {
+                const deliverableId = `${bibleId}_deliverable_${index}`;
+                const docRef = db.collection('networkDeliveryBibles').doc(bibleId).collection('deliverables').doc(deliverableId);
+                batch.set(docRef, {
+                    ...deliverable,
+                    id: deliverableId,
+                    bibleId,
+                    organizationId,
+                    projectId: projectId || null,
+                    status: 'not_started',
+                    createdAt: FieldValue.serverTimestamp()
                 });
+            });
 
-                await batch.commit();
-                await db.collection('networkDeliveryBibles').doc(bibleId).update({
-                    status: 'parsed_successfully',
-                    deliverableCount: structuredData.deliverables.length,
-                    parsedAt: FieldValue.serverTimestamp()
-                });
+            await batch.commit();
+            await db.collection('networkDeliveryBibles').doc(bibleId).update({
+                status: 'parsed_successfully',
+                deliverableCount: structuredData.deliverables.length,
+                parsedAt: FieldValue.serverTimestamp()
+            });
 
-                return res.json({ success: true, data: { bibleId, fileName, status: 'parsed_successfully', deliverableCount: structuredData.deliverables.length } });
-            } catch (parseError: any) {
-                await db.collection('networkDeliveryBibles').doc(bibleId).update({ status: 'parse_failed', error: parseError.message });
-                return res.status(500).json({ success: false, error: 'AI Parsing failed', errorDetails: parseError.message });
-            }
+            return res.json({ success: true, data: { bibleId, fileName, status: 'parsed_successfully', deliverableCount: structuredData.deliverables.length } });
+        } catch (parseError: any) {
+            await db.collection('networkDeliveryBibles').doc(bibleId).update({ status: 'parse_failed', error: parseError.message });
+            return res.status(500).json({ success: false, error: 'AI Parsing failed', errorDetails: parseError.message });
         }
-
-        return res.json({ success: true, data: { bibleId, fileName, status: 'text_extracted' } });
     } catch (error: any) {
         return res.status(500).json({ success: false, error: 'Upload failed', errorDetails: error.message });
     }
@@ -293,14 +217,12 @@ export const uploadNetworkDeliveryBible = onCall(async (request) => {
 
         await db.collection('networkDeliveryBibles').doc(bibleId).update({ rawText, status: 'text_extracted' });
 
-        const ai = await getGenAI();
-        if (ai) {
-            const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
-            const result = await model.generateContent(createStructuringPrompt(rawText));
-            const responseText = result.response.text();
-            let cleanedResponse = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            const startIndex = cleanedResponse.indexOf('{');
-            const structuredData = JSON.parse(cleanedResponse.substring(startIndex));
+        const geminiKey = process.env.GEMINI_API_KEY || (functions.config()?.api && functions.config().api.gemini_key);
+        if (!geminiKey) throw new Error('Gemini API key not configured');
+        const geminiSvc = new GeminiService(geminiKey);
+
+        try {
+            const structuredData = await geminiSvc.parseNetworkBible(rawText);
 
             const batch = db.batch();
             structuredData.deliverables.forEach((deliverable: any, index: number) => {
@@ -324,9 +246,10 @@ export const uploadNetworkDeliveryBible = onCall(async (request) => {
             });
 
             return { success: true, data: { bibleId, fileName, status: 'parsed_successfully', deliverableCount: structuredData.deliverables.length } };
+        } catch (parseError: any) {
+            await db.collection('networkDeliveryBibles').doc(bibleId).update({ status: 'parse_failed', error: parseError.message });
+            return { success: false, error: 'AI Parsing failed', details: parseError.message };
         }
-
-        return { success: true, data: { bibleId, fileName, status: 'text_extracted' } };
     } catch (error: any) {
         if (error instanceof HttpsError) throw error;
         throw new HttpsError('internal', error.message);

@@ -1,7 +1,7 @@
 import { onRequest } from 'firebase-functions/v2/https';
 import express from 'express';
 import cors from 'cors';
-import { authenticateToken } from '../../../src/shared/middleware';
+import { authenticateToken } from './shared/middleware';
 import workflowRouter from './routes/workflow';
 
 // Create Express app for workflow API

@@ -64,7 +64,7 @@ export class TokenUsageService {
   ): Promise<void> {
     try {
       const totalTokens = record.inputTokens + record.outputTokens;
-      
+
       // Calculate cost based on provider and model
       const cost = this.calculateTokenCost(
         record.provider,
@@ -119,26 +119,25 @@ export class TokenUsageService {
       'gpt-4-turbo': { input: 10.00, output: 30.00 },
       'gpt-4': { input: 30.00, output: 60.00 },
       'gpt-3.5-turbo': { input: 0.50, output: 1.50 },
-      
+
       // Claude
       'claude-3-5-sonnet-20241022': { input: 3.00, output: 15.00 },
       'claude-3-opus-20240229': { input: 15.00, output: 75.00 },
       'claude-3-sonnet-20240229': { input: 3.00, output: 15.00 },
       'claude-3-haiku-20240307': { input: 0.25, output: 1.25 },
-      
+
       // Gemini
       'gemini-2.5-flash': { input: 0.00, output: 0.00 }, // Free tier
-      'gemini-1.5-flash': { input: 0.00, output: 0.00 }, // Free tier
       'gemini-1.5-pro': { input: 1.25, output: 5.00 },
       'gemini-pro': { input: 0.50, output: 1.50 },
-      
+
       // Grok
       'grok-beta': { input: 0.00, output: 0.00 }, // Free during beta
     };
 
     // Find matching pricing (exact match or fallback to provider default)
     let modelPricing = pricing[model.toLowerCase()];
-    
+
     if (!modelPricing) {
       // Fallback to provider defaults
       if (provider === 'openai') {
@@ -154,7 +153,7 @@ export class TokenUsageService {
 
     const inputCost = (inputTokens / 1_000_000) * modelPricing.input;
     const outputCost = (outputTokens / 1_000_000) * modelPricing.output;
-    
+
     return inputCost + outputCost;
   }
 
@@ -199,7 +198,7 @@ export class TokenUsageService {
       }
 
       const subscription = subscriptions.data[0];
-      
+
       // Find the metered subscription item for this provider
       // We'll need to create these subscription items when setting up metered billing
       const subscriptionItem = subscription.items.data.find(
@@ -243,7 +242,7 @@ export class TokenUsageService {
   ): Promise<TokenUsageSummary[]> {
     try {
       const now = new Date();
-      const startDate = period === 'daily' 
+      const startDate = period === 'daily'
         ? new Date(now.getFullYear(), now.getMonth(), now.getDate())
         : new Date(now.getFullYear(), now.getMonth(), 1);
 
@@ -258,7 +257,7 @@ export class TokenUsageService {
       }
 
       const snapshot = await query.get();
-      
+
       // Group by provider
       const summaryMap = new Map<string, TokenUsageSummary>();
 

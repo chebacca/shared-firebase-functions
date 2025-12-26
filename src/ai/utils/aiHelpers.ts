@@ -27,7 +27,7 @@ export function decryptApiKey(encryptedKey: string): string {
 
     // Try AES decryption first (production)
     const decrypted = decryptTokens(encryptedKey);
-    
+
     // Extract the actual key value
     let apiKey: string;
     if (typeof decrypted === 'string') {
@@ -38,7 +38,7 @@ export function decryptApiKey(encryptedKey: string): string {
 
     console.log('🔍 [decryptApiKey] Decrypted key length:', apiKey.length);
     console.log('🔍 [decryptApiKey] Decrypted key first 20 chars:', apiKey.substring(0, 20));
-    
+
     // Check for Unicode replacement characters (65533 = �)
     const hasReplacementChars = apiKey.split('').some(char => char.charCodeAt(0) === 65533);
     if (hasReplacementChars) {
@@ -52,7 +52,7 @@ export function decryptApiKey(encryptedKey: string): string {
     // Only trim whitespace - don't sanitize the key itself
     // Validation happens at save time, so we trust the stored value
     apiKey = apiKey.trim();
-    
+
     // Basic validation - just check it's not empty
     if (!apiKey || apiKey.length === 0) {
       throw new Error('Decryption resulted in empty key');
@@ -62,19 +62,19 @@ export function decryptApiKey(encryptedKey: string): string {
     return apiKey;
   } catch (error) {
     console.error('❌ [decryptApiKey] AES decryption failed, trying fallback:', error);
-    
+
     // Fall back to base64 decoding (development/legacy - matches frontend AirtableSecurityService)
     try {
       const decoded = Buffer.from(encryptedKey, 'base64').toString('utf8');
       const trimmed = decoded.trim();
-      
+
       // Check for Unicode replacement characters in fallback too
       const hasReplacementChars = trimmed.split('').some(char => char.charCodeAt(0) === 65533);
       if (hasReplacementChars) {
         console.error('❌ [decryptApiKey] Found Unicode replacement characters in base64 decoded key');
         throw new Error('Base64 decoded key contains invalid Unicode characters');
       }
-      
+
       if (trimmed && trimmed.length > 0) {
         console.log('✅ [decryptApiKey] Successfully decoded via base64, length:', trimmed.length);
         return trimmed;
@@ -82,7 +82,7 @@ export function decryptApiKey(encryptedKey: string): string {
     } catch (base64Error) {
       console.error('❌ [decryptApiKey] Base64 decoding also failed:', base64Error);
     }
-    
+
     // If both fail, return as-is (might be unencrypted in dev)
     const fallback = encryptedKey.trim() || encryptedKey;
     console.log('⚠️ [decryptApiKey] Using fallback (raw key), length:', fallback.length);
@@ -214,12 +214,12 @@ export async function callAIProvider(
     });
 
     const responseText = completion.choices[0]?.message?.content || 'No response from AI';
-    
+
     // Track token usage
     if (options?.organizationId && options?.userId) {
       const inputTokens = completion.usage?.prompt_tokens || 0;
       const outputTokens = completion.usage?.completion_tokens || 0;
-      
+
       await TokenUsageService.recordTokenUsage({
         organizationId: options.organizationId,
         userId: options.userId,
@@ -255,12 +255,12 @@ export async function callAIProvider(
     });
 
     const responseText = response.content[0]?.type === 'text' ? response.content[0].text : 'No response from AI';
-    
+
     // Track token usage
     if (options?.organizationId && options?.userId) {
       const inputTokens = response.usage?.input_tokens || 0;
       const outputTokens = response.usage?.output_tokens || 0;
-      
+
       await TokenUsageService.recordTokenUsage({
         organizationId: options.organizationId,
         userId: options.userId,
@@ -279,93 +279,18 @@ export async function callAIProvider(
 
     return responseText;
   } else if (provider === 'gemini') {
-    // Use REST API directly with v1 (stable) endpoint - NO v1beta
-    // Use gemini-2.5-flash - latest stable flash model for v1 API
-    const STABLE_MODEL = 'gemini-2.5-flash';
-    const API_VERSION = 'v1'; // Use stable v1 API, NOT v1beta
-    
-    console.log(`🔥 [aiHelpers] Using Gemini ${STABLE_MODEL} with ${API_VERSION} API (no beta)`);
-    
-    // Build messages for API
+    const { GeminiService } = await import('../GeminiService');
+    const geminiSvc = new GeminiService(apiKey);
+
+    // Build system message and user prompt from messages array
     const systemInstruction = messages.find(m => m.role === 'system')?.content;
-    const userMessages = messages.filter(m => m.role === 'user');
-    const assistantMessages = messages.filter(m => m.role === 'assistant');
-    
-    // Format messages for Gemini API
-    const contents: any[] = [];
-    for (let i = 0; i < Math.max(userMessages.length, assistantMessages.length); i++) {
-      if (userMessages[i]) {
-        contents.push({ role: 'user', parts: [{ text: userMessages[i].content }] });
-      }
-      if (assistantMessages[i]) {
-        contents.push({ role: 'model', parts: [{ text: assistantMessages[i].content }] });
-      }
-    }
-    
-    // If no conversation history, use the last user message
-    if (contents.length === 0 && userMessages.length > 0) {
-      contents.push({ role: 'user', parts: [{ text: userMessages[userMessages.length - 1].content }] });
-    }
-    
-    // Build request payload
-    // Note: v1 API doesn't support systemInstruction field directly
-    // If we have a system instruction, prepend it to the first user message
-    const requestBody: any = {
-      contents: contents
-    };
-    
-    if (systemInstruction && contents.length > 0 && contents[0].role === 'user') {
-      // Prepend system instruction to first user message for v1 API
-      const firstUserMessage = contents[0].parts[0].text;
-      contents[0].parts[0].text = `${systemInstruction}\n\n${firstUserMessage}`;
-    }
-    
-    // Call v1 API directly (NOT v1beta)
-    const url = `https://generativelanguage.googleapis.com/${API_VERSION}/models/${STABLE_MODEL}:generateContent?key=${apiKey}`;
-    
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody)
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Gemini API error (${response.status}): ${errorText}`);
-    }
-    
-    const data: any = await response.json();
-    
-    if (data.candidates && data.candidates[0] && data.candidates[0].content) {
-      const responseText = data.candidates[0].content.parts[0].text || 'No response from AI';
-      
-      // Track token usage (Gemini API includes usage metadata)
-      if (options?.organizationId && options?.userId && data.usageMetadata) {
-        const inputTokens = data.usageMetadata.promptTokenCount || 0;
-        const outputTokens = data.usageMetadata.candidatesTokenCount || 0;
-        
-        await TokenUsageService.recordTokenUsage({
-          organizationId: options.organizationId,
-          userId: options.userId,
-          provider: 'gemini',
-          model,
-          inputTokens,
-          outputTokens,
-          apiKeySource: options.apiKeySource || 'user',
-          feature: options.feature,
-          projectId: options.projectId,
-          sessionId: options.sessionId
-        }).catch(err => {
-          console.warn('Failed to track token usage:', err);
-        });
-      }
-      
-      return responseText;
-    }
-    
-    throw new Error('Invalid response format from Gemini API');
+    const userMessage = messages.filter(m => m.role === 'user').map(m => m.content).join('\n\n');
+
+    const responseText = await geminiSvc.generateText(userMessage, systemInstruction);
+
+    // Note: Token tracking for Gemini in this helper will be simplified for now 
+    // as generateText doesn't return usage yet. CoreGeminiService could be updated later.
+    return responseText;
   } else if (provider === 'grok') {
     // Grok uses OpenAI-compatible API, so we can use OpenAI SDK with custom base URL
     const { default: OpenAI } = await import('openai');
@@ -382,12 +307,12 @@ export async function callAIProvider(
     });
 
     const responseText = completion.choices[0]?.message?.content || 'No response from AI';
-    
+
     // Track token usage (Grok uses OpenAI-compatible format)
     if (options?.organizationId && options?.userId) {
       const inputTokens = completion.usage?.prompt_tokens || 0;
       const outputTokens = completion.usage?.completion_tokens || 0;
-      
+
       await TokenUsageService.recordTokenUsage({
         organizationId: options.organizationId,
         userId: options.userId,
