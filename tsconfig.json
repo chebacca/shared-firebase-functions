@@ -8,7 +8,7 @@
     ],
     "allowJs": true,
     "outDir": "./lib",
-    "strict": false,
+    "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
@@ -17,7 +17,11 @@
     "sourceMap": true,
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
-    "noEmitOnError": false
+    "noEmitOnError": false,
+    "baseUrl": ".",
+    "paths": {
+      "*": ["../node_modules/*", "node_modules/*"]
+    }
   },
   "include": [
     "src/**/*",

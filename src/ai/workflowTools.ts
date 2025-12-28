@@ -77,11 +77,35 @@ export const workflowFunctionDeclarations = [
       properties: {
         nodes: { 
           type: 'array',
-          description: 'Array of workflow nodes to validate'
+          description: 'Array of workflow nodes to validate',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              type: { type: 'string' },
+              position: {
+                type: 'object',
+                properties: {
+                  x: { type: 'number' },
+                  y: { type: 'number' }
+                }
+              },
+              data: { type: 'object' }
+            }
+          }
         },
         edges: {
           type: 'array',
-          description: 'Array of workflow edges to validate'
+          description: 'Array of workflow edges to validate',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              source: { type: 'string' },
+              target: { type: 'string' },
+              type: { type: 'string' }
+            }
+          }
         },
         targetPhase: {
           type: 'string',
@@ -106,8 +130,36 @@ export const workflowFunctionDeclarations = [
     parameters: {
       type: 'object',
       properties: {
-        nodes: { type: 'array' },
-        edges: { type: 'array' },
+        nodes: { 
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              type: { type: 'string' },
+              position: {
+                type: 'object',
+                properties: {
+                  x: { type: 'number' },
+                  y: { type: 'number' }
+                }
+              },
+              data: { type: 'object' }
+            }
+          }
+        },
+        edges: { 
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              source: { type: 'string' },
+              target: { type: 'string' },
+              type: { type: 'string' }
+            }
+          }
+        },
         errors: {
           type: 'array',
           description: 'Array of validation errors from validate_workflow',
@@ -142,7 +194,22 @@ export const workflowFunctionDeclarations = [
         },
         newNodes: {
           type: 'array',
-          description: 'New nodes to add (for add_after, add_before, insert_parallel)'
+          description: 'New nodes to add (for add_after, add_before, insert_parallel)',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              type: { type: 'string' },
+              position: {
+                type: 'object',
+                properties: {
+                  x: { type: 'number' },
+                  y: { type: 'number' }
+                }
+              },
+              data: { type: 'object' }
+            }
+          }
         },
         updatedNode: {
           type: 'object',
@@ -150,11 +217,35 @@ export const workflowFunctionDeclarations = [
         },
         currentNodes: {
           type: 'array',
-          description: 'Current workflow nodes'
+          description: 'Current workflow nodes',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              type: { type: 'string' },
+              position: {
+                type: 'object',
+                properties: {
+                  x: { type: 'number' },
+                  y: { type: 'number' }
+                }
+              },
+              data: { type: 'object' }
+            }
+          }
         },
         currentEdges: {
           type: 'array',
-          description: 'Current workflow edges'
+          description: 'Current workflow edges',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              source: { type: 'string' },
+              target: { type: 'string' },
+              type: { type: 'string' }
+            }
+          }
         }
       },
       required: ['action', 'currentNodes', 'currentEdges']
@@ -184,8 +275,36 @@ export const workflowFunctionDeclarations = [
     parameters: {
       type: 'object',
       properties: {
-        nodes: { type: 'array' },
-        edges: { type: 'array' }
+        nodes: { 
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              type: { type: 'string' },
+              position: {
+                type: 'object',
+                properties: {
+                  x: { type: 'number' },
+                  y: { type: 'number' }
+                }
+              },
+              data: { type: 'object' }
+            }
+          }
+        },
+        edges: { 
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              source: { type: 'string' },
+              target: { type: 'string' },
+              type: { type: 'string' }
+            }
+          }
+        }
       },
       required: ['nodes', 'edges']
     }

@@ -83,6 +83,9 @@ export interface AIContext {
     recentPitches?: any[];
     recentStories?: any[];
     recentProjects?: any[];
+    currentShow?: string | { name: string };
+    currentSeason?: string;
+    currentProject?: string | { id: string };
   };
 
   // Budget context
@@ -267,10 +270,10 @@ export async function gatherEntityContext(
       roleWorkflowSteps: userRoleContext.roleWorkflowSteps
     } : undefined,
     workflow: workflowContext ? {
-      phaseDistribution: workflowContext.phaseDistribution,
+      phaseDistribution: new Map(Object.entries(workflowContext.phaseDistribution)),
       bottlenecks: workflowContext.bottlenecks,
       velocityMetrics: workflowContext.velocityMetrics,
-      itemsByPhase: workflowContext.itemsByPhase
+      itemsByPhase: new Map(Object.entries(workflowContext.itemsByPhase))
     } : undefined,
     notes: userNotes && userNotes.length > 0 ? {
       userNotes: userNotes
@@ -389,12 +392,13 @@ export async function gatherGeneralContext(
       statusTransitions,
       bottlenecks: []
     },
-    pageContext: {
-      ...pageContext,
+    pageContext: pageContext ? {
+      page: pageContext.page || '',
+      selectedItems: pageContext.selectedItems,
       recentPitches: recentPitches.length > 0 ? recentPitches : undefined,
       recentStories: recentStories.length > 0 ? recentStories : undefined,
       recentProjects: recentProjects.length > 0 ? recentProjects : undefined
-    },
+    } : undefined,
     budget: budgetContext,
     calendar: calendarContext,
     contacts: contactsContext,
@@ -415,10 +419,10 @@ export async function gatherGeneralContext(
       roleWorkflowSteps: userRoleContext.roleWorkflowSteps
     } : undefined,
     workflow: workflowContext ? {
-      phaseDistribution: workflowContext.phaseDistribution,
+      phaseDistribution: new Map(Object.entries(workflowContext.phaseDistribution)),
       bottlenecks: workflowContext.bottlenecks,
       velocityMetrics: workflowContext.velocityMetrics,
-      itemsByPhase: workflowContext.itemsByPhase
+      itemsByPhase: new Map(Object.entries(workflowContext.itemsByPhase))
     } : undefined,
     notes: userNotes && userNotes.length > 0 ? {
       userNotes: userNotes
@@ -638,14 +642,14 @@ export function formatContextForPrompt(context: AIContext): string {
       prompt += '\n';
     }
 
-    if (context.budget.projectBudgets && context.budget.projectBudgets.size > 0) {
+    if (context.budget?.projectBudgets && context.budget.projectBudgets.size > 0) {
       prompt += `### Budget Groups & Clips\n`;
       let groupCount = 0;
       context.budget.projectBudgets.forEach((budgetData, projectId) => {
         if (budgetData.groups && budgetData.groups.length > 0 && groupCount < 5) {
-          const project = context.budget.projects?.find(p => p.id === projectId);
+          const project = context.budget?.projects?.find(p => p.id === projectId);
           prompt += `**${project?.name || 'Project'}** (${budgetData.groups.length} budget groups):\n`;
-          budgetData.groups.slice(0, 3).forEach((group: any, idx: number) => {
+          budgetData.groups.slice(0, 3).forEach((group: { name?: string; totalCost?: number; clipCount?: number; type?: string }, idx: number) => {
             prompt += `  ${idx + 1}. ${group.name || 'Unnamed Group'} - $${(group.totalCost || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${group.clipCount || 0} clips, ${group.type || 'unassigned'})\n`;
           });
           groupCount++;
@@ -988,7 +992,7 @@ export function formatContextForPrompt(context: AIContext): string {
       context.schedule.conflicts.slice(0, 3).forEach((conflict, idx) => {
         prompt += `${idx + 1}. Date: ${conflict.date.toLocaleDateString()}\n`;
         prompt += `   - Conflicting Items: ${conflict.conflictingItems.length}\n`;
-        conflict.conflictingItems.slice(0, 3).forEach(item => {
+        conflict.conflictingItems.slice(0, 3).forEach((item: { title: string; entityType: string; assignedUser: string }) => {
           prompt += `     - ${item.title} (${item.entityType}) - Assigned to: ${item.assignedUser}\n`;
         });
         prompt += '\n';

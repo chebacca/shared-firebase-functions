@@ -765,7 +765,7 @@ export const aiChatAssistant = onCall(
     const hasScriptContext = !!context?.scriptContext;
     
     // Build messages - use specialized prompt for script writing
-    let systemPrompt: string;
+    let systemPrompt: string = '';
     
     if (hasScriptContext) {
       const scriptContext = context.scriptContext;
@@ -2106,8 +2106,12 @@ Focus on:
           organizationId,
           userId,
           context: {
-            projectId: aiContext.pageContext?.currentProject?.id,
-            show: aiContext.pageContext?.currentShow?.name,
+            projectId: typeof aiContext.pageContext?.currentProject === 'object' 
+              ? aiContext.pageContext.currentProject.id 
+              : aiContext.pageContext?.currentProject,
+            show: typeof aiContext.pageContext?.currentShow === 'object' 
+              ? aiContext.pageContext.currentShow.name 
+              : aiContext.pageContext?.currentShow,
             season: aiContext.pageContext?.currentSeason,
             pitchId: context?.entityType === 'pitch' ? context.entityId : undefined
           }

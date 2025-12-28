@@ -197,11 +197,14 @@ export const slackOAuthInitiate = onCall(
   },
   async (request) => {
     try {
-      const { organizationId, connectionType, userId } = request.data as {
+      console.log(`🔍 [SlackOAuth] Initiate request received, data keys:`, Object.keys(request.data || {}));
+      const { organizationId, connectionType, userId, redirectUrl } = request.data as {
         organizationId: string;
         connectionType: 'user' | 'organization';
         userId?: string;
+        redirectUrl?: string;
       };
+      console.log(`🔍 [SlackOAuth] Parsed redirectUrl: ${redirectUrl || 'NOT PROVIDED'}`);
 
       // Validate request
       if (!organizationId || !connectionType) {
@@ -235,11 +238,16 @@ export const slackOAuthInitiate = onCall(
       const stateExpiry = (Date.now() + (3600 * 1000)).toString(); // 1 hour as string
 
       // Store state in Firestore
+      // Use provided redirectUrl or default to backbone-client.web.app
+      // The client should always provide redirectUrl based on window.location.origin
+      const finalRedirectUrl = redirectUrl || 'https://backbone-client.web.app/messages?slack_connected=true&tab=slack';
+      console.log(`🔗 [SlackOAuth] Storing redirectUrl in state: ${finalRedirectUrl} (provided: ${redirectUrl || 'none'})`);
       const stateDoc = await db.collection('slackOAuthStates').add({
         state,
         organizationId,
         connectionType,
         userId: userId || null,
+        redirectUrl: finalRedirectUrl,
         expiry: stateExpiry,
       });
 
@@ -463,14 +471,58 @@ export const slackOAuthCallback = onRequest(
     try {
       const { code, state, error } = req.query;
 
+      // Get redirect URL from state for error redirects
+      let errorRedirectUrl = 'https://backbone-client.web.app/messages?slack_error=authorization_failed&tab=slack';
+      
       // Handle OAuth error from Slack
       if (error) {
         console.error('❌ [SlackOAuth] OAuth error from Slack:', error);
-        return res.redirect('https://clipshowpro.web.app/messages?slack_error=authorization_failed');
+        // Try to get redirect URL from state if available
+        if (state) {
+          try {
+            const stateDoc = await db.collection('slackOAuthStates')
+              .where('state', '==', state)
+              .limit(1)
+              .get();
+            if (!stateDoc.empty) {
+              const stateData = stateDoc.docs[0].data();
+              if (stateData.redirectUrl) {
+                // Replace success param with error param, preserving the origin
+                errorRedirectUrl = stateData.redirectUrl
+                  .replace('slack_connected=true', 'slack_error=authorization_failed')
+                  .replace('slack_connected=true&', 'slack_error=authorization_failed&');
+              }
+            }
+          } catch (e) {
+            console.warn('⚠️ [SlackOAuth] Could not get redirect URL from state:', e);
+            // Use default if state lookup fails
+          }
+        }
+        return res.redirect(errorRedirectUrl);
       }
 
       if (!code || !state) {
-        return res.redirect('https://clipshowpro.web.app/messages?slack_error=missing_parameters');
+        // Try to get redirect URL from state for missing parameters error
+        let missingParamsRedirect = 'https://backbone-client.web.app/messages?slack_error=missing_parameters&tab=slack';
+        if (state) {
+          try {
+            const stateDoc = await db.collection('slackOAuthStates')
+              .where('state', '==', state)
+              .limit(1)
+              .get();
+            if (!stateDoc.empty) {
+              const stateData = stateDoc.docs[0].data();
+              if (stateData.redirectUrl) {
+                missingParamsRedirect = stateData.redirectUrl
+                  .replace('slack_connected=true', 'slack_error=missing_parameters')
+                  .replace('slack_connected=true&', 'slack_error=missing_parameters&');
+              }
+            }
+          } catch (e) {
+            // Use default if state lookup fails
+          }
+        }
+        return res.redirect(missingParamsRedirect);
       }
 
       // Verify state and complete OAuth flow
@@ -480,10 +532,39 @@ export const slackOAuthCallback = onRequest(
         .get();
 
       if (stateDoc.empty) {
-        return res.redirect('https://clipshowpro.web.app/messages?slack_error=invalid_state');
+        // Use default redirect for invalid state (state lookup failed, so we can't get the original redirectUrl)
+        return res.redirect('https://backbone-client.web.app/messages?slack_error=invalid_state&tab=slack');
       }
 
       const stateData = stateDoc.docs[0].data();
+      console.log(`🔗 [SlackOAuth] Retrieved state data, redirectUrl: ${stateData.redirectUrl || 'not found'}`);
+      
+      // If redirectUrl is missing from old state document, try to infer from referer or use default
+      if (!stateData.redirectUrl) {
+        const referer = req.headers.referer || req.headers.origin || '';
+        console.log(`⚠️ [SlackOAuth] redirectUrl missing from state, referer: ${referer}`);
+        
+        // Try to extract origin from referer
+        if (referer) {
+          try {
+            const refererUrl = new URL(referer);
+            stateData.redirectUrl = `${refererUrl.origin}/messages?slack_connected=true&tab=slack`;
+            console.log(`🔗 [SlackOAuth] Inferred redirectUrl from referer: ${stateData.redirectUrl}`);
+          } catch (e) {
+            console.warn('⚠️ [SlackOAuth] Could not parse referer URL:', e);
+          }
+        }
+        
+        // Final fallback - use backbone-client as default since both apps can use any org
+        // The client should always provide redirectUrl, so this should rarely be needed
+        if (!stateData.redirectUrl) {
+          // Default to backbone-client.web.app (production workflow system)
+          // This is safer than trying to guess based on org ID
+          stateData.redirectUrl = 'https://backbone-client.web.app/messages?slack_connected=true&tab=slack';
+          console.log(`⚠️ [SlackOAuth] Using default fallback redirectUrl: ${stateData.redirectUrl}`);
+          console.log(`⚠️ [SlackOAuth] This should not happen - redirectUrl should be provided by client`);
+        }
+      }
       
       // Exchange code for token (call internal function logic)
       const redirectUrl = await completeOAuthCallback(
@@ -492,18 +573,39 @@ export const slackOAuthCallback = onRequest(
         stateData
       );
 
+      console.log(`🔗 [SlackOAuth] Redirecting to: ${redirectUrl}`);
       return res.redirect(redirectUrl);
 
     } catch (error) {
       console.error('❌ [SlackOAuth] Error in callback handler:', error);
-      return res.redirect('https://clipshowpro.web.app/messages?slack_error=callback_failed');
+      // Try to get redirect URL from state for callback failed error
+      let callbackFailedRedirect = 'https://backbone-client.web.app/messages?slack_error=callback_failed&tab=slack';
+      if (req.query.state) {
+        try {
+          const stateDoc = await db.collection('slackOAuthStates')
+            .where('state', '==', req.query.state)
+            .limit(1)
+            .get();
+          if (!stateDoc.empty) {
+            const stateData = stateDoc.docs[0].data();
+            if (stateData.redirectUrl) {
+              callbackFailedRedirect = stateData.redirectUrl
+                .replace('slack_connected=true', 'slack_error=callback_failed')
+                .replace('slack_connected=true&', 'slack_error=callback_failed&');
+            }
+          }
+        } catch (e) {
+          // Use default if state lookup fails
+        }
+      }
+      return res.redirect(callbackFailedRedirect);
     }
   }
 );
 
 async function completeOAuthCallback(code: string, state: string, stateData: any) {
   try {
-    const { organizationId, connectionType, userId } = stateData;
+    const { organizationId, connectionType, userId, redirectUrl } = stateData;
 
     // Get Slack configuration
     const slackConfig = await getSlackConfig(organizationId);
@@ -653,8 +755,12 @@ async function completeOAuthCallback(code: string, state: string, stateData: any
     }
 
     console.log(`✅ [SlackOAuth] Connection established for ${connectionType} connection in org ${organizationId}`);
+    console.log(`🔗 [SlackOAuth] redirectUrl from stateData: ${redirectUrl || 'not provided'}`);
 
-    return 'https://clipshowpro.web.app/messages?slack_connected=true';
+    // Use redirect URL from state, or default to backbone-client.web.app
+    const finalRedirectUrl = redirectUrl || 'https://backbone-client.web.app/messages?slack_connected=true&tab=slack';
+    console.log(`🔗 [SlackOAuth] Final redirect URL: ${finalRedirectUrl}`);
+    return finalRedirectUrl;
 
   } catch (error) {
     console.error('❌ [SlackOAuth] Error completing callback:', error);

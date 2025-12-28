@@ -395,6 +395,46 @@ async function publishCallSheetLogic(data: any, context?: any): Promise<any> {
       walkieChannelsCount: publishedCallSheet.walkieChannels.length
     });
 
+    // 🔧 CRITICAL FIX: Unpublish any existing published call sheets for this project
+    // This ensures only one call sheet per project is active at a time
+    if (projectId) {
+      try {
+        const existingPublishedQuery = await admin.firestore()
+          .collection('publishedCallSheets')
+          .where('projectId', '==', projectId)
+          .where('organizationId', '==', organizationId)
+          .where('status', '==', 'published')
+          .where('isActive', '==', true)
+          .get();
+        
+        if (!existingPublishedQuery.empty) {
+          console.log(`📋 [PUBLISH CALL SHEET] Found ${existingPublishedQuery.size} existing published call sheets for project ${projectId}, unpublishing them...`);
+          
+          const batch = admin.firestore().batch();
+          existingPublishedQuery.docs.forEach(doc => {
+            // Skip the current call sheet if it's being republished
+            if (doc.id !== callSheetId) {
+              console.log(`📋 [PUBLISH CALL SHEET] Unpublishing old call sheet: ${doc.id}`);
+              batch.update(doc.ref, {
+                isActive: false,
+                isPublished: false,
+                status: 'unpublished',
+                unpublishedAt: now,
+                unpublishedBy: userId || (context?.auth?.uid || 'system'),
+                unpublishedReason: 'Replaced by newer call sheet'
+              });
+            }
+          });
+          
+          await batch.commit();
+          console.log(`📋 [PUBLISH CALL SHEET] Unpublished ${existingPublishedQuery.size} old call sheets for project ${projectId}`);
+        }
+      } catch (error) {
+        console.warn(`📋 [PUBLISH CALL SHEET] Error unpublishing old call sheets:`, error);
+        // Don't fail the publish if we can't unpublish old ones - just log the error
+      }
+    }
+    
     // Check if there's an existing published call sheet (for republishing case)
     const existingPublishedDoc = await admin.firestore().collection('publishedCallSheets').doc(callSheetId).get();
     const isRepublishing = existingPublishedDoc.exists;

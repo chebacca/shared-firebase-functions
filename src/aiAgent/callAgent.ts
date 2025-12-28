@@ -110,6 +110,11 @@ export const callAIAgent = onCall(
         globalContext.userId = uid;
       }
 
+      // NEW: Pass explicit workflow action intent to global context
+      if (context?.workflowAction) {
+        (globalContext as any).workflowAction = context.workflowAction;
+      }
+
       // 4. Generate Intelligent Response using Gemini
       console.log(`🧠 [AI AGENT] Generating intelligent response with Gemini...`);
       const geminiService = createGeminiService();

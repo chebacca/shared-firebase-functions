@@ -404,5 +404,21 @@ export { getDocuSignEnvelopeStatus } from './clipShowPro/docusign/getDocuSignEnv
 export { downloadDocuSignEnvelopeDocument } from './clipShowPro/docusign/downloadDocuSignEnvelopeDocument';
 export { docuSignWebhookHandler } from './clipShowPro/docusign/webhookHandler';
 
+// Export ML Services functions
+export {
+  semanticSearch,
+  searchAll,
+  findSimilar,
+  indexEntity,
+  parseNetworkBible,
+  extractBudgetData,
+  parseScript,
+  predictBudgetHealth,
+  forecastSpending,
+  predictAvailability,
+  batchIndexCollection,
+  getIndexingStatus
+} from './ml/functions';
+
 // NOTE: Other functions commented out due to TypeScript errors
 

@@ -96,7 +96,7 @@ export const getPublishedCallSheet = onCall(
 export const getPublishedCallSheetHttp = onRequest(
   {
     region: 'us-central1',
-    memory: '256MiB',
+    memory: '512MiB',  // Increased from 256MiB to handle large call sheet data
     timeoutSeconds: 30,
     invoker: 'public',  // Required for CORS preflight requests
     cors: false  // 🔧 CRITICAL FIX: Handle CORS manually to ensure proper preflight handling

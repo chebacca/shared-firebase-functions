@@ -106,10 +106,82 @@ export class CoreGeminiService {
     }
 
     /**
-     * Parse Network Delivery Bible
+     * Parse Network Delivery Bible from file (PDF, DOCX, etc.) using Gemini Vision
+     */
+    async parseNetworkBibleFromFile(
+        fileBuffer: Buffer,
+        mimeType: string,
+        fileName: string = 'document'
+    ): Promise<NetworkBibleResult> {
+        console.log(`📄 [Gemini Service] Parsing Network Delivery Bible from file: ${fileName} (${mimeType})...`);
+
+        const prompt = `
+You are an expert document analyzer. Parse this delivery specification document and extract EVERY deliverable requirement.
+Return ONLY a JSON object with this structure:
+{
+  "deliverables": [
+    {
+      "deliverableName": "Descriptive title",
+      "category": "Category",
+      "deadline": "Timing context",
+      "specifications": ["List of requirements"],
+      "priority": "high/medium/low",
+      "notes": "Extra context",
+      "sourceText": "Original text snippet"
+    }
+  ]
+}
+
+Extract all deliverables from the document. Be thorough and capture every requirement.
+`;
+
+        const fileDataBase64 = fileBuffer.toString('base64');
+        const useFileUpload = fileBuffer.length > 1 * 1024 * 1024; // 1MB threshold
+
+        const geminiModel = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
+        let result;
+        if (useFileUpload) {
+            // For large files, use File API
+            const fileUri = await this.uploadFileToGemini(fileBuffer, mimeType, fileName);
+            result = await geminiModel.generateContent([
+                {
+                    fileData: { mimeType, fileUri },
+                },
+                {
+                    text: prompt,
+                },
+            ]);
+
+            // Cleanup
+            try {
+                await axios.delete(`https://generativelanguage.googleapis.com/v1beta/${fileUri}?key=${this.apiKey}`);
+            } catch (e) {
+                console.warn('⚠️ [Gemini Service] File cleanup failed:', e);
+            }
+        } else {
+            // For smaller files, use inline data
+            result = await geminiModel.generateContent([
+                {
+                    inlineData: { data: fileDataBase64, mimeType },
+                },
+                {
+                    text: prompt,
+                },
+            ]);
+        }
+
+        const responseText = result.response.text();
+        let cleanedResponse = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+        const startIndex = cleanedResponse.indexOf('{');
+        return JSON.parse(cleanedResponse.substring(startIndex)) as NetworkBibleResult;
+    }
+
+    /**
+     * Parse Network Delivery Bible from text
      */
     async parseNetworkBible(rawText: string): Promise<NetworkBibleResult> {
-        console.log('📄 [Gemini Service] Parsing Network Delivery Bible...');
+        console.log('📄 [Gemini Service] Parsing Network Delivery Bible from text...');
 
         const prompt = `
 You are an expert document analyzer. Parse this delivery specification document and extract EVERY deliverable requirement.

@@ -218,7 +218,7 @@ export async function gatherScheduleContext(
     const linkedEvents: ScheduleContext['linkedEvents'] = [];
     const eventMap = new Map<string, any>();
 
-    eventsSnapshot.forEach(doc => {
+    eventsSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => {
       const eventData = doc.data();
       const event = { id: doc.id, ...eventData };
       eventMap.set(doc.id, event);
@@ -292,11 +292,11 @@ export async function gatherScheduleContext(
     const pitches: any[] = [];
     const stories: any[] = [];
 
-    pitchesSnapshot.forEach(doc => {
+    pitchesSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => {
       pitches.push({ id: doc.id, ...doc.data() });
     });
 
-    storiesSnapshot.forEach(doc => {
+    storiesSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => {
       stories.push({ id: doc.id, ...doc.data() });
     });
 

@@ -1,4 +1,6 @@
 import { getFirestore } from 'firebase-admin/firestore';
+import { getPredictiveAnalyticsService } from '../ml/PredictiveAnalyticsService';
+import { getVectorSearchService } from '../ml/VectorSearchService';
 
 const db = getFirestore();
 
@@ -33,6 +35,22 @@ export class DataToolExecutor {
 
                 case 'search_knowledge_base':
                     return this.searchKnowledgeBase(args, organizationId);
+
+                // ML-Powered Tools
+                case 'predict_budget_health':
+                    return this.predictBudgetHealth(args, organizationId);
+
+                case 'forecast_spending':
+                    return this.forecastSpending(args, organizationId);
+
+                case 'predict_resource_availability':
+                    return this.predictResourceAvailability(args, organizationId);
+
+                case 'semantic_search':
+                    return this.semanticSearch(args, organizationId);
+
+                case 'find_similar_entities':
+                    return this.findSimilarEntities(args, organizationId);
 
                 default:
                     return {
@@ -232,6 +250,94 @@ export class DataToolExecutor {
         } catch (error: any) {
             console.error('❌ [DataToolExecutor] KB Search Error:', error);
             return { success: false, error: `KB Search failed: ${error.message}` };
+        }
+    }
+
+    // ML-Powered Tool Executors
+    private static async predictBudgetHealth(args: any, organizationId: string): Promise<ToolExecutionResult> {
+        try {
+            if (!args.projectId) throw new Error('projectId is required');
+
+            // Use the ML service directly
+            const analytics = getPredictiveAnalyticsService();
+            const prediction = await analytics.predictBudgetHealth(args.projectId);
+
+            return {
+                success: true,
+                data: prediction
+            };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
+    }
+
+    private static async forecastSpending(args: any, organizationId: string): Promise<ToolExecutionResult> {
+        try {
+            if (!args.projectId) throw new Error('projectId is required');
+
+            const analytics = getPredictiveAnalyticsService();
+            const forecast = await analytics.forecastSpending(args.projectId, args.days || 30);
+
+            return {
+                success: true,
+                data: forecast
+            };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
+    }
+
+    private static async predictResourceAvailability(args: any, organizationId: string): Promise<ToolExecutionResult> {
+        try {
+            if (!args.resourceId || !args.startDate || !args.endDate) {
+                throw new Error('resourceId, startDate, and endDate are required');
+            }
+
+            const analytics = getPredictiveAnalyticsService();
+            const prediction = await analytics.predictAvailability(args.resourceId, {
+                start: new Date(args.startDate),
+                end: new Date(args.endDate)
+            });
+
+            return {
+                success: true,
+                data: prediction
+            };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
+    }
+
+    private static async semanticSearch(args: any, organizationId: string): Promise<ToolExecutionResult> {
+        try {
+            if (!args.query) throw new Error('query is required');
+
+            // Note: Vector search requires API key, so we'll need to get it from secrets
+            // For now, return a message that semantic search needs to be called via HTTP
+            // In production, you'd get the API key from secrets
+            return {
+                success: false,
+                error: 'Semantic search requires API key. Use the searchAll Firebase Function directly from the client.'
+            };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
+    }
+
+    private static async findSimilarEntities(args: any, organizationId: string): Promise<ToolExecutionResult> {
+        try {
+            if (!args.collection || !args.entityId) {
+                throw new Error('collection and entityId are required');
+            }
+
+            // Note: Vector search requires API key
+            // For now, return a message that findSimilar needs to be called via HTTP
+            return {
+                success: false,
+                error: 'Find similar requires API key. Use the findSimilar Firebase Function directly from the client.'
+            };
+        } catch (error: any) {
+            return { success: false, error: error.message };
         }
     }
 }

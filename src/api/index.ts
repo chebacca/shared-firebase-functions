@@ -1,8 +1,12 @@
 import { onRequest, onCall, HttpsError } from 'firebase-functions/v2/https';
+import { defineSecret } from 'firebase-functions/params';
 import express from 'express';
 import cors from 'cors';
 import { authenticateToken } from '../shared/middleware';
 import { db, createSuccessResponse, createErrorResponse, getUserOrganizationId } from '../shared/utils';
+
+// Define encryption key secret for API key decryption (required for network delivery and other AI features)
+const encryptionKeySecret = defineSecret('INTEGRATIONS_ENCRYPTION_KEY');
 
 // Import refactored routes
 import healthRouter from './routes/health';
@@ -66,7 +70,8 @@ export const api = onRequest({
   cpu: 1,
   minInstances: 0,
   invoker: 'public',
-  cors: false // Handled by middleware
+  cors: false, // Handled by middleware
+  secrets: [encryptionKeySecret] // Required for decrypting AI API keys from Firestore
 }, app);
 // Export onCall functions
 export { uploadNetworkDeliveryBible, getNetworkDeliveryDeliverables };

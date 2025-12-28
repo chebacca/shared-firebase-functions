@@ -95,9 +95,22 @@ export class GeminiService extends CoreGeminiService {
       console.log('🎯 [Gemini Service] Current mode:', currentMode);
 
       // Check if this is a workflow building request
-      const isWorkflowRequest = this.detectWorkflowIntent(message);
-      if (isWorkflowRequest && currentMode === 'workflows') {
-        return await this.generateWorkflowResponse(message, globalContext, attachments);
+      // NEW: Check for explicit "Plan" vs "Graph" intent passed from Frontend Context
+      if (currentMode === 'workflows') {
+        const workflowAction = (globalContext as any).workflowAction || 'auto'; // 'plan', 'graph', 'auto'
+        
+        if (workflowAction === 'plan') {
+           return await this.generateWorkflowPlan(message, globalContext);
+        }
+        
+        if (workflowAction === 'graph_from_plan') {
+           return await this.generateWorkflowGraphFromPlan(message, globalContext);
+        }
+
+        const isWorkflowRequest = this.detectWorkflowIntent(message);
+        if (isWorkflowRequest) {
+          return await this.generateWorkflowResponse(message, globalContext, attachments);
+        }
       }
 
       // Build optimized context summary
@@ -243,9 +256,127 @@ export class GeminiService extends CoreGeminiService {
       'workflow', 'create workflow', 'build workflow', 'make workflow',
       'generate workflow', 'design workflow', 'new workflow', 'workflow template',
       'post-production workflow', 'production workflow', 'approval workflow',
-      'linear workflow', 'parallel workflow', 'review stages', 'workflow steps'
+      'linear workflow', 'parallel workflow', 'review stages', 'workflow steps',
+      'workflow plan', 'draft workflow', 'architect workflow'
     ];
     return workflowKeywords.some(keyword => lower.includes(keyword));
+  }
+
+  /**
+   * NEW: Generate a textual Plan for a workflow (Step 1 of Architect)
+   */
+  async generateWorkflowPlan(
+    message: string,
+    globalContext: GlobalContext
+  ): Promise<AgentResponse> {
+    try {
+      console.log('📝 [Gemini Service] Generating workflow plan...');
+
+      // Get available roles
+      const availableRoles = this.extractAvailableRoles(globalContext);
+      
+      // Build Prompt
+      const planPrompt = `
+You are an expert Post-Production Workflow Architect.
+Your goal is to draft a comprehensive, text-based plan for a new workflow based on the user's request.
+
+CONTEXT:
+${this.buildContextSummary(globalContext)}
+
+ROLES AVAILABLE:
+${availableRoles.map(r => r.displayName).join(', ')}
+
+INSTRUCTIONS:
+1. Analyze the user's request.
+2. Outline the necessary steps (phases, tasks, approvals).
+3. Suggest appropriate roles for each step.
+4. Identify critical decision points.
+5. Format the output as a clean, structured MARKDOWN document.
+   - Use headings for Phases.
+   - Bullet points for Tasks.
+   - **Bold** for Roles or Critical Actions.
+
+DO NOT generate JSON code. Just the strategic plan in Markdown.
+`;
+
+      const parts = [
+        { text: planPrompt },
+        { text: `USER REQUEST: "${message}"\n\nUnknown Phase/Goal details should be inferred reasonably.` }
+      ];
+
+      const result = await this.model.generateContent({
+        contents: [{ role: 'user', parts: parts }]
+      });
+
+      const planText = result.response.text();
+
+      return {
+        response: planText, // The Markdown Plan
+        suggestedContext: 'workflows',
+        intent: 'workflow_plan_generated',
+        contextData: { isPlan: true }, // Marker for frontend
+        followUpSuggestions: ['Generate Graph from Plan', 'Refine Plan'],
+        reasoning: 'Generated strategic workflow plan for review'
+      };
+
+    } catch (error) {
+      console.error('❌ [Gemini Service] Error generating workflow plan:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * NEW: Generate Graph JSON from an approved Plan (Step 2 of Architect)
+   */
+  async generateWorkflowGraphFromPlan(
+    planMarkdown: string,
+    globalContext: GlobalContext
+  ): Promise<AgentResponse> {
+    try {
+      console.log('🏗️ [Gemini Service] Converting plan to graph...');
+
+      const availableRoles = this.extractAvailableRoles(globalContext);
+      const systemPrompt = this.buildWorkflowSystemPrompt(availableRoles);
+
+      const conversionPrompt = `
+User has approved the following Workflow Plan. 
+Convert this EXACT plan into a standard JSON Flow Graph using the Node/Edge structure defined in your system prompt.
+
+APPROVED PLAN:
+${planMarkdown}
+
+REQUIREMENTS:
+- Implement all steps from the plan.
+- Assign roles as specified in the plan (map to closest available ID).
+- Connect edges logically (linear or parallel).
+- Return ONLY the JSON structure for the workflow data.
+`;
+      
+      const parts = [
+        { text: systemPrompt },
+        { text: conversionPrompt }
+      ];
+
+      const result = await this.model.generateContent(parts);
+      const responseText = result.response.text();
+      
+      // Parse workflow response
+      const parsed = this.parseWorkflowResponse(responseText, "Generated from Plan");
+
+      return {
+        response: "I've built the workflow graph from your plan. You can now preview it on the canvas.",
+        suggestedContext: 'workflows',
+        intent: 'workflow_graph_generated',
+        workflowData: parsed.workflowData,
+        contextData: { isGraph: true },
+        followUpSuggestions: ['Apply to Canvas', 'Save Template'],
+        reasoning: 'Converted approved plan to executable graph'
+      };
+
+    } catch (error) {
+      console.error('❌ [Gemini Service] Error generating graph from plan:', error);
+      throw error;
+    }
   }
 
   /**
@@ -357,13 +488,14 @@ export class GeminiService extends CoreGeminiService {
       }
 
       // Create model with function declarations
+      // Using gemini-2.5-flash (same as CoreGeminiService) - gemini-1.5-pro is not available in v1beta API
       let model;
       try {
         model = this.genAI.getGenerativeModel({
-          model: 'gemini-1.5-pro',
+          model: 'gemini-2.5-flash',
           tools: [{ functionDeclarations: allTools as any }]
         });
-        console.log('✅ [Gemini Service] Model created successfully');
+        console.log('✅ [Gemini Service] Model created successfully with gemini-2.5-flash');
       } catch (modelError: any) {
         console.error('❌ [Gemini Service] Error creating model:', modelError);
         throw new Error(`Failed to create Gemini model: ${modelError.message}`);

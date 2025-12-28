@@ -81,5 +81,105 @@ export const dataToolDeclarations: FunctionDeclaration[] = [
             },
             required: ['query']
         }
+    },
+    // ML-Powered Tools
+    {
+        name: 'predict_budget_health',
+        description: 'Predict budget health and completion cost for a project. Use this to check if a project is at risk of going over budget.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                projectId: {
+                    type: SchemaType.STRING,
+                    description: 'The ID of the project to analyze'
+                }
+            },
+            required: ['projectId']
+        }
+    },
+    {
+        name: 'forecast_spending',
+        description: 'Forecast future spending for a project over a specified number of days. Use this to predict cash flow needs.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                projectId: {
+                    type: SchemaType.STRING,
+                    description: 'The ID of the project to forecast'
+                },
+                days: {
+                    type: SchemaType.NUMBER,
+                    description: 'Number of days to forecast (default: 30)'
+                }
+            },
+            required: ['projectId']
+        }
+    },
+    {
+        name: 'predict_resource_availability',
+        description: 'Predict availability of a resource (person or equipment) for a date range. Use this to check if someone is available.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                resourceId: {
+                    type: SchemaType.STRING,
+                    description: 'The ID of the resource (user ID or equipment ID)'
+                },
+                startDate: {
+                    type: SchemaType.STRING,
+                    description: 'Start date in ISO format (YYYY-MM-DD)'
+                },
+                endDate: {
+                    type: SchemaType.STRING,
+                    description: 'End date in ISO format (YYYY-MM-DD)'
+                }
+            },
+            required: ['resourceId', 'startDate', 'endDate']
+        }
+    },
+    {
+        name: 'semantic_search',
+        description: 'Perform intelligent semantic search across all data. Use this when the user asks to find something but you need to understand the intent, not just match keywords.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                query: {
+                    type: SchemaType.STRING,
+                    description: 'The search query - can be natural language like "action-packed projects that need attention"'
+                },
+                collections: {
+                    type: SchemaType.ARRAY,
+                    items: { type: SchemaType.STRING },
+                    description: 'Collections to search (e.g., ["projects", "teamMembers", "contacts"])'
+                },
+                limit: {
+                    type: SchemaType.NUMBER,
+                    description: 'Maximum number of results (default: 10)'
+                }
+            },
+            required: ['query']
+        }
+    },
+    {
+        name: 'find_similar_entities',
+        description: 'Find entities similar to a given entity. Use this to find related projects, similar contacts, or comparable inventory items.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                collection: {
+                    type: SchemaType.STRING,
+                    description: 'The collection name (e.g., "projects", "contacts")'
+                },
+                entityId: {
+                    type: SchemaType.STRING,
+                    description: 'The ID of the entity to find similar ones for'
+                },
+                limit: {
+                    type: SchemaType.NUMBER,
+                    description: 'Maximum number of similar entities to return (default: 5)'
+                }
+            },
+            required: ['collection', 'entityId']
+        }
     }
 ];
