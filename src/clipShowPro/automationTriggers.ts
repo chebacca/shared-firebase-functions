@@ -17,6 +17,10 @@ export const onPitchStatusChange = onDocumentUpdated(
   'clipShowPitches/{pitchId}',
   async (event) => {
     try {
+      if (!event.data) {
+        console.error('❌ [AutomationTrigger] Event data is missing');
+        return;
+      }
       const before = event.data.before.data();
       const after = event.data.after.data();
       const pitchId = event.params.pitchId;
@@ -63,6 +67,10 @@ export const onStoryStatusChange = onDocumentUpdated(
   'clipShowStories/{storyId}',
   async (event) => {
     try {
+      if (!event.data) {
+        console.error('❌ [AutomationTrigger] Event data is missing');
+        return;
+      }
       const before = event.data.before.data();
       const after = event.data.after.data();
       const storyId = event.params.storyId;

@@ -49,7 +49,7 @@ router.get('/:sessionId/steps', authenticateToken, async (req: express.Request, 
         if (req.query.assignedUserId) query = query.where('assignedUserId', '==', req.query.assignedUserId);
 
         const snapshot = await query.orderBy('order', 'asc').get();
-        const steps = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const steps = snapshot.docs.map((doc: FirebaseFirestore.QueryDocumentSnapshot) => ({ id: doc.id, ...doc.data() }));
 
         return res.status(200).json({ success: true, data: steps, count: steps.length });
     } catch (error: any) {

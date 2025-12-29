@@ -9,7 +9,7 @@ import { google } from 'googleapis';
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { encryptTokens, decryptTokens, generateSecureState, verifyState, hashForLogging } from './encryption';
-import { createSuccessResponse, createErrorResponse, db } from '../shared/utils';
+import { createSuccessResponse, createErrorResponse, db, getUserOrganizationId } from '../shared/utils';
 import { getGoogleConfig as getGoogleConfigFromFirestore } from '../google/config';
 
 // Google OAuth configuration - Use environment variables (Firebase Functions v2 compatible)
@@ -738,7 +738,18 @@ export const refreshGoogleAccessTokenHttp = functions.https.onRequest(async (req
     const token = authHeader.split('Bearer ')[1];
     const decodedToken = await admin.auth().verifyIdToken(token);
     const userId = decodedToken.uid;
-    const organizationId = decodedToken.organizationId || 'default';
+    
+    // Get organization ID using helper function (checks multiple sources)
+    const organizationId = await getUserOrganizationId(userId, decodedToken.email || '');
+    
+    if (!organizationId) {
+      res.status(403).json({ 
+        success: false, 
+        error: 'User organization not found',
+        errorDetails: 'User must be associated with an organization to refresh Google Drive tokens'
+      });
+      return;
+    }
 
     // Call internal refresh function
     const tokens = await refreshGoogleAccessToken(userId, organizationId);
@@ -993,7 +1004,7 @@ export const listGoogleDriveFolders = functions.https.onCall(async (data, contex
       orderBy: 'name'
     });
 
-    const folders = response.data.files?.map(file => ({
+    const folders = response.data.files?.map((file: any) => ({
       id: file.id,
       name: file.name,
       mimeType: file.mimeType,
@@ -1041,7 +1052,7 @@ export const getGoogleDriveFiles = functions.https.onCall(async (data, context) 
       orderBy: 'name'
     });
 
-    const files = response.data.files?.map(file => ({
+    const files = response.data.files?.map((file: any) => ({
       id: file.id,
       name: file.name,
       mimeType: file.mimeType,

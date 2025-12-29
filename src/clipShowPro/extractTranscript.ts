@@ -580,9 +580,9 @@ export const extractTranscript = onCall(
           const urlObj = new URL(normalizedUrl);
           const hostname = urlObj.hostname.toLowerCase();
           if (hostname.includes('youtube.com')) {
-            extractedVideoId = urlObj.searchParams.get('v') || null;
+            extractedVideoId = urlObj.searchParams.get('v') || undefined;
           } else if (hostname.includes('youtu.be')) {
-            extractedVideoId = urlObj.pathname.replace('/', '') || null;
+            extractedVideoId = urlObj.pathname.replace('/', '') || undefined;
           }
         } else if (platform === 'Vimeo') {
           const urlObj = new URL(normalizedUrl);

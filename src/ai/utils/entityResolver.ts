@@ -175,15 +175,18 @@ async function searchByName(
       }
     });
 
-    if (bestMatch && bestMatch.score > 20) {
-      return {
-        entityType: entityType as any,
-        entityId: bestMatch.doc.id,
-        entityName: getEntityName(entityType, bestMatch.doc.data),
-        showName: bestMatch.doc.data.show,
-        season: bestMatch.doc.data.season,
-        confidence: Math.min(bestMatch.score / 100, 1.0)
-      };
+    if (bestMatch !== null) {
+      const match = bestMatch as { doc: { id: string; data: any }; score: number };
+      if (match.score > 20) {
+        return {
+          entityType: entityType as any,
+          entityId: match.doc.id,
+          entityName: getEntityName(entityType, match.doc.data),
+          showName: match.doc.data.show,
+          season: match.doc.data.season,
+          confidence: Math.min(match.score / 100, 1.0)
+        };
+      }
     }
 
     return null;

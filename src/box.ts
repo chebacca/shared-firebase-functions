@@ -276,7 +276,7 @@ export const initiateBoxOAuthHttp = functions.https.onRequest(async (req, res) =
       client_id: boxConfig.clientId,
       redirect_uri: finalRedirectUri, // Use final redirect URI (client-provided or config)
       state: state,
-      scope: boxConfig.scope // Use configured scope
+      ...(boxConfig.scope ? { scope: boxConfig.scope } : {}) // Use configured scope if available
     });
     const authUrl = `${boxAuthBaseUrl}?${authUrlParams.toString()}`;
     console.log(`[${requestId}] Step 6 complete: Auth URL generated (length: ${authUrl.length})`);
@@ -1348,14 +1348,14 @@ export const listBoxFolders = functions.https.onCall(async (data, context) => {
     console.log(`[BoxFolders] About to filter ${response.entries.length} items for folders...`);
 
     const folders = response.entries
-      .filter(item => {
+      .filter((item: any) => {
         const isFolder = item && item.type === 'folder';
         if (!isFolder && item) {
           console.log(`[BoxFolders] Skipping non-folder item:`, { id: item.id, name: item.name, type: item.type });
         }
         return isFolder;
       })
-      .map(folder => ({
+      .map((folder: any) => ({
         id: folder.id,
         name: folder.name,
         type: folder.type,
@@ -1410,8 +1410,8 @@ export const getBoxFiles = functions.https.onCall(async (data, context) => {
     });
 
     const files = response.entries
-      .filter(item => item.type === 'file')
-      .map(file => ({
+      .filter((item: any) => item.type === 'file')
+      .map((file: any) => ({
         id: file.id,
         name: file.name,
         type: file.type,

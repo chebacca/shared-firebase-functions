@@ -453,6 +453,7 @@ async function createSlackNotifications(
     if (!channelDoc.exists) return;
 
     const channelData = channelDoc.data();
+    if (!channelData) return;
     const isDM = channelData.isDM || false;
     const channelName = channelData.channelName || channelId;
 
@@ -472,15 +473,16 @@ async function createSlackNotifications(
       .doc(senderId)
       .get();
     
-    const senderName = senderDoc.exists 
-      ? senderDoc.data().name || senderDoc.data().realName || 'Unknown User'
+    const senderData = senderDoc.exists ? senderDoc.data() : null;
+    const senderName = senderData
+      ? senderData.name || senderData.realName || 'Unknown User'
       : 'Unknown User';
 
     const batch = db.batch();
     const recipients = new Set<string>();
 
     // For DMs, notify the other participant
-    if (isDM && channelData.userId) {
+    if (isDM && channelData && channelData.userId) {
       // Find the recipient (not the sender)
       const recipientId = channelData.userId !== senderId 
         ? channelData.userId 
@@ -568,7 +570,7 @@ async function findFirebaseUserIdBySlackId(organizationId: string, slackUserId: 
     if (slackUserDoc.exists) {
       const slackUserData = slackUserDoc.data();
       // Try to find Firebase user by email
-      if (slackUserData.email) {
+      if (slackUserData && slackUserData.email) {
         const contactsQuery = await db
           .collection('clipShowContacts')
           .where('organizationId', '==', organizationId)

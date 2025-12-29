@@ -103,8 +103,13 @@ export const handleAirtableWebhook = onRequest(
 export const processAirtableWebhookQueue = onDocumentCreated(
   'airtableWebhookQueue/{queueId}',
   async (event) => {
+    if (!event.data) {
+      logger.error('Event data is missing');
+      return;
+    }
     const queueId = event.params.queueId;
     const queueData = event.data.data();
+    const eventDataRef = event.data;
     
     logger.info('Processing webhook queue item', { queueId });
 
@@ -138,7 +143,7 @@ export const processAirtableWebhookQueue = onDocumentCreated(
       }
 
       // Mark as processed
-      await event.data.ref.update({
+      await eventDataRef.ref.update({
         status: 'completed',
         processedAt: FieldValue.serverTimestamp()
       });
@@ -152,14 +157,14 @@ export const processAirtableWebhookQueue = onDocumentCreated(
         // Retry with exponential backoff
         const delay = Math.pow(2, retries) * 1000; // 2s, 4s, 8s
         setTimeout(async () => {
-          await event.data.ref.update({
+          await eventDataRef.ref.update({
             retries,
             error: error instanceof Error ? error.message : 'Unknown error'
           });
         }, delay);
       } else {
         // Mark as failed
-        await event.data.ref.update({
+        await eventDataRef.ref.update({
           status: 'failed',
           processedAt: FieldValue.serverTimestamp(),
           error: error instanceof Error ? error.message : 'Unknown error'
@@ -375,6 +380,9 @@ export const handleAirtableOAuthCallback = onCall(async (request) => {
     }
 
     const stateData = stateDoc.data();
+    if (!stateData) {
+      throw new Error('OAuth state data not found');
+    }
     if (stateData.expiresAt.toDate() < new Date()) {
       throw new Error('OAuth state expired');
     }

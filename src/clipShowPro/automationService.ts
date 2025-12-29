@@ -431,6 +431,9 @@ async function processEmailTrigger(
     }
 
     const emailSettings = emailSettingsDoc.data();
+    if (!emailSettings) {
+      throw new Error('Email settings not found');
+    }
     const transporter = createEmailTransporter(emailSettings.smtpConfig);
 
     // Send email to all recipients
@@ -438,7 +441,7 @@ async function processEmailTrigger(
     for (const email of emails) {
       try {
         const mailOptions = {
-          from: emailSettings.smtpConfig.username || process.env.SMTP_FROM_EMAIL,
+          from: emailSettings?.smtpConfig?.username || process.env.SMTP_FROM_EMAIL,
           to: email,
           subject: `[Clip Show Pro] ${subject}`,
           html: generateEmailHTML(subject, body, 'automation'),

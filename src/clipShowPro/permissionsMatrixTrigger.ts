@@ -86,7 +86,7 @@ export const onPermissionsMatrixUpdate = onDocumentWritten(
       const docId = event.params.docId;
 
       // Only process documents for the Clip Show Pro organization
-      if (matrixData.organizationId !== ORGANIZATION_ID) {
+      if (!matrixData || matrixData.organizationId !== ORGANIZATION_ID) {
         console.log(`ℹ️ [PermissionsMatrixTrigger] Document not for ${ORGANIZATION_ID}, skipping`);
         return;
       }
@@ -102,12 +102,14 @@ export const onPermissionsMatrixUpdate = onDocumentWritten(
       // Check if permissions actually changed (to avoid unnecessary updates)
       if (before?.exists) {
         const beforeData = before.data();
-        const beforePerms = JSON.stringify(beforeData.permissions || []);
-        const afterPerms = JSON.stringify(matrixData.permissions || []);
-        
-        if (beforePerms === afterPerms && beforeData.userRole === matrixData.userRole) {
-          console.log(`ℹ️ [PermissionsMatrixTrigger] Permissions unchanged for ${docId}, skipping`);
-          return;
+        if (beforeData) {
+          const beforePerms = JSON.stringify(beforeData.permissions || []);
+          const afterPerms = JSON.stringify(matrixData.permissions || []);
+          
+          if (beforePerms === afterPerms && beforeData.userRole === matrixData.userRole) {
+            console.log(`ℹ️ [PermissionsMatrixTrigger] Permissions unchanged for ${docId}, skipping`);
+            return;
+          }
         }
       }
 

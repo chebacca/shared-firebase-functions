@@ -12,6 +12,21 @@ import { encryptionKey, getEncryptionKey } from '../webex/secrets';
 import axios from 'axios';
 import * as crypto from 'crypto';
 
+// CORS allowed origins for video conferencing functions
+const CORS_ORIGINS = [
+  'http://localhost:4002',
+  'http://localhost:4003',
+  'http://localhost:4006',
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:4010',
+  'http://localhost:5173',
+  'https://backbone-client.web.app',
+  'https://backbone-logic.web.app',
+  'https://backbone-callsheet-standalone.web.app',
+  'https://clipshowpro.web.app'
+];
+
 /**
  * Decrypt token (reuse from webex/oauth pattern)
  */
@@ -124,7 +139,8 @@ async function getAuthenticatedWebexToken(organizationId: string): Promise<strin
 export const createWebexMeeting = onCall(
   {
     region: 'us-central1',
-    cors: true,
+    invoker: 'public',  // Required for CORS preflight requests
+    cors: CORS_ORIGINS,
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -219,7 +235,8 @@ export const createWebexMeeting = onCall(
 export const scheduleWebexMeeting = onCall(
   {
     region: 'us-central1',
-    cors: true,
+    invoker: 'public',  // Required for CORS preflight requests and public access
+    cors: true,         // Enable CORS support (Firebase handles origins automatically for callable functions)
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -321,7 +338,8 @@ export const scheduleWebexMeeting = onCall(
 export const updateWebexMeeting = onCall(
   {
     region: 'us-central1',
-    cors: true,
+    invoker: 'public',  // Required for CORS preflight requests
+    cors: CORS_ORIGINS,
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -412,7 +430,8 @@ export const updateWebexMeeting = onCall(
 export const cancelWebexMeeting = onCall(
   {
     region: 'us-central1',
-    cors: true,
+    invoker: 'public',  // Required for CORS preflight requests
+    cors: CORS_ORIGINS,
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -488,7 +507,8 @@ export const cancelWebexMeeting = onCall(
 export const getWebexMeetingDetails = onCall(
   {
     region: 'us-central1',
-    cors: true,
+    invoker: 'public',  // Required for CORS preflight requests
+    cors: CORS_ORIGINS,
     secrets: [encryptionKey],
   },
   async (request) => {

@@ -233,8 +233,13 @@ export const processTranscriptionTask = onDocumentCreated(
     memory: '2GiB',
   },
   async (event) => {
+    if (!event.data) {
+      console.error('❌ [TranscribeVideoBlobAsync] Event data is missing');
+      return;
+    }
     const taskId = event.params.taskId;
-    const taskData = event.data.data() as TranscriptionTask;
+    const taskDoc = event.data;
+    const taskData = taskDoc.data() as TranscriptionTask;
 
     // Only process pending tasks
     if (taskData.status !== 'pending') {
@@ -252,7 +257,7 @@ export const processTranscriptionTask = onDocumentCreated(
 
     try {
       // Update status to processing
-      await event.data.ref.update({
+      await taskDoc.ref.update({
         status: 'processing',
         startedAt: FieldValue.serverTimestamp(),
         progress: 10,
@@ -365,7 +370,7 @@ export const processTranscriptionTask = onDocumentCreated(
 
       // Update progress
       console.log(`[processTranscriptionTask] 📊 Updating progress to 90%`);
-      await event.data.ref.update({ progress: 90 });
+      await taskDoc.ref.update({ progress: 90 });
 
       // Create transcript object
       console.log(`[processTranscriptionTask] 📝 Creating transcript object...`);
@@ -380,7 +385,7 @@ export const processTranscriptionTask = onDocumentCreated(
       };
 
       // Update task with transcript
-      await event.data.ref.update({
+      await taskDoc.ref.update({
         status: 'completed',
         transcript,
         progress: 100,
@@ -422,7 +427,7 @@ export const processTranscriptionTask = onDocumentCreated(
 
       // Update task with failure status and detailed error
       try {
-        await event.data.ref.update({
+        await taskDoc.ref.update({
           status: 'failed',
           error: errorMessage,
           completedAt: FieldValue.serverTimestamp(),

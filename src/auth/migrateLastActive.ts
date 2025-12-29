@@ -22,7 +22,7 @@ export const migrateUserLastActive = functions.https.onCall(async (data: any, co
       .where('organizationId', '==', organizationId)
       .get();
 
-    const usersToUpdate = [];
+    const usersToUpdate: Array<{ id: string; email: string; fallbackTimestamp: admin.firestore.Timestamp }> = [];
     const batch = admin.firestore().batch();
     const timestamp = admin.firestore.Timestamp.now();
 
@@ -120,7 +120,7 @@ export const getUsersWithoutLastActive = functions.https.onCall(async (data: any
       .where('organizationId', '==', organizationId)
       .get();
 
-    const usersWithoutLastActive = [];
+    const usersWithoutLastActive: Array<{ id: string; email: string; firstName?: string; lastName?: string; lastLoginAt?: any; updatedAt?: any; createdAt?: any }> = [];
 
     usersSnapshot.docs.forEach(doc => {
       const userData = doc.data();

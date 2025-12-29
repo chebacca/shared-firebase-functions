@@ -527,6 +527,25 @@ router.put('/:sessionId/steps/:stepId/documentation', authenticateToken, async (
             updateData.actualHours = documentationData.actualHours;
         }
 
+        // 🔧 NEW: Update user assignments if provided
+        if (documentationData.assignedUserIds !== undefined) {
+            updateData.assignedUserIds = Array.isArray(documentationData.assignedUserIds) 
+                ? documentationData.assignedUserIds 
+                : [];
+        }
+        if (documentationData.assignedUserId !== undefined) {
+            updateData.assignedUserId = documentationData.assignedUserId || null;
+        }
+        if (documentationData.assignedToName !== undefined) {
+            updateData.assignedToName = documentationData.assignedToName || null;
+        }
+        if (documentationData.assignedToEmail !== undefined) {
+            updateData.assignedToEmail = documentationData.assignedToEmail || null;
+        }
+        if (documentationData.assignedToAvatar !== undefined) {
+            updateData.assignedToAvatar = documentationData.assignedToAvatar || null;
+        }
+
         await stepRef.update(updateData);
 
         console.log(`✅ [SESSIONS API] Successfully updated documentation for step ${stepId}`);

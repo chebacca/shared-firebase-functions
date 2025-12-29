@@ -405,12 +405,12 @@ async function handleMyManager(req: any, res: any, organizationId: string, userI
       effectiveDate: teamMember.createdAt || new Date().toISOString(),
       manager: {
         id: managerId,
-        name: managerData.displayName || managerData.name || `${managerData.firstName || ''} ${managerData.lastName || ''}`.trim() || managerData.email,
-        firstName: managerData.firstName,
-        lastName: managerData.lastName,
-        email: managerData.email,
-        role: managerData.role,
-        department: managerData.department
+        name: managerData?.displayName || managerData?.name || `${managerData?.firstName || ''} ${managerData?.lastName || ''}`.trim() || managerData?.email || '',
+        firstName: managerData?.firstName,
+        lastName: managerData?.lastName,
+        email: managerData?.email || '',
+        role: managerData?.role,
+        department: managerData?.department
       },
       assigner: teamMember.createdBy ? {
         id: teamMember.createdBy,
@@ -419,7 +419,7 @@ async function handleMyManager(req: any, res: any, organizationId: string, userI
       } : undefined
     };
 
-    console.log(`⏰ [MY MANAGER] Found manager for user ${userId}: ${managerData.email}`);
+    console.log(`⏰ [MY MANAGER] Found manager for user ${userId}: ${managerData?.email || 'unknown'}`);
 
     res.status(200).json(createSuccessResponse(
       directReportInfo,

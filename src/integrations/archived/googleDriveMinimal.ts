@@ -204,7 +204,7 @@ export const handleGoogleOAuthCallback = functions.https.onCall(async (data, con
     }
 
     const stateData = stateDoc.data();
-    if (stateData.userId !== userId || stateData.organizationId !== organizationId) {
+    if (!stateData || stateData.userId !== userId || stateData.organizationId !== organizationId) {
       throw new Error('State parameter mismatch');
     }
 
@@ -339,6 +339,9 @@ export const refreshGoogleAccessToken = functions.https.onCall(async (data, cont
     }
 
     const integrationData = integrationDoc.data();
+    if (!integrationData) {
+      throw new Error('Integration data not found');
+    }
     const tokens = decryptTokens(integrationData.tokens);
 
     // Set credentials and refresh
@@ -389,6 +392,9 @@ export const listGoogleDriveFolders = functions.https.onCall(async (data, contex
     }
 
     const integrationData = integrationDoc.data();
+    if (!integrationData) {
+      throw new Error('Integration data not found');
+    }
     const tokens = decryptTokens(integrationData.tokens);
 
     // Set credentials
@@ -435,6 +441,9 @@ export const getGoogleDriveFiles = functions.https.onCall(async (data, context) 
     }
 
     const integrationData = integrationDoc.data();
+    if (!integrationData) {
+      throw new Error('Integration data not found');
+    }
     const tokens = decryptTokens(integrationData.tokens);
 
     // Set credentials
@@ -482,6 +491,9 @@ export const createGoogleDriveFolder = functions.https.onCall(async (data, conte
     }
 
     const integrationData = integrationDoc.data();
+    if (!integrationData) {
+      throw new Error('Integration data not found');
+    }
     const tokens = decryptTokens(integrationData.tokens);
 
     // Set credentials
@@ -534,6 +546,9 @@ export const uploadToGoogleDrive = functions.https.onCall(async (data, context) 
     }
 
     const integrationData = integrationDoc.data();
+    if (!integrationData) {
+      throw new Error('Integration data not found');
+    }
     const tokens = decryptTokens(integrationData.tokens);
 
     // Set credentials

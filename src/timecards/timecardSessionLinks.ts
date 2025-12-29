@@ -60,7 +60,7 @@ export const createTimecardSessionLink = onCall(
       }
 
       const timecardData = timecardDoc.data();
-      if (timecardData?.organizationId !== organizationId) {
+      if (!timecardData || timecardData.organizationId !== organizationId) {
         throw new HttpsError('permission-denied', 'Timecard does not belong to this organization');
       }
 
@@ -262,7 +262,7 @@ export const createTimecardSessionLinkHttp = onRequest(
       }
 
       const timecardData = timecardDoc.data();
-      if (timecardData?.organizationId !== organizationId) {
+      if (!timecardData || timecardData.organizationId !== organizationId) {
         res.status(403).json(createErrorResponse('Timecard does not belong to this organization'));
         return;
       }

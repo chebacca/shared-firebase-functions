@@ -403,7 +403,7 @@ export const listGoogleDriveFoldersHttp = functions.https.onRequest(async (req, 
     const folders = response.data.files || [];
 
     const result = createSuccessResponse({
-      folders: folders.map(folder => ({
+      folders: folders.map((folder: any) => ({
         id: folder.id,
         name: folder.name,
         parents: folder.parents,
@@ -500,7 +500,7 @@ export const getGoogleDriveFilesHttp = functions.https.onRequest(async (req, res
     const files = response.data.files || [];
 
     const result = createSuccessResponse({
-      files: files.map(file => ({
+      files: files.map((file: any) => ({
         id: file.id,
         name: file.name,
         mimeType: file.mimeType,

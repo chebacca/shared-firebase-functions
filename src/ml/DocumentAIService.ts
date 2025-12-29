@@ -239,8 +239,8 @@ export class DocumentAIService {
     // Extract file formats
     const formatMatches = text.match(/(?:format|file\s+type)[:\s]+([^\n]+)/gi);
     if (formatMatches) {
-      formatMatches.forEach(match => {
-        const formats = match.split(/[,\s]+/).filter(f => f.length > 0);
+      formatMatches.forEach((match: string) => {
+        const formats = match.split(/[,\s]+/).filter((f: string) => f.length > 0);
         data.fileFormats.push(...formats);
       });
     }

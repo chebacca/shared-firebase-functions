@@ -355,7 +355,7 @@ export const syncPitchFromStory = onDocumentUpdated('clipShowStories/{storyId}',
         .limit(1)
         .get();
 
-      if (!pitchQuery.empty) {
+      if (!pitchQuery.empty && after) {
         const pitchDoc = pitchQuery.docs[0];
         await pitchDoc.ref.update({
           status: after.status,

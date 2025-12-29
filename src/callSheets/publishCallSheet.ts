@@ -167,7 +167,7 @@ async function publishCallSheetLogic(data: any, context?: any): Promise<any> {
                 const teamMemberDoc = await admin.firestore().collection('teamMembers').doc(teamMemberId).get();
                 if (teamMemberDoc.exists) {
                   const teamMemberData = teamMemberDoc.data();
-                  if (teamMemberData?.isActive !== false && teamMemberData?.organizationId === organizationId) {
+                  if (teamMemberData && teamMemberData.isActive !== false && teamMemberData.organizationId === organizationId) {
                     const email = teamMemberData.email || assignment.email;
                     if (email && !addedEmails.has(email)) {
                       assignedTeamMembers.push({

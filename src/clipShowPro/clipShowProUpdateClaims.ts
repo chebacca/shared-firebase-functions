@@ -612,10 +612,10 @@ export const clipShowProUpdateClaims = onCall(
       });
 
       return {
-        success: true,
         message: 'User claims updated successfully',
         ...result,
         organizationId,
+        success: true,
       };
 
     } catch (error: any) {

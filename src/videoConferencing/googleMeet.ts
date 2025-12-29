@@ -1,8 +1,23 @@
 /**
  * Google Meet Video Conferencing Functions
- * 
+ *
  * Functions to create, schedule, and manage Google Meet meetings
  */
+
+// CORS allowed origins for video conferencing functions
+const CORS_ORIGINS = [
+  'http://localhost:4002',
+  'http://localhost:4003',
+  'http://localhost:4006',
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:4010',
+  'http://localhost:5173',
+  'https://backbone-client.web.app',
+  'https://backbone-logic.web.app',
+  'https://backbone-callsheet-standalone.web.app',
+  'https://clipshowpro.web.app'
+];
 
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import * as functions from 'firebase-functions'; // Import v1 for config() access
@@ -496,7 +511,8 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
 export const createMeetMeeting = onCall(
   {
     region: 'us-central1',
-    cors: true,
+    invoker: 'public',  // Required for CORS preflight requests
+    cors: CORS_ORIGINS,
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -605,7 +621,8 @@ export const createMeetMeeting = onCall(
 export const scheduleMeetMeeting = onCall(
   {
     region: 'us-central1',
-    cors: true,
+    invoker: 'public',  // Required for CORS preflight requests and public access
+    cors: true,         // Enable CORS support (Firebase handles origins automatically for callable functions)
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -746,10 +763,23 @@ export const scheduleMeetMeeting = onCall(
       };
 
     } catch (error: any) {
-      console.error('❌ [GoogleMeet] Error scheduling meeting:', error);
+      console.error('❌ [GoogleMeet] Error scheduling meeting:', {
+        error: error.message || error,
+        code: error.code,
+        details: error.details || error.stack,
+        response: error.response?.data,
+      });
       
       if (error instanceof HttpsError) {
         throw error;
+      }
+      
+      // Check for authentication errors
+      if (error.code === 'unauthenticated' || error.message?.includes('unauthenticated')) {
+        throw new HttpsError(
+          'unauthenticated',
+          'User must be authenticated to schedule meetings. Please sign in again.'
+        );
       }
       
       // Check for OAuth client mismatch errors
@@ -757,6 +787,15 @@ export const scheduleMeetMeeting = onCall(
         throw new HttpsError(
           'failed-precondition',
           'Google OAuth credentials mismatch. The refresh token was created with different OAuth credentials. Please re-authenticate your Google account in Integration Settings.'
+        );
+      }
+      
+      // Check for calendar API errors
+      if (error.response?.data?.error) {
+        const apiError = error.response.data.error;
+        throw new HttpsError(
+          'internal',
+          `Google Calendar API error: ${apiError.message || apiError.code || 'Unknown error'}`
         );
       }
       
@@ -785,7 +824,8 @@ export const scheduleMeetMeeting = onCall(
 export const updateMeetMeeting = onCall(
   {
     region: 'us-central1',
-    cors: true,
+    invoker: 'public',  // Required for CORS preflight requests
+    cors: CORS_ORIGINS,
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -882,7 +922,8 @@ export const updateMeetMeeting = onCall(
 export const cancelMeetMeeting = onCall(
   {
     region: 'us-central1',
-    cors: true,
+    invoker: 'public',  // Required for CORS preflight requests
+    cors: CORS_ORIGINS,
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -954,7 +995,8 @@ export const cancelMeetMeeting = onCall(
 export const getMeetMeetingDetails = onCall(
   {
     region: 'us-central1',
-    cors: true,
+    invoker: 'public',  // Required for CORS preflight requests
+    cors: CORS_ORIGINS,
     secrets: [encryptionKey],
   },
   async (request) => {

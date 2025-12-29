@@ -59,8 +59,13 @@ export interface SyncBatch {
 export const processAirtableSyncQueue = onDocumentCreated(
   'airtableSyncQueue/{queueId}',
   async (event) => {
+    if (!event.data) {
+      logger.error('Event data is missing');
+      return;
+    }
     const queueId = event.params.queueId;
     const queueData = event.data.data() as SyncQueueItem;
+    const eventDataRef = event.data;
     
     logger.info('Processing sync queue item', { 
       queueId, 
@@ -71,7 +76,7 @@ export const processAirtableSyncQueue = onDocumentCreated(
 
     try {
       // Mark as processing
-      await event.data.ref.update({
+      await eventDataRef.ref.update({
         status: 'processing',
         processedAt: FieldValue.serverTimestamp()
       });
@@ -127,7 +132,7 @@ export const processAirtableSyncQueue = onDocumentCreated(
       }
 
       // Mark as completed
-      await event.data.ref.update({
+      await eventDataRef.ref.update({
         status: 'completed',
         processedAt: FieldValue.serverTimestamp()
       });
@@ -141,7 +146,7 @@ export const processAirtableSyncQueue = onDocumentCreated(
         // Retry with exponential backoff
         const delay = Math.pow(2, retries) * 1000; // 2s, 4s, 8s, 16s
         setTimeout(async () => {
-          await event.data.ref.update({
+          await eventDataRef.ref.update({
             status: 'pending',
             retries,
             error: error instanceof Error ? error.message : 'Unknown error'
@@ -367,14 +372,19 @@ export async function queueSyncOperation(
 export const processSyncBatch = onDocumentCreated(
   'airtableSyncBatches/{batchId}',
   async (event) => {
+    if (!event.data) {
+      logger.error('Event data is missing');
+      return;
+    }
     const batchId = event.params.batchId;
     const batchData = event.data.data() as SyncBatch;
+    const eventDataRef = event.data;
     
     logger.info('Processing sync batch', { batchId, totalItems: batchData.totalItems });
 
     try {
       // Mark batch as processing
-      await event.data.ref.update({
+      await eventDataRef.ref.update({
         status: 'processing',
         processedAt: FieldValue.serverTimestamp()
       });
@@ -411,7 +421,7 @@ export const processSyncBatch = onDocumentCreated(
       }
 
       // Update batch status
-      await event.data.ref.update({
+      await eventDataRef.ref.update({
         status: failedItems > 0 ? 'failed' : 'completed',
         processedItems,
         failedItems,
@@ -426,7 +436,7 @@ export const processSyncBatch = onDocumentCreated(
     } catch (error) {
       logger.error('Sync batch processing failed', { batchId, error });
       
-      await event.data.ref.update({
+      await eventDataRef.ref.update({
         status: 'failed',
         processedAt: FieldValue.serverTimestamp(),
         error: error instanceof Error ? error.message : 'Unknown error'

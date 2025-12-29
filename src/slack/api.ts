@@ -364,9 +364,9 @@ export const slackGetWorkspaceInfo = onCall(
       return {
         success: true,
         workspace: {
-          id: result.team.id,
-          name: result.team.name,
-          domain: result.team.domain,
+          id: result.team!.id,
+          name: result.team!.name,
+          domain: result.team!.domain,
         },
       };
 
@@ -610,12 +610,12 @@ export const slackOpenDM = onCall(
         .collection('organizations')
         .doc(organizationId)
         .collection('slackChannels')
-        .doc(dmChannel.id);
+        .doc(dmChannel.id!);
 
       await channelRef.set({
         connectionId,
-        channelId: dmChannel.id,
-        channelName: dmChannel.id.startsWith('D') ? `DM-${userId}` : (dmChannel as any).name || `DM-${userId}`,
+        channelId: dmChannel.id!,
+        channelName: dmChannel.id!.startsWith('D') ? `DM-${userId}` : (dmChannel as any).name || `DM-${userId}`,
         isPrivate: true,
         isDM: true,
         userId: userId, // Store the user ID for the DM
@@ -626,13 +626,13 @@ export const slackOpenDM = onCall(
         notificationsEnabled: true,
       }, { merge: true });
 
-      console.log(`✅ [SlackAPI] Opened DM with user ${userId}, channel: ${dmChannel.id}`);
+      console.log(`✅ [SlackAPI] Opened DM with user ${userId}, channel: ${dmChannel.id!}`);
 
       return {
         success: true,
         channel: {
-          id: dmChannel.id,
-          name: dmChannel.id.startsWith('D') ? `DM-${userId}` : (dmChannel as any).name || `DM-${userId}`,
+          id: dmChannel.id!,
+          name: dmChannel.id!.startsWith('D') ? `DM-${userId}` : (dmChannel as any).name || `DM-${userId}`,
           isDM: true,
           userId: userId,
         },

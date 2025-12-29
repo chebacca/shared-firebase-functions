@@ -1075,7 +1075,7 @@ export const getSystemStats = onCall(async (request) => {
 
     for (const collection of collections) {
       const snapshot = await collection.limit(1000).get();
-      collectionStats[collection.id] = snapshot.size;
+      (collectionStats as Record<string, number>)[collection.id] = snapshot.size;
     }
 
     return {
