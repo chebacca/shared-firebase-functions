@@ -178,14 +178,14 @@ async function searchByName(
     if (bestMatch !== null) {
       const match = bestMatch as { doc: { id: string; data: any }; score: number };
       if (match.score > 20) {
-        return {
-          entityType: entityType as any,
+      return {
+        entityType: entityType as any,
           entityId: match.doc.id,
           entityName: getEntityName(entityType, match.doc.data),
           showName: match.doc.data.show,
           season: match.doc.data.season,
           confidence: Math.min(match.score / 100, 1.0)
-        };
+      };
       }
     }
 

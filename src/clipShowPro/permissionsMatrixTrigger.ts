@@ -103,12 +103,12 @@ export const onPermissionsMatrixUpdate = onDocumentWritten(
       if (before?.exists) {
         const beforeData = before.data();
         if (beforeData) {
-          const beforePerms = JSON.stringify(beforeData.permissions || []);
-          const afterPerms = JSON.stringify(matrixData.permissions || []);
-          
-          if (beforePerms === afterPerms && beforeData.userRole === matrixData.userRole) {
-            console.log(`ℹ️ [PermissionsMatrixTrigger] Permissions unchanged for ${docId}, skipping`);
-            return;
+        const beforePerms = JSON.stringify(beforeData.permissions || []);
+        const afterPerms = JSON.stringify(matrixData.permissions || []);
+        
+        if (beforePerms === afterPerms && beforeData.userRole === matrixData.userRole) {
+          console.log(`ℹ️ [PermissionsMatrixTrigger] Permissions unchanged for ${docId}, skipping`);
+          return;
           }
         }
       }

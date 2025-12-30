@@ -5,7 +5,7 @@
  */
 
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
-import { db } from '../shared/utils';
+import { db, getUserOrganizationId, isAdminUser } from '../shared/utils';
 import { getWebexConfig } from '../webex/config';
 import { Timestamp } from 'firebase-admin/firestore';
 import { encryptionKey, getEncryptionKey } from '../webex/secrets';
@@ -235,8 +235,8 @@ export const createWebexMeeting = onCall(
 export const scheduleWebexMeeting = onCall(
   {
     region: 'us-central1',
-    invoker: 'public',  // Required for CORS preflight requests and public access
-    cors: true,         // Enable CORS support (Firebase handles origins automatically for callable functions)
+    invoker: 'public',  // Required for public access - callable functions handle CORS automatically
+    // Note: cors option is not needed for callable functions - they handle CORS automatically
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -257,6 +257,58 @@ export const scheduleWebexMeeting = onCall(
       const auth = request.auth;
       if (!auth) {
         throw new HttpsError('unauthenticated', 'User must be authenticated');
+      }
+
+      const userId = auth.uid;
+      const userEmail = auth.token.email || '';
+
+      // Verify user belongs to the organization
+      const userOrganizationId = await getUserOrganizationId(userId, userEmail);
+      if (!userOrganizationId) {
+        throw new HttpsError('permission-denied', 'User is not associated with any organization');
+      }
+
+      // Verify user belongs to the requested organization
+      if (userOrganizationId !== organizationId) {
+        // Check if user is a member of the organization via teamMembers collection
+        const teamMemberQuery = await db
+          .collection('teamMembers')
+          .where('userId', '==', userId)
+          .where('organizationId', '==', organizationId)
+          .limit(1)
+          .get();
+
+        if (teamMemberQuery.empty) {
+          // Also check users collection for the organization
+          const userDoc = await db.collection('users').doc(userId).get();
+          const userData = userDoc.data();
+          
+          if (userData?.organizationId !== organizationId) {
+            throw new HttpsError(
+              'permission-denied',
+              'User does not have access to this organization'
+            );
+          }
+        }
+      }
+
+      // Optional: Check if user is admin (for logging/auditing purposes)
+      let isAdmin = false;
+      try {
+        const userDoc = await db.collection('users').doc(userId).get();
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+          isAdmin = isAdminUser(userData || {});
+        }
+      } catch (error) {
+        console.warn('Could not check admin status:', error);
+        // Continue even if admin check fails - regular members can schedule meetings
+      }
+
+      if (isAdmin) {
+        console.log(`✅ [scheduleWebexMeeting] Admin user ${userId} scheduling meeting for org ${organizationId}`);
+      } else {
+        console.log(`✅ [scheduleWebexMeeting] User ${userId} scheduling meeting for org ${organizationId}`);
       }
 
       // Get authenticated token

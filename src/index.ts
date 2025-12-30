@@ -120,6 +120,7 @@ export * from './webex';
 
 // Export Video Conferencing functions
 export * from './videoConferencing';
+export * from './location';
 
 // Export App Role Definition Service
 export { appRoleDefinitionService, AppRoleDefinitionService } from './roles/AppRoleDefinitionService';

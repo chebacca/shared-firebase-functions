@@ -21,13 +21,14 @@ const CORS_ORIGINS = [
 
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import * as functions from 'firebase-functions'; // Import v1 for config() access
-import { db } from '../shared/utils';
+import { db, getUserOrganizationId, validateOrganizationAccess, isAdminUser } from '../shared/utils';
 import { getGoogleConfig } from '../google/config';
 import { Timestamp } from 'firebase-admin/firestore';
 import { encryptionKey, getEncryptionKey } from '../google/secrets';
 import { decryptTokens } from '../integrations/encryption';
 import { google } from 'googleapis';
 import * as crypto from 'crypto';
+import * as admin from 'firebase-admin';
 
 /**
  * Helper to get Firebase Functions v1 config (for backward compatibility)
@@ -161,6 +162,7 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
             refreshToken: decrypted.refresh_token || decrypted.refreshToken,
             tokenExpiresAt: cloudData.expiresAt || cloudData.tokenExpiresAt,
             clientId: cloudData.clientId, // Store client ID used to create these tokens
+            scopes: cloudData.scopes || [], // Preserve scopes from the connection document
           };
         } else {
           console.warn(`⚠️ [GoogleMeet] cloudIntegrations/google exists but no valid tokens found`);
@@ -621,17 +623,16 @@ export const createMeetMeeting = onCall(
 export const scheduleMeetMeeting = onCall(
   {
     region: 'us-central1',
-    invoker: 'public',  // Required for CORS preflight requests and public access
-    cors: true,         // Enable CORS support (Firebase handles origins automatically for callable functions)
+    invoker: 'public',  // Required for public access
+    cors: true,         // Enable CORS support for callable functions
     secrets: [encryptionKey],
   },
   async (request) => {
-    try {
       const { organizationId, title, startTime, endTime, participants, description } = request.data as {
         organizationId: string;
         title: string;
-        startTime: string; // ISO string
-        endTime?: string; // ISO string
+      startTime: string;
+      endTime?: string;
         participants?: string[];
         description?: string;
       };
@@ -640,53 +641,65 @@ export const scheduleMeetMeeting = onCall(
         throw new HttpsError('invalid-argument', 'Organization ID, title, and start time are required');
       }
 
-      const auth = request.auth;
-      if (!auth) {
+    if (!request.auth) {
         throw new HttpsError('unauthenticated', 'User must be authenticated');
       }
 
-      // Check if connection has calendar scopes BEFORE attempting API call
-      // This provides a clearer error message than waiting for the API to fail
-      const connectionDoc = await db
-        .collection('organizations')
-        .doc(organizationId)
-        .collection('cloudIntegrations')
-        .doc('google')
+    const auth = request.auth;
+    const userId = auth.uid;
+    const userEmail = auth.token.email || '';
+
+    // Verify user belongs to the organization
+    const userOrganizationId = await getUserOrganizationId(userId, userEmail);
+    if (!userOrganizationId) {
+      throw new HttpsError('permission-denied', 'User is not associated with any organization');
+    }
+
+    // Verify user belongs to the requested organization
+    if (userOrganizationId !== organizationId) {
+      // Check if user is a member of the organization via teamMembers collection
+      const teamMemberQuery = await db
+        .collection('teamMembers')
+        .where('userId', '==', userId)
+        .where('organizationId', '==', organizationId)
+        .limit(1)
         .get();
       
-      if (connectionDoc.exists) {
-        const connectionData = connectionDoc.data();
-        const scopes = connectionData?.scopes || [];
-        const requiredCalendarScopes = [
-          'https://www.googleapis.com/auth/calendar',
-          'https://www.googleapis.com/auth/calendar.events'
-        ];
-        const hasCalendarScopes = requiredCalendarScopes.every(scope => scopes.includes(scope));
+      if (teamMemberQuery.empty) {
+        // Also check users collection for the organization
+        const userDoc = await db.collection('users').doc(userId).get();
+        const userData = userDoc.data();
         
-        if (scopes.length === 0) {
-          // No scopes field - connection was created before scopes were tracked OR licensing website didn't save them
-          console.warn(`⚠️ [GoogleMeet] Connection exists but has no scopes field. Created: ${connectionData?.createdAt?.toDate?.() || 'unknown'}`);
+        if (userData?.organizationId !== organizationId) {
           throw new HttpsError(
-            'failed-precondition',
-            'Google OAuth connection is missing calendar permissions. The connection document does not have a scopes field, which means either: (1) it was created before calendar scopes were added, or (2) the licensing website needs to be restarted. Please disconnect and reconnect your Google account in Integration Settings: https://backbone-logic.web.app/integration-settings'
-          );
-        } else if (!hasCalendarScopes) {
-          // Has scopes but missing calendar scopes
-          console.warn(`⚠️ [GoogleMeet] Connection missing calendar scopes. Document has: ${scopes.join(', ')}`);
-          throw new HttpsError(
-            'failed-precondition',
-            'Google OAuth connection is missing calendar permissions. The connection has scopes but not calendar scopes. Please disconnect and reconnect your Google account in Integration Settings: https://backbone-logic.web.app/integration-settings'
+            'permission-denied',
+            'User does not have access to this organization'
           );
         }
-        console.log(`✅ [GoogleMeet] Connection has required calendar scopes in document`);
+      }
+    }
+
+    // Optional: Check if user is admin (for logging/auditing purposes)
+    // Regular members can schedule meetings, but we log admin status
+    let isAdmin = false;
+    try {
+      const userDoc = await db.collection('users').doc(userId).get();
+      if (userDoc.exists) {
+        const userData = userDoc.data();
+        isAdmin = isAdminUser(userData || {});
+      }
+    } catch (error) {
+      console.warn('Could not check admin status:', error);
+      // Continue even if admin check fails - regular members can schedule meetings
+    }
+
+    if (isAdmin) {
+      console.log(`✅ [scheduleMeetMeeting] Admin user ${userId} scheduling meeting for org ${organizationId}`);
       } else {
-        throw new HttpsError(
-          'failed-precondition',
-          'Google OAuth connection not found. Please connect your Google account in Integration Settings: https://backbone-logic.web.app/integration-settings'
-        );
+      console.log(`✅ [scheduleMeetMeeting] User ${userId} scheduling meeting for org ${organizationId}`);
       }
 
-      // Get authenticated client
+    // Get authenticated client (will throw if connection not found or invalid)
       const oauth2Client = await getAuthenticatedGoogleClient(organizationId);
       const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 
@@ -761,60 +774,6 @@ export const scheduleMeetMeeting = onCall(
           endTime: meetingData.end?.dateTime,
         },
       };
-
-    } catch (error: any) {
-      console.error('❌ [GoogleMeet] Error scheduling meeting:', {
-        error: error.message || error,
-        code: error.code,
-        details: error.details || error.stack,
-        response: error.response?.data,
-      });
-      
-      if (error instanceof HttpsError) {
-        throw error;
-      }
-      
-      // Check for authentication errors
-      if (error.code === 'unauthenticated' || error.message?.includes('unauthenticated')) {
-        throw new HttpsError(
-          'unauthenticated',
-          'User must be authenticated to schedule meetings. Please sign in again.'
-        );
-      }
-      
-      // Check for OAuth client mismatch errors
-      if (error.message?.includes('invalid_client') || error.response?.data?.error === 'invalid_client') {
-        throw new HttpsError(
-          'failed-precondition',
-          'Google OAuth credentials mismatch. The refresh token was created with different OAuth credentials. Please re-authenticate your Google account in Integration Settings.'
-        );
-      }
-      
-      // Check for calendar API errors
-      if (error.response?.data?.error) {
-        const apiError = error.response.data.error;
-        throw new HttpsError(
-          'internal',
-          `Google Calendar API error: ${apiError.message || apiError.code || 'Unknown error'}`
-        );
-      }
-      
-      // Check for insufficient permissions errors
-      if (error.message?.includes('Insufficient Permission') || 
-          error.message?.includes('insufficient permission') ||
-          error.message?.includes('insufficient_scope') ||
-          error.response?.data?.error === 'insufficientPermissions' ||
-          error.response?.headers?.['www-authenticate']?.includes('insufficient_scope') ||
-          error.code === 403) {
-        // Provide a clear, actionable error message with direct link
-        throw new HttpsError(
-          'permission-denied',
-          'Google OAuth token is missing calendar permissions. This happens when the connection was created before calendar scopes were added. Please disconnect and reconnect your Google account in Integration Settings to fix this: https://backbone-logic.web.app/integration-settings'
-        );
-      }
-      
-      throw new HttpsError('internal', `Failed to schedule Google Meet: ${error.message || 'Unknown error'}`);
-    }
   }
 );
 

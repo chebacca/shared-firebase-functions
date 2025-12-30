@@ -731,18 +731,69 @@ export const refreshGoogleAccessTokenHttp = functions.https.onRequest(async (req
     // Verify user authentication
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      res.status(401).json({ success: false, error: 'Authentication required' });
+      console.warn('⚠️ [refreshGoogleAccessTokenHttp] Missing or invalid Authorization header');
+      res.status(401).json({ 
+        success: false, 
+        error: 'Authentication required',
+        errorDetails: 'Missing or invalid Authorization header. Please ensure you are logged in.'
+      });
       return;
     }
 
     const token = authHeader.split('Bearer ')[1];
-    const decodedToken = await admin.auth().verifyIdToken(token);
+    if (!token) {
+      console.warn('⚠️ [refreshGoogleAccessTokenHttp] Empty token in Authorization header');
+      res.status(401).json({ 
+        success: false, 
+        error: 'Authentication required',
+        errorDetails: 'Empty token in Authorization header'
+      });
+      return;
+    }
+
+    let decodedToken;
+    try {
+      decodedToken = await admin.auth().verifyIdToken(token);
+    } catch (verifyError: any) {
+      console.error('❌ [refreshGoogleAccessTokenHttp] Token verification failed:', verifyError);
+      const errorMessage = verifyError?.message || String(verifyError);
+      
+      // Check for specific Firebase Auth errors
+      if (errorMessage.includes('expired') || errorMessage.includes('Expired')) {
+        res.status(401).json({ 
+          success: false, 
+          error: 'Token expired',
+          errorDetails: 'Firebase authentication token has expired. Please refresh your session.',
+          requiresReconnection: false
+        });
+        return;
+      } else if (errorMessage.includes('invalid') || errorMessage.includes('Invalid')) {
+        res.status(401).json({ 
+          success: false, 
+          error: 'Invalid token',
+          errorDetails: 'Firebase authentication token is invalid. Please log in again.',
+          requiresReconnection: false
+        });
+        return;
+      }
+      
+      // Generic auth error
+      res.status(401).json({ 
+        success: false, 
+        error: 'Authentication failed',
+        errorDetails: `Token verification failed: ${errorMessage}`
+      });
+      return;
+    }
+    
     const userId = decodedToken.uid;
+    console.log('✅ [refreshGoogleAccessTokenHttp] Token verified for user:', userId);
     
     // Get organization ID using helper function (checks multiple sources)
     const organizationId = await getUserOrganizationId(userId, decodedToken.email || '');
     
     if (!organizationId) {
+      console.warn('⚠️ [refreshGoogleAccessTokenHttp] User organization not found for user:', userId);
       res.status(403).json({ 
         success: false, 
         error: 'User organization not found',
@@ -751,6 +802,7 @@ export const refreshGoogleAccessTokenHttp = functions.https.onRequest(async (req
       return;
     }
 
+    console.log('🔄 [refreshGoogleAccessTokenHttp] Refreshing Google access token for org:', organizationId);
     // Call internal refresh function
     const tokens = await refreshGoogleAccessToken(userId, organizationId);
     
@@ -763,10 +815,48 @@ export const refreshGoogleAccessTokenHttp = functions.https.onRequest(async (req
     });
   } catch (error) {
     console.error('Google token refresh failed:', error);
-    res.status(500).json({
+    
+    // Determine appropriate status code based on error type
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    let statusCode = 500;
+    let errorType = 'Failed to refresh Google access token';
+    
+    // Check for token-related errors (should return 401)
+    // These indicate the refresh token is invalid, expired, or revoked
+    if (errorMessage.includes('Token has been expired or revoked') ||
+        errorMessage.includes('invalid_grant') ||
+        errorMessage.includes('refresh token is invalid') ||
+        errorMessage.includes('refresh token is invalid or revoked') ||
+        errorMessage.includes('Google integration not found')) {
+      statusCode = 401;
+      errorType = 'Google token invalid or expired';
+    }
+    // Check for configuration errors (should return 400)
+    // These indicate OAuth client configuration issues
+    else if (errorMessage.includes('Invalid OAuth client configuration') ||
+             errorMessage.includes('invalid_client') ||
+             errorMessage.includes('OAuth client was not found')) {
+      statusCode = 400;
+      errorType = 'OAuth configuration error';
+    }
+    // Check for organization errors (should return 403)
+    else if (errorMessage.includes('organization')) {
+      statusCode = 403;
+      errorType = 'Organization access error';
+    }
+    
+    // Preserve the full error message for diagnostics
+    // The frontend can use errorDetails to show more helpful messages
+    res.status(statusCode).json({
       success: false,
-      error: 'Failed to refresh Google access token',
-      errorDetails: error instanceof Error ? error.message : 'Unknown error'
+      error: errorType,
+      errorDetails: errorMessage,
+      // Include additional context for debugging
+      requiresReconnection: statusCode === 401 && (
+        errorMessage.includes('refresh token is invalid') ||
+        errorMessage.includes('invalid_grant') ||
+        errorMessage.includes('Token has been expired or revoked')
+      )
     });
   }
 });

@@ -11,6 +11,7 @@ const encryptionKeySecret = defineSecret('INTEGRATIONS_ENCRYPTION_KEY');
 // Import refactored routes
 import healthRouter from './routes/health';
 import timecardApprovalRouter from './routes/timecardApproval';
+import timecardRouter from './routes/timecard';
 import infrastructureRouter from './routes/infrastructure';
 import contactsRouter from './routes/contacts';
 import sessionsRouter from './routes/sessions';
@@ -36,6 +37,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Register refactored routes
 app.use('/health', healthRouter);
 app.use('/timecard-approval', timecardApprovalRouter);
+app.use('/timecard', timecardRouter);
 app.use('/infrastructure', infrastructureRouter);
 app.use('/contacts', contactsRouter);
 app.use('/sessions', sessionsRouter);
@@ -49,7 +51,7 @@ app.get('/docs', (req, res) => {
     title: 'BACKBONE Unified API',
     version: '2.0.0',
     description: 'Refactored Modular API for all BACKBONE projects',
-    routers: ['/health', '/timecard-approval', '/infrastructure', '/contacts', '/sessions', '/production', '/workflow', '/network-delivery']
+    routers: ['/health', '/timecard-approval', '/timecard', '/infrastructure', '/contacts', '/sessions', '/production', '/workflow', '/network-delivery']
   });
 });
 
