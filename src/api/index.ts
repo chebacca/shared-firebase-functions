@@ -18,6 +18,7 @@ import sessionsRouter from './routes/sessions';
 import productionRouter from './routes/production';
 import workflowRouter from './routes/workflow';
 import networkDeliveryRouter, { uploadNetworkDeliveryBible, getNetworkDeliveryDeliverables } from './routes/networkDelivery';
+import serverRouter from './routes/servers';
 
 // Create Express app
 const app = express();
@@ -44,6 +45,7 @@ app.use('/sessions', sessionsRouter);
 app.use('/production', productionRouter);
 app.use('/workflow', workflowRouter);
 app.use('/network-delivery', networkDeliveryRouter);
+app.use('/server', serverRouter);
 
 // Documentation endpoint
 app.get('/docs', (req, res) => {

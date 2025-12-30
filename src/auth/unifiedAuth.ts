@@ -129,6 +129,14 @@ async function computeUserClaims(user: { uid: string; email?: string }): Promise
         if (userData.hasCueSheetAccess || claims.permissions.includes('CUE_SHEET')) {
             claims.hasCueSheetAccess = true;
         }
+
+        // Multi-tenant support: Add allowedOrganizations if user has access to multiple orgs
+        if (userData.allowedOrganizations && Array.isArray(userData.allowedOrganizations)) {
+            claims.allowedOrganizations = userData.allowedOrganizations;
+        } else if (claims.organizationId) {
+            // If user has a primary organizationId, include it in allowedOrganizations
+            claims.allowedOrganizations = [claims.organizationId];
+        }
     }
 
     return claims;
@@ -180,4 +188,57 @@ export const onUserLoginTrigger = (functions as any).auth.user().onCreate(async 
     console.log(`🆕 [UnifiedAuth] New user created: ${user.email}. Minting initial claims.`);
     const claims = await computeUserClaims({ uid: user.uid, email: user.email });
     await admin.auth().setCustomUserClaims(user.uid, claims);
+});
+
+/**
+ * 🔄 SYNC USER CLAIMS ON LOGIN
+ * Ensures user claims (especially organizationId) are up-to-date when user logs in
+ * This helps ensure Storage rules can properly validate organization access
+ */
+export const syncUserClaimsOnLogin = functions.https.onCall(async (data: any, context: any) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'User must be logged in to sync claims.');
+    }
+
+    const uid = context.auth.uid;
+    const email = context.auth.token.email;
+
+    console.log(`🔄 [UnifiedAuth] Syncing claims on login for ${email} (${uid})`);
+
+    try {
+        // Get current claims
+        const userRecord = await admin.auth().getUser(uid);
+        const currentClaims = userRecord.customClaims || {};
+
+        // Compute fresh claims
+        const freshClaims = await computeUserClaims({ uid, email });
+
+        // Merge with existing claims to preserve any additional data
+        const mergedClaims = {
+            ...currentClaims,
+            ...freshClaims,
+            // Ensure organizationId is always set if available
+            organizationId: freshClaims.organizationId || currentClaims.organizationId,
+            // Ensure allowedOrganizations includes the primary organizationId
+            allowedOrganizations: freshClaims.allowedOrganizations || 
+                (freshClaims.organizationId ? [freshClaims.organizationId] : currentClaims.allowedOrganizations || []),
+            lastUpdated: Date.now()
+        };
+
+        // Only update if claims have changed
+        const currentClaimsStr = JSON.stringify(currentClaims);
+        const mergedClaimsStr = JSON.stringify(mergedClaims);
+        
+        if (currentClaimsStr !== mergedClaimsStr) {
+            await admin.auth().setCustomUserClaims(uid, mergedClaims);
+            console.log(`✅ [UnifiedAuth] Claims synced for ${email} (${uid})`);
+            return { success: true, claims: mergedClaims, updated: true };
+        } else {
+            console.log(`ℹ️ [UnifiedAuth] Claims already up-to-date for ${email} (${uid})`);
+            return { success: true, claims: mergedClaims, updated: false };
+        }
+    } catch (error) {
+        console.error(`❌ [UnifiedAuth] Failed to sync claims for ${uid}:`, error);
+        throw new functions.https.HttpsError('internal', 'Failed to sync claims.');
+    }
 });
