@@ -31,7 +31,16 @@ function encryptToken(text: string): string {
  * Decrypt sensitive data
  */
 function decryptToken(encryptedData: string): string {
+  if (!encryptedData || typeof encryptedData !== 'string') {
+    throw new Error('Cannot decrypt: encryptedData is missing or invalid');
+  }
+  
   const [ivHex, authTagHex, encrypted] = encryptedData.split(':');
+  
+  if (!ivHex || !authTagHex || !encrypted) {
+    throw new Error('Cannot decrypt: encryptedData format is invalid (expected format: iv:authTag:encrypted)');
+  }
+  
   const iv = Buffer.from(ivHex, 'hex');
   const authTag = Buffer.from(authTagHex, 'hex');
   
@@ -92,11 +101,52 @@ export async function getDropboxConfig(organizationId: string) {
     );
   }
   
+  // Validate required fields
+  if (!config.appKey) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Dropbox appKey is missing from configuration. Please reconfigure Dropbox integration.'
+    );
+  }
+  
+  if (!config.appSecret) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Dropbox appSecret is missing from configuration. Please reconfigure Dropbox integration.'
+    );
+  }
+  
+  // Decrypt app secret if it looks encrypted (contains :)
+  // This matches Google Drive's pattern for handling encrypted vs plaintext secrets
+  let appSecret = config.appSecret;
+  if (config.appSecret && config.appSecret.includes(':')) {
+    try {
+      appSecret = decryptToken(config.appSecret);
+      console.log(`✅ [DropboxConfig] Decrypted app secret for org: ${organizationId}`);
+    } catch (error) {
+      console.warn(`⚠️ [DropboxConfig] Failed to decrypt app secret (falling back to plaintext):`, error);
+      appSecret = config.appSecret;
+    }
+  } else {
+    console.log(`ℹ️ [DropboxConfig] Using plaintext app secret for org: ${organizationId}`);
+  }
+  
+  // CRITICAL: Trim whitespace from credentials (common issue from copy/paste or form inputs)
+  const trimmedAppKey = config.appKey?.trim();
+  const trimmedAppSecret = appSecret?.trim();
+  
+  if (!trimmedAppKey || !trimmedAppSecret) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Dropbox credentials are invalid after trimming whitespace. Please reconfigure Dropbox integration.'
+    );
+  }
+  
   console.log(`✅ [DropboxConfig] Config loaded for org: ${organizationId}`);
   
   return {
-    appKey: config.appKey,
-    appSecret: decryptToken(config.appSecret),
+    appKey: trimmedAppKey,
+    appSecret: trimmedAppSecret,
     redirectUri: config.redirectUri || 'https://clipshowpro.web.app/integration-settings',
   };
 }
@@ -123,6 +173,15 @@ export const saveDropboxConfig = onCall(
       throw new HttpsError('invalid-argument', 'Missing required configuration fields');
     }
 
+    // CRITICAL: Trim whitespace from credentials before saving
+    // This prevents issues with copy/paste or form inputs that add extra spaces
+    const trimmedAppKey = appKey.trim();
+    const trimmedAppSecret = appSecret.trim();
+
+    if (!trimmedAppKey || !trimmedAppSecret) {
+      throw new HttpsError('invalid-argument', 'App Key and App Secret cannot be empty after trimming whitespace');
+    }
+
     console.log(`💾 [DropboxConfig] Saving config for org: ${organizationId} by user: ${auth.uid}`);
 
     try {
@@ -138,17 +197,17 @@ export const saveDropboxConfig = onCall(
         throw new HttpsError('permission-denied', 'Only organization admins can configure integrations');
       }
 
-      // Encrypt sensitive fields
-      const encryptedAppSecret = encryptToken(appSecret);
+      // Encrypt sensitive fields (using trimmed values)
+      const encryptedAppSecret = encryptToken(trimmedAppSecret);
 
-      // Save configuration
+      // Save configuration (using trimmed appKey)
       await db
         .collection('organizations')
         .doc(organizationId)
         .collection('integrationSettings')
         .doc('dropbox')
         .set({
-          appKey,
+          appKey: trimmedAppKey,
           appSecret: encryptedAppSecret,
           redirectUri: redirectUri || 'https://clipshowpro.web.app/integration-settings',
           isConfigured: true,

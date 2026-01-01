@@ -7,10 +7,12 @@
 
 import { google } from 'googleapis';
 import * as functions from 'firebase-functions';
+import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
 import { encryptTokens, decryptTokens, generateSecureState, verifyState, hashForLogging } from './encryption';
 import { createSuccessResponse, createErrorResponse, db, getUserOrganizationId } from '../shared/utils';
 import { getGoogleConfig as getGoogleConfigFromFirestore } from '../google/config';
+import { encryptionKey } from '../google/secrets';
 
 // Google OAuth configuration - Use environment variables (Firebase Functions v2 compatible)
 const getGoogleConfig = () => {
@@ -18,7 +20,7 @@ const getGoogleConfig = () => {
   let configClientId: string | undefined;
   let configClientSecret: string | undefined;
   let configRedirectUri: string | undefined;
-  
+
   try {
     // Try functions.config() for backward compatibility (may not be available in v2)
     const config = functions.config();
@@ -29,13 +31,13 @@ const getGoogleConfig = () => {
     // functions.config() not available (Firebase Functions v2) - use environment variables only
     console.log('[googleDrive] functions.config() not available, using environment variables only');
   }
-  
+
   const clientId = process.env.GOOGLE_CLIENT_ID || configClientId;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET || configClientSecret;
   // NOTE: redirectUri is now always provided by the client request, not from env/config
   // This allows dynamic redirect URIs for dev (localhost) vs production
-  const redirectUri = process.env.GOOGLE_REDIRECT_URI || configRedirectUri || 'https://backbone-logic.web.app/integration-settings';
-  
+  const redirectUri = process.env.GOOGLE_REDIRECT_URI || configRedirectUri || 'https://backbone-logic.web.app/dashboard/integrations';
+
   // Log config source for debugging
   console.log('[googleDrive] getGoogleConfig:', {
     hasEnvClientId: !!process.env.GOOGLE_CLIENT_ID,
@@ -45,7 +47,7 @@ const getGoogleConfig = () => {
     hasClientSecret: !!clientSecret,
     redirectUriSource: process.env.GOOGLE_REDIRECT_URI ? 'env' : (configRedirectUri ? 'config' : 'default')
   });
-  
+
   return { clientId, clientSecret, redirectUri };
 };
 
@@ -55,11 +57,11 @@ let oauth2Client: any = null;
 // Get OAuth2 client for credential operations (refresh, API calls) - redirect URI not needed
 const getOAuth2ClientForCredentials = () => {
   const config = getGoogleConfig();
-  
+
   if (!config.clientId || !config.clientSecret) {
     throw new Error('Google OAuth client ID and secret must be configured');
   }
-  
+
   // For credential operations, redirect URI doesn't matter - use a dummy value
   return new google.auth.OAuth2(
     config.clientId,
@@ -71,12 +73,12 @@ const getOAuth2ClientForCredentials = () => {
 // Get OAuth2 client for OAuth flows (initiation, token exchange) - redirect URI REQUIRED
 const getOAuth2Client = (redirectUri: string) => {
   const config = getGoogleConfig();
-  
+
   // CRITICAL: redirectUri is REQUIRED - no fallbacks
   if (!redirectUri) {
     throw new Error('redirectUri is required for OAuth2 client creation');
   }
-  
+
   // Validate config with detailed error messages
   if (!config.clientId || !config.clientSecret) {
     const errorDetails = {
@@ -88,13 +90,13 @@ const getOAuth2Client = (redirectUri: string) => {
       clientSecretLength: config.clientSecret?.length || 0,
       redirectUri: redirectUri
     };
-    
+
     console.error('[googleDrive] OAuth config error:', errorDetails);
-    
+
     const errorMsg = 'Google OAuth client ID and secret must be configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables in Firebase Functions, or use firebase functions:config:set google.client_id="..." google.client_secret="...".';
     throw new Error(errorMsg);
   }
-  
+
   // Validate client ID format (should be a Google OAuth client ID)
   if (!config.clientId.includes('.apps.googleusercontent.com') && !config.clientId.includes('googleusercontent')) {
     console.warn('[googleDrive] Client ID format may be incorrect:', {
@@ -102,7 +104,7 @@ const getOAuth2Client = (redirectUri: string) => {
       expectedFormat: '*.apps.googleusercontent.com'
     });
   }
-  
+
   // Always create a new instance to ensure fresh config
   // This prevents issues with stale client instances
   oauth2Client = new google.auth.OAuth2(
@@ -110,7 +112,7 @@ const getOAuth2Client = (redirectUri: string) => {
     config.clientSecret,
     redirectUri
   );
-  
+
   console.log('[googleDrive] OAuth2 client created:', {
     hasClientId: !!config.clientId,
     hasClientSecret: !!config.clientSecret,
@@ -118,7 +120,7 @@ const getOAuth2Client = (redirectUri: string) => {
     redirectUriSource: 'provided',
     clientIdPrefix: config.clientId.substring(0, 20) + '...'
   });
-  
+
   return oauth2Client;
 };
 
@@ -155,18 +157,18 @@ export const initiateGoogleOAuthHttp = functions.https.onRequest(async (req, res
     'http://localhost:5173',
     'null'
   ];
-  
+
   const origin = req.headers.origin;
   if (origin && (allowedOrigins.includes(origin) || origin === 'null')) {
     res.set('Access-Control-Allow-Origin', origin);
   } else {
     res.set('Access-Control-Allow-Origin', '*');
   }
-  
+
   res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.set('Access-Control-Allow-Credentials', 'true');
-  
+
   if (req.method === 'OPTIONS') {
     res.status(204).send('');
     return;
@@ -187,18 +189,18 @@ export const initiateGoogleOAuthHttp = functions.https.onRequest(async (req, res
 
     // Get redirect URI from request body
     const { redirectUri } = req.body || {};
-    
+
     // CRITICAL: redirectUri is REQUIRED - no fallbacks
     if (!redirectUri) {
-      res.status(400).json({ 
-        success: false, 
-        error: 'redirectUri is required in request body' 
+      res.status(400).json({
+        success: false,
+        error: 'redirectUri is required in request body'
       });
       return;
     }
-    
+
     const finalRedirectUri = redirectUri.trim();
-    
+
     // Get OAuth credentials from Firestore (integrationSettings/google)
     // This ensures we use the correct OAuth client ID that has the redirect URIs configured
     let googleConfig;
@@ -227,11 +229,11 @@ export const initiateGoogleOAuthHttp = functions.https.onRequest(async (req, res
       }
       googleConfig = fallbackConfig;
     }
-    
+
     // Use client ID/secret from Firestore config (or fallback)
     const clientId = googleConfig.clientId;
     const clientSecret = googleConfig.clientSecret;
-    
+
     console.log('[googleDrive] 📋 OAuth initiation request details:', {
       hasClientId: !!clientId,
       hasClientSecret: !!clientSecret,
@@ -260,24 +262,24 @@ export const initiateGoogleOAuthHttp = functions.https.onRequest(async (req, res
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       expiresAt: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 10 * 60 * 1000)) // 10 minutes
     };
-    
+
     await db
       .collection('oauthStates')
       .doc(state)
       .set(stateDocData);
-    
+
     console.log('[googleDrive] State document stored with redirectUri:', {
       state: state.substring(0, 20) + '...',
       redirectUri: finalRedirectUri.substring(0, 50) + '...'
     });
-    
+
     // Verify the state document was created (with retry logic for eventual consistency)
     // This prevents race conditions where the callback reads the state before it's fully written
     let verifyStateDoc = await db
       .collection('oauthStates')
       .doc(state)
       .get();
-    
+
     if (!verifyStateDoc.exists) {
       console.warn('[googleDrive] State document not found immediately, retrying for eventual consistency...');
       await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms
@@ -286,12 +288,12 @@ export const initiateGoogleOAuthHttp = functions.https.onRequest(async (req, res
         .doc(state)
         .get();
     }
-    
+
     if (!verifyStateDoc.exists) {
       console.error('[googleDrive] CRITICAL: State document not found after retry!');
       throw new Error('Failed to create OAuth state document - document not found after creation');
     }
-    
+
     console.log('[googleDrive] State document verified in Firestore:', {
       state: state.substring(0, 20) + '...',
       hasRedirectUri: !!verifyStateDoc.data()?.redirectUri
@@ -307,13 +309,13 @@ export const initiateGoogleOAuthHttp = functions.https.onRequest(async (req, res
       });
       return;
     }
-    
+
     const oauth2Client = new google.auth.OAuth2(
       clientId,
       clientSecret,
       finalRedirectUri // Use the exact redirect URI from request
     );
-    
+
     console.log('[googleDrive] Created OAuth2 client:', {
       clientIdPrefix: clientId.substring(0, 20) + '...',
       clientIdFull: clientId, // Log full client ID for debugging
@@ -330,7 +332,7 @@ export const initiateGoogleOAuthHttp = functions.https.onRequest(async (req, res
       state: state,
       prompt: 'consent' // Force consent to get refresh token
     });
-    
+
     // Verify the redirect URI in the auth URL matches what we stored
     // Also store it in the state document for use during token exchange
     let decodedAuthRedirectUri: string | null = null;
@@ -338,7 +340,7 @@ export const initiateGoogleOAuthHttp = functions.https.onRequest(async (req, res
       const authUrlObj = new URL(authUrl);
       const authUrlRedirectUri = authUrlObj.searchParams.get('redirect_uri');
       decodedAuthRedirectUri = authUrlRedirectUri ? decodeURIComponent(authUrlRedirectUri) : null;
-      
+
       console.log('[googleDrive] ⚠️ CRITICAL DEBUG - Authorization URL generated:', {
         redirectUriInAuthUrl: decodedAuthRedirectUri, // Full URI for debugging
         storedRedirectUri: finalRedirectUri, // Full URI for debugging
@@ -348,7 +350,7 @@ export const initiateGoogleOAuthHttp = functions.https.onRequest(async (req, res
         origin: req.headers.origin,
         errorMessage: decodedAuthRedirectUri !== finalRedirectUri ? 'REDIRECT URI MISMATCH IN AUTH URL!' : 'OK'
       });
-      
+
       // CRITICAL: If redirect URIs don't match, log error
       if (decodedAuthRedirectUri && decodedAuthRedirectUri !== finalRedirectUri) {
         console.error('[googleDrive] ❌ CRITICAL ERROR: Redirect URI mismatch detected!', {
@@ -359,7 +361,7 @@ export const initiateGoogleOAuthHttp = functions.https.onRequest(async (req, res
           action: 'Check Google Cloud Console - ensure this exact redirect URI is authorized for this OAuth client ID'
         });
       }
-      
+
       if (decodedAuthRedirectUri && decodedAuthRedirectUri !== finalRedirectUri) {
         console.error('[googleDrive] CRITICAL: Redirect URI mismatch!', {
           authUrlRedirectUri: decodedAuthRedirectUri,
@@ -367,7 +369,7 @@ export const initiateGoogleOAuthHttp = functions.https.onRequest(async (req, res
           difference: 'Redirect URIs do not match - token exchange will fail!'
         });
       }
-      
+
       // Update state document with the actual redirect URI from auth URL (source of truth)
       if (decodedAuthRedirectUri) {
         await db
@@ -411,286 +413,261 @@ export const initiateGoogleOAuthHttp = functions.https.onRequest(async (req, res
  * Handle Google OAuth callback (HTTP version for frontend)
  * Exchange authorization code for tokens
  */
-export const handleGoogleOAuthCallbackHttp = functions.https.onRequest(async (req, res) => {
-  // Set CORS headers
-  const allowedOrigins = [
-    'https://backbone-logic.web.app',
-    'https://backbone-client.web.app',
-    'https://backbone-callsheet-standalone.web.app',
-    'https://dashboard-1c3a5.web.app',
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'http://localhost:4001',
-    'http://localhost:4003',
-    'http://localhost:4010',
-    'http://localhost:5173',
-    'null'
-  ];
-  
-  const origin = req.headers.origin;
-  if (origin && (allowedOrigins.includes(origin) || origin === 'null')) {
-    res.set('Access-Control-Allow-Origin', origin);
-  } else {
-    res.set('Access-Control-Allow-Origin', '*');
-  }
-  
-  res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.set('Access-Control-Allow-Credentials', 'true');
-  
-  if (req.method === 'OPTIONS') {
-    res.status(204).send('');
-    return;
-  }
-
-  try {
-    // Verify user authentication
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      res.status(401).json({ success: false, error: 'Authentication required' });
-      return;
-    }
-
-    const token = authHeader.split('Bearer ')[1];
-    const decodedToken = await admin.auth().verifyIdToken(token);
-    const userId = decodedToken.uid;
-    const organizationId = decodedToken.organizationId || 'default';
-
-    // Get code, state, and client credentials from request body
-    const { code, state, clientId, clientSecret } = req.body || {};
-
-    if (!code || !state) {
-      res.status(400).json({ 
-        success: false, 
-        error: 'Authorization code and state are required' 
-      });
-      return;
-    }
-
-    // Verify state parameter
-    const stateDoc = await admin.firestore()
-      .collection('oauthStates')
-      .doc(state)
-      .get();
-
-    if (!stateDoc.exists) {
-      res.status(400).json({ 
-        success: false, 
-        error: 'Invalid or expired state parameter' 
-      });
-      return;
-    }
-
-    const stateData = stateDoc.data();
-    const storedUserId = stateData?.userId;
-    const storedOrganizationId = stateData?.organizationId;
-
-    // Verify user matches state
-    if (storedUserId !== userId || storedOrganizationId !== organizationId) {
-      res.status(403).json({ 
-        success: false, 
-        error: 'State parameter does not match current user' 
-      });
-      return;
-    }
-
-    // Get redirectUri and client credentials from state (prefer authUrlRedirectUri - it's the source of truth)
-    const { redirectUri: requestRedirectUri } = req.body || {};
-    
-    // CRITICAL: Use authUrlRedirectUri if available (it's the exact URI from the Google auth URL)
-    // Otherwise fall back to storedRedirectUri, then requestRedirectUri
-    const finalRedirectUri = stateData?.authUrlRedirectUri?.trim() || 
-                             stateData?.redirectUri?.trim() || 
-                             requestRedirectUri?.trim();
-    
-    const storedClientId = stateData?.clientId || clientId;
-    const storedClientSecret = stateData?.clientSecret || clientSecret;
-    
-    // CRITICAL: redirectUri is REQUIRED - no fallbacks
-    if (!finalRedirectUri) {
-      res.status(400).json({ 
-        success: false, 
-        error: 'Redirect URI not found in state document or request body' 
-      });
-      return;
-    }
-    
-    console.log('[googleDrive] OAuth callback processing (HTTP):', {
-      hasAuthUrlRedirectUri: !!stateData?.authUrlRedirectUri,
-      hasStoredRedirectUri: !!stateData?.redirectUri,
-      hasRequestRedirectUri: !!requestRedirectUri,
-      finalRedirectUri: finalRedirectUri.substring(0, 50) + '...',
-      hasStoredClientId: !!storedClientId,
-      hasStoredClientSecret: !!storedClientSecret,
-      userId: hashForLogging(userId),
-      organizationId
-    });
-    
-    // Clean up state document
-    await stateDoc.ref.delete();
-
-    // Create OAuth2 client - use stored/client credentials if available, otherwise use config
-    let oauth2Client;
-    let usedClientId = '';
-    let usedClientSecret = '';
-
-    if (storedClientId && storedClientSecret) {
-      // Use client credentials from state or request (user-specific OAuth clients)
-      oauth2Client = new google.auth.OAuth2(
-        storedClientId,
-        storedClientSecret,
-        finalRedirectUri
-      );
-      usedClientId = storedClientId;
-      usedClientSecret = storedClientSecret;
-      console.log('[googleDrive] Using client credentials from state/request');
-    } else {
-      // Use Firebase Functions config credentials (default)
-      const config = getGoogleConfig();
-      if (!config.clientId || !config.clientSecret) {
-        throw new Error('Google OAuth credentials missing in configuration');
+export const handleGoogleOAuthCallbackHttp = onRequest(
+  {
+    region: 'us-central1',
+    cors: true,
+    secrets: [encryptionKey],
+  },
+  async (req, res) => {
+    try {
+      // Get auth token from header
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        res.status(401).json({ success: false, error: 'Authentication required' });
+        return;
       }
-      usedClientId = config.clientId;
-      usedClientSecret = config.clientSecret;
 
-      oauth2Client = new google.auth.OAuth2(
-        config.clientId,
-        config.clientSecret,
-        finalRedirectUri
-      );
-      console.log('[googleDrive] Using Firebase Functions config credentials');
-    }
+      const token = authHeader.split('Bearer ')[1];
+      const decodedToken = await admin.auth().verifyIdToken(token);
+      const userId = decodedToken.uid;
+      const organizationId = (decodedToken as any).organizationId || 'default';
 
-    // LOGGING CRITICAL CREDENTIALS (MASKED)
-    console.log('[googleDrive] Ready for token exchange:', {
-      redirectUri: finalRedirectUri,
-      clientIdPrefix: usedClientId ? usedClientId.substring(0, 10) + '...' : 'MISSING',
-      clientSecretLength: usedClientSecret ? usedClientSecret.length : 0,
-      hasCode: !!code
-    });
-    
-    // Exchange code for tokens
-    // CRITICAL: Explicitly include client_id and client_secret in options
-    // This fixes "Request is missing required authentication credential" error
-    const tokenOptions: any = { 
-      code,
-      redirect_uri: finalRedirectUri,
-      client_id: usedClientId,
-      client_secret: usedClientSecret
-    };
-    
-    console.log('[googleDrive] calling oauth2Client.getToken with options (masked):', {
-      ...tokenOptions,
-      client_id: tokenOptions.client_id ? '***' : 'missing',
-      client_secret: tokenOptions.client_secret ? '***' : 'missing',
-      code: '***'
-    });
+      // Get code, state, and client credentials from request body
+      const { code, state, clientId, clientSecret } = req.body || {};
 
-    const tokenResponse = await oauth2Client.getToken(tokenOptions);
-    const tokens = tokenResponse.tokens;
+      if (!code || !state) {
+        res.status(400).json({
+          success: false,
+          error: 'Authorization code and state are required'
+        });
+        return;
+      }
 
-    console.log('[googleDrive] Token exchange successful, tokens received:', {
-      hasAccessToken: !!tokens?.access_token,
-      accessTokenLength: tokens?.access_token?.length || 0,
-      accessTokenPrefix: tokens?.access_token ? tokens.access_token.substring(0, 20) + '...' : 'MISSING',
-      hasRefreshToken: !!tokens?.refresh_token,
-      expiryDate: tokens?.expiry_date,
-      scope: tokens?.scope,
-      tokenType: tokens?.token_type,
-      allTokenKeys: tokens ? Object.keys(tokens) : [],
-      fullTokensObject: tokens ? JSON.stringify(tokens).substring(0, 200) + '...' : 'null'
-    });
+      // Verify state parameter
+      const stateDoc = await admin.firestore()
+        .collection('oauthStates')
+        .doc(state)
+        .get();
 
-    if (!tokens || !tokens.access_token) {
-      console.error('[googleDrive] CRITICAL: No access_token in tokens!', {
-        hasTokens: !!tokens,
-        tokensType: typeof tokens,
-        tokensKeys: tokens ? Object.keys(tokens) : [],
-        fullResponse: JSON.stringify(tokenResponse)
+      if (!stateDoc.exists) {
+        res.status(400).json({
+          success: false,
+          error: 'Invalid or expired state parameter'
+        });
+        return;
+      }
+
+      const stateData = stateDoc.data();
+      const storedUserId = stateData?.userId;
+      const storedOrganizationId = stateData?.organizationId;
+
+      // Verify user matches state
+      if (storedUserId !== userId || storedOrganizationId !== organizationId) {
+        res.status(403).json({
+          success: false,
+          error: 'State parameter does not match current user'
+        });
+        return;
+      }
+
+      // Get redirectUri and client credentials from state (prefer authUrlRedirectUri - it's the source of truth)
+      const { redirectUri: requestRedirectUri } = req.body || {};
+
+      // CRITICAL: Use authUrlRedirectUri if available (it's the exact URI from the Google auth URL)
+      // Otherwise fall back to storedRedirectUri, then requestRedirectUri
+      const finalRedirectUri = stateData?.authUrlRedirectUri?.trim() ||
+        stateData?.redirectUri?.trim() ||
+        requestRedirectUri?.trim();
+
+      const storedClientId = stateData?.clientId || clientId;
+      const storedClientSecret = stateData?.clientSecret || clientSecret;
+
+      // CRITICAL: redirectUri is REQUIRED - no fallbacks
+      if (!finalRedirectUri) {
+        res.status(400).json({
+          success: false,
+          error: 'Redirect URI not found in state document or request body'
+        });
+        return;
+      }
+
+      console.log('[googleDrive] OAuth callback processing (HTTP):', {
+        hasAuthUrlRedirectUri: !!stateData?.authUrlRedirectUri,
+        hasStoredRedirectUri: !!stateData?.redirectUri,
+        hasRequestRedirectUri: !!requestRedirectUri,
+        finalRedirectUri: finalRedirectUri.substring(0, 50) + '...',
+        hasStoredClientId: !!storedClientId,
+        hasStoredClientSecret: !!storedClientSecret,
+        userId: hashForLogging(userId),
+        organizationId
       });
-      throw new Error('Token exchange succeeded but no access_token received. Tokens: ' + JSON.stringify(tokens));
-    }
 
-    // Validate access token format (should be a non-empty string)
-    if (typeof tokens.access_token !== 'string' || tokens.access_token.trim().length === 0) {
-      throw new Error(`Invalid access_token format: ${typeof tokens.access_token}, value: ${tokens.access_token}`);
-    }
+      // Clean up state document
+      await stateDoc.ref.delete();
 
-    // Get user info - set credentials on OAuth2 client and use google.oauth2 API
-    console.log('[googleDrive] Setting credentials on OAuth2 client and fetching user info...');
-    oauth2Client.setCredentials(tokens);
-    
-    const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
-    const userInfoResponse = await oauth2.userinfo.get();
-    const userInfo = userInfoResponse.data as { email: string; name: string; id?: string; picture?: string };
-    
-    console.log('[googleDrive] User info retrieved:', {
-      email: userInfo.email,
-      name: userInfo.name
-    });
+      // Create OAuth2 client - use stored/client credentials if available, otherwise use config
+      let oauth2Client;
+      let usedClientId = '';
+      let usedClientSecret = '';
 
-    // Store tokens in Firestore (encrypted) - same location as callable version
-    const encryptedTokens = encryptTokens({
-      access_token: tokens.access_token!,
-      refresh_token: tokens.refresh_token!,
-      expiry_date: tokens.expiry_date
-    });
+      if (storedClientId && storedClientSecret) {
+        // Use client credentials from state or request (user-specific OAuth clients)
+        oauth2Client = new google.auth.OAuth2(
+          storedClientId,
+          storedClientSecret,
+          finalRedirectUri
+        );
+        usedClientId = storedClientId;
+        usedClientSecret = storedClientSecret;
+        console.log('[googleDrive] Using client credentials from state/request');
+      } else {
+        // Use Firebase Functions config credentials (default)
+        const config = getGoogleConfig();
+        if (!config.clientId || !config.clientSecret) {
+          throw new Error('Google OAuth credentials missing in configuration');
+        }
+        usedClientId = config.clientId;
+        usedClientSecret = config.clientSecret;
 
-    const integrationDoc = {
-      provider: 'google',
-      accountEmail: userInfo.email,
-      accountName: userInfo.name,
-      tokens: encryptedTokens,
-      isActive: true, // Explicitly mark as active (required for client-side listener)
-      clientId: usedClientId, // Store the client ID used to create these tokens (critical for token refresh)
-      scopes: SCOPES, // Store the OAuth scopes that were granted (required for calendar permissions check)
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      expiresAt: tokens.expiry_date ? admin.firestore.Timestamp.fromDate(new Date(tokens.expiry_date)) : null
-    };
+        oauth2Client = new google.auth.OAuth2(
+          config.clientId,
+          config.clientSecret,
+          finalRedirectUri
+        );
+        console.log('[googleDrive] Using Firebase Functions config credentials');
+      }
 
-    // Store in organization-scoped collection for team-wide access
-    // Use org-level document ID (google) so all users in the org can share the same credentials
-    await admin.firestore()
-      .collection('organizations')
-      .doc(organizationId)
-      .collection('cloudIntegrations')
-      .doc('google')
-      .set(integrationDoc);
+      // LOGGING CRITICAL CREDENTIALS (MASKED)
+      console.log('[googleDrive] Ready for token exchange:', {
+        redirectUri: finalRedirectUri,
+        clientIdPrefix: usedClientId ? usedClientId.substring(0, 10) + '...' : 'MISSING',
+        clientSecretLength: usedClientSecret ? usedClientSecret.length : 0,
+        hasCode: !!code
+      });
 
-    // Also create connection record for tracking team members' Drive connections
-    await admin.firestore()
-      .collection('organizations')
-      .doc(organizationId)
-      .collection('driveConnections')
-      .doc(userId)
-      .set({
-        userId,
+      // Exchange code for tokens
+      // CRITICAL: Explicitly include client_id and client_secret in options
+      // This fixes "Request is missing required authentication credential" error
+      const tokenOptions: any = {
+        code,
+        redirect_uri: finalRedirectUri,
+        client_id: usedClientId,
+        client_secret: usedClientSecret
+      };
+
+      console.log('[googleDrive] calling oauth2Client.getToken with options (masked):', {
+        ...tokenOptions,
+        client_id: tokenOptions.client_id ? '***' : 'missing',
+        client_secret: tokenOptions.client_secret ? '***' : 'missing',
+        code: '***'
+      });
+
+      const tokenResponse = await oauth2Client.getToken(tokenOptions);
+      const tokens = tokenResponse.tokens;
+
+      console.log('[googleDrive] Token exchange successful, tokens received:', {
+        hasAccessToken: !!tokens?.access_token,
+        accessTokenLength: tokens?.access_token?.length || 0,
+        accessTokenPrefix: tokens?.access_token ? tokens.access_token.substring(0, 20) + '...' : 'MISSING',
+        hasRefreshToken: !!tokens?.refresh_token,
+        expiryDate: tokens?.expiry_date,
+        scope: tokens?.scope,
+        tokenType: tokens?.token_type,
+        allTokenKeys: tokens ? Object.keys(tokens) : [],
+        fullTokensObject: tokens ? JSON.stringify(tokens).substring(0, 200) + '...' : 'null'
+      });
+
+      if (!tokens || !tokens.access_token) {
+        console.error('[googleDrive] CRITICAL: No access_token in tokens!', {
+          hasTokens: !!tokens,
+          tokensType: typeof tokens,
+          tokensKeys: tokens ? Object.keys(tokens) : [],
+          fullResponse: JSON.stringify(tokenResponse)
+        });
+        throw new Error('Token exchange succeeded but no access_token received. Tokens: ' + JSON.stringify(tokens));
+      }
+
+      // Validate access token format (should be a non-empty string)
+      if (typeof tokens.access_token !== 'string' || tokens.access_token.trim().length === 0) {
+        throw new Error(`Invalid access_token format: ${typeof tokens.access_token}, value: ${tokens.access_token}`);
+      }
+
+      // Get user info - set credentials on OAuth2 client and use google.oauth2 API
+      console.log('[googleDrive] Setting credentials on OAuth2 client and fetching user info...');
+      oauth2Client.setCredentials(tokens);
+
+      const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
+      const userInfoResponse = await oauth2.userinfo.get();
+      const userInfo = userInfoResponse.data as { email: string; name: string; id?: string; picture?: string };
+
+      console.log('[googleDrive] User info retrieved:', {
+        email: userInfo.email,
+        name: userInfo.name
+      });
+
+      // Store tokens in Firestore (encrypted) - same location as callable version
+      const encryptedTokens = encryptTokens({
+        access_token: tokens.access_token!,
+        refresh_token: tokens.refresh_token!,
+        expiry_date: tokens.expiry_date
+      });
+
+      const integrationDoc = {
+        provider: 'google',
         accountEmail: userInfo.email,
         accountName: userInfo.name,
-        connectedAt: admin.firestore.FieldValue.serverTimestamp(),
-        isActive: true
+        tokens: encryptedTokens,
+        isActive: true, // Explicitly mark as active (required for client-side listener)
+        clientId: usedClientId, // Store the client ID used to create these tokens (critical for token refresh)
+        scopes: SCOPES, // Store the OAuth scopes that were granted (required for calendar permissions check)
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        expiresAt: tokens.expiry_date ? admin.firestore.Timestamp.fromDate(new Date(tokens.expiry_date)) : null
+      };
+
+      // Store in organization-scoped collection for team-wide access
+      // Use org-level document ID (google) so all users in the org can share the same credentials
+      await admin.firestore()
+        .collection('organizations')
+        .doc(organizationId)
+        .collection('cloudIntegrations')
+        .doc('google')
+        .set(integrationDoc);
+
+      // Also create connection record for tracking team members' Drive connections
+      await admin.firestore()
+        .collection('organizations')
+        .doc(organizationId)
+        .collection('driveConnections')
+        .doc(userId)
+        .set({
+          userId,
+          accountEmail: userInfo.email,
+          accountName: userInfo.name,
+          connectedAt: admin.firestore.FieldValue.serverTimestamp(),
+          isActive: true
+        });
+
+      console.log(`Google OAuth completed for user ${hashForLogging(userId)} in org ${organizationId}, account: ${userInfo.email}`);
+
+      res.status(200).json({
+        success: true,
+        data: {
+          accountEmail: userInfo.email,
+          accountName: userInfo.name
+        }
       });
 
-    console.log(`Google OAuth completed for user ${hashForLogging(userId)} in org ${organizationId}, account: ${userInfo.email}`);
-
-    res.status(200).json({
-      success: true,
-      data: {
-        accountEmail: userInfo.email,
-        accountName: userInfo.name
-      }
-    });
-
-  } catch (error) {
-    console.error('Google OAuth callback failed (HTTP):', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to complete Google OAuth',
-      errorDetails: error instanceof Error ? error.message : 'Unknown error'
-    });
-  }
-});
+    } catch (error) {
+      console.error('Google OAuth callback failed (HTTP):', error);
+      res.status(500).json({
+        success: false,
+        error: 'Failed to complete Google OAuth',
+        errorDetails: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
 
 /**
  * HTTP endpoint to refresh Google access token
@@ -710,18 +687,18 @@ export const refreshGoogleAccessTokenHttp = functions.https.onRequest(async (req
     'http://localhost:5173',
     'null'
   ];
-  
+
   const origin = req.headers.origin;
   if (origin && (allowedOrigins.includes(origin) || origin === 'null')) {
     res.set('Access-Control-Allow-Origin', origin);
   } else {
     res.set('Access-Control-Allow-Origin', '*');
   }
-  
+
   res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.set('Access-Control-Allow-Credentials', 'true');
-  
+
   if (req.method === 'OPTIONS') {
     res.status(204).send('');
     return;
@@ -732,8 +709,8 @@ export const refreshGoogleAccessTokenHttp = functions.https.onRequest(async (req
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       console.warn('⚠️ [refreshGoogleAccessTokenHttp] Missing or invalid Authorization header');
-      res.status(401).json({ 
-        success: false, 
+      res.status(401).json({
+        success: false,
         error: 'Authentication required',
         errorDetails: 'Missing or invalid Authorization header. Please ensure you are logged in.'
       });
@@ -743,8 +720,8 @@ export const refreshGoogleAccessTokenHttp = functions.https.onRequest(async (req
     const token = authHeader.split('Bearer ')[1];
     if (!token) {
       console.warn('⚠️ [refreshGoogleAccessTokenHttp] Empty token in Authorization header');
-      res.status(401).json({ 
-        success: false, 
+      res.status(401).json({
+        success: false,
         error: 'Authentication required',
         errorDetails: 'Empty token in Authorization header'
       });
@@ -757,45 +734,45 @@ export const refreshGoogleAccessTokenHttp = functions.https.onRequest(async (req
     } catch (verifyError: any) {
       console.error('❌ [refreshGoogleAccessTokenHttp] Token verification failed:', verifyError);
       const errorMessage = verifyError?.message || String(verifyError);
-      
+
       // Check for specific Firebase Auth errors
       if (errorMessage.includes('expired') || errorMessage.includes('Expired')) {
-        res.status(401).json({ 
-          success: false, 
+        res.status(401).json({
+          success: false,
           error: 'Token expired',
           errorDetails: 'Firebase authentication token has expired. Please refresh your session.',
           requiresReconnection: false
         });
         return;
       } else if (errorMessage.includes('invalid') || errorMessage.includes('Invalid')) {
-        res.status(401).json({ 
-          success: false, 
+        res.status(401).json({
+          success: false,
           error: 'Invalid token',
           errorDetails: 'Firebase authentication token is invalid. Please log in again.',
           requiresReconnection: false
         });
         return;
       }
-      
+
       // Generic auth error
-      res.status(401).json({ 
-        success: false, 
+      res.status(401).json({
+        success: false,
         error: 'Authentication failed',
         errorDetails: `Token verification failed: ${errorMessage}`
       });
       return;
     }
-    
+
     const userId = decodedToken.uid;
     console.log('✅ [refreshGoogleAccessTokenHttp] Token verified for user:', userId);
-    
+
     // Get organization ID using helper function (checks multiple sources)
     const organizationId = await getUserOrganizationId(userId, decodedToken.email || '');
-    
+
     if (!organizationId) {
       console.warn('⚠️ [refreshGoogleAccessTokenHttp] User organization not found for user:', userId);
-      res.status(403).json({ 
-        success: false, 
+      res.status(403).json({
+        success: false,
         error: 'User organization not found',
         errorDetails: 'User must be associated with an organization to refresh Google Drive tokens'
       });
@@ -805,7 +782,7 @@ export const refreshGoogleAccessTokenHttp = functions.https.onRequest(async (req
     console.log('🔄 [refreshGoogleAccessTokenHttp] Refreshing Google access token for org:', organizationId);
     // Call internal refresh function
     const tokens = await refreshGoogleAccessToken(userId, organizationId);
-    
+
     res.status(200).json({
       success: true,
       data: {
@@ -815,27 +792,27 @@ export const refreshGoogleAccessTokenHttp = functions.https.onRequest(async (req
     });
   } catch (error) {
     console.error('Google token refresh failed:', error);
-    
+
     // Determine appropriate status code based on error type
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     let statusCode = 500;
     let errorType = 'Failed to refresh Google access token';
-    
+
     // Check for token-related errors (should return 401)
     // These indicate the refresh token is invalid, expired, or revoked
     if (errorMessage.includes('Token has been expired or revoked') ||
-        errorMessage.includes('invalid_grant') ||
-        errorMessage.includes('refresh token is invalid') ||
-        errorMessage.includes('refresh token is invalid or revoked') ||
-        errorMessage.includes('Google integration not found')) {
+      errorMessage.includes('invalid_grant') ||
+      errorMessage.includes('refresh token is invalid') ||
+      errorMessage.includes('refresh token is invalid or revoked') ||
+      errorMessage.includes('Google integration not found')) {
       statusCode = 401;
       errorType = 'Google token invalid or expired';
     }
     // Check for configuration errors (should return 400)
     // These indicate OAuth client configuration issues
     else if (errorMessage.includes('Invalid OAuth client configuration') ||
-             errorMessage.includes('invalid_client') ||
-             errorMessage.includes('OAuth client was not found')) {
+      errorMessage.includes('invalid_client') ||
+      errorMessage.includes('OAuth client was not found')) {
       statusCode = 400;
       errorType = 'OAuth configuration error';
     }
@@ -844,7 +821,7 @@ export const refreshGoogleAccessTokenHttp = functions.https.onRequest(async (req
       statusCode = 403;
       errorType = 'Organization access error';
     }
-    
+
     // Preserve the full error message for diagnostics
     // The frontend can use errorDetails to show more helpful messages
     res.status(statusCode).json({
@@ -860,6 +837,107 @@ export const refreshGoogleAccessTokenHttp = functions.https.onRequest(async (req
     });
   }
 });
+
+/**
+ * Callable function to refresh Google access token
+ * This avoids console errors from HTTP 401 responses
+ * Uses v2 API with CORS support for localhost development
+ */
+export const refreshGoogleAccessTokenCallable = onCall(
+  {
+    region: 'us-central1',
+    cors: true, // Enable CORS support for localhost
+    secrets: [encryptionKey],
+  },
+  async (request) => {
+    try {
+      // Verify authentication
+      if (!request.auth) {
+        throw new HttpsError(
+          'unauthenticated',
+          'Authentication required',
+          'User must be authenticated to refresh Google Drive token'
+        );
+      }
+
+      const userId = request.auth.uid;
+
+      // Get organization ID from token claims or fetch from user document
+      const organizationId = request.auth.token.organizationId ||
+        await getUserOrganizationId(userId, request.auth.token.email || '');
+
+      if (!organizationId) {
+        throw new HttpsError(
+          'permission-denied',
+          'User organization not found',
+          'User must be associated with an organization to refresh Google Drive tokens'
+        );
+      }
+
+      console.log('🔄 [refreshGoogleAccessTokenCallable] Refreshing Google access token for org:', organizationId);
+
+      // Call internal refresh function
+      const tokens = await refreshGoogleAccessToken(userId, organizationId);
+
+      return {
+        success: true,
+        data: {
+          accessToken: tokens.access_token,
+          expiresAt: tokens.expiry_date ? new Date(tokens.expiry_date).toISOString() : null
+        }
+      };
+    } catch (error: any) {
+      console.error('❌ [refreshGoogleAccessTokenCallable] Token refresh failed:', error);
+
+      // If it's already an HttpsError, re-throw it
+      if (error instanceof HttpsError) {
+        throw error;
+      }
+
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+      // Check for token-related errors (should return unauthenticated)
+      if (errorMessage.includes('Token has been expired or revoked') ||
+        errorMessage.includes('invalid_grant') ||
+        errorMessage.includes('refresh token is invalid') ||
+        errorMessage.includes('refresh token is invalid or revoked') ||
+        errorMessage.includes('Google integration not found')) {
+        throw new HttpsError(
+          'unauthenticated',
+          'Google token invalid or expired',
+          errorMessage
+        );
+      }
+
+      // Check for configuration errors
+      if (errorMessage.includes('Invalid OAuth client configuration') ||
+        errorMessage.includes('invalid_client') ||
+        errorMessage.includes('OAuth client was not found')) {
+        throw new HttpsError(
+          'invalid-argument',
+          'OAuth configuration error',
+          errorMessage
+        );
+      }
+
+      // Check for organization errors
+      if (errorMessage.includes('organization')) {
+        throw new HttpsError(
+          'permission-denied',
+          'Organization access error',
+          errorMessage
+        );
+      }
+
+      // Generic error
+      throw new HttpsError(
+        'internal',
+        'Failed to refresh Google access token',
+        errorMessage
+      );
+    }
+  }
+);
 
 /**
  * Refresh Google access token (internal function)
@@ -899,7 +977,7 @@ export async function refreshGoogleAccessToken(userId: string, organizationId: s
     }
 
     const integrationData = integrationDoc.data();
-    
+
     // Handle both encrypted tokens (from OAuth callback) and plain tokens (from frontend save)
     let tokens: any;
     // Check for tokens field first (used by OAuth callback handler)
@@ -908,7 +986,7 @@ export async function refreshGoogleAccessToken(userId: string, organizationId: s
     const encryptedTokens = integrationData?.encryptedTokens;
     const plainAccessToken = integrationData?.accessToken;
     const plainRefreshToken = integrationData?.refreshToken;
-    
+
     if (tokensField) {
       // Decrypt tokens from 'tokens' field (used by OAuth callback)
       tokens = decryptTokens(tokensField);
@@ -932,33 +1010,51 @@ export async function refreshGoogleAccessToken(userId: string, organizationId: s
 
     // Set credentials and refresh
     // IMPORTANT: Get a fresh OAuth client instance to ensure it has the correct client ID/secret
-    const oauth2Client = getOAuth2ClientForCredentials();
-    
+    // FIX: Use Firestore config instead of global environment/config variables
+    let oauth2Client;
+    try {
+      const googleConfig = await getGoogleConfigFromFirestore(organizationId);
+      console.log('[googleDrive] Using Firestore config for token refresh:', {
+        clientIdPrefix: googleConfig.clientId ? googleConfig.clientId.substring(0, 20) + '...' : 'missing',
+        redirectUri: googleConfig.redirectUri
+      });
+
+      oauth2Client = new google.auth.OAuth2(
+        googleConfig.clientId,
+        googleConfig.clientSecret,
+        googleConfig.redirectUri
+      );
+    } catch (configError) {
+      console.warn('[googleDrive] Firestore config lookup failed, falling back to global config:', configError);
+      oauth2Client = getOAuth2ClientForCredentials();
+    }
+
     // Validate we have a refresh token
     if (!tokens.refresh_token) {
       throw new Error('No refresh token available for token refresh');
     }
-    
+
     // IMPORTANT: Refresh tokens are tied to the OAuth client that created them
     // If tokens were created with frontend client, we need to use the same client ID/secret
     // For now, we use the backend's OAuth client (which should match frontend's)
     // If refresh fails with invalid_client, it means the client IDs don't match
-    
+
     // Set credentials on the client
     oauth2Client.setCredentials({
       refresh_token: tokens.refresh_token,
       // Include access token if available (though it may be expired)
       access_token: tokens.access_token || undefined
     });
-    
+
     // Log the client ID being used for debugging
-    const config = getGoogleConfig();
+    // Access clientId safely depending on how the client was created
+    const usedClientId = (oauth2Client as any)._clientId;
     console.log('[googleDrive] Attempting token refresh with client ID:', {
-      clientIdPrefix: config.clientId ? config.clientId.substring(0, 20) + '...' : 'missing',
+      clientIdPrefix: usedClientId ? usedClientId.substring(0, 20) + '...' : 'missing',
       hasRefreshToken: !!tokens.refresh_token,
       refreshTokenLength: tokens.refresh_token?.length || 0
     });
-    
+
     // Refresh the access token with better error handling
     let credentials;
     try {
@@ -968,12 +1064,12 @@ export async function refreshGoogleAccessToken(userId: string, organizationId: s
       // Provide more detailed error information
       const errorMessage = refreshError?.message || 'Unknown error';
       const errorCode = refreshError?.code;
-      
+
       // Extract detailed error information from Google API response
       const responseData = refreshError?.response?.data || {};
       const googleError = responseData.error || errorCode;
       const googleErrorDescription = responseData.error_description || responseData.message || errorMessage;
-      
+
       console.error('[googleDrive] Token refresh failed:', {
         error: errorMessage,
         code: errorCode,
@@ -984,19 +1080,19 @@ export async function refreshGoogleAccessToken(userId: string, organizationId: s
         fullError: refreshError,
         response: responseData
       });
-      
+
       // Check if it's an invalid_client error
-      const isInvalidClient = errorMessage.includes('invalid_client') || 
-                              errorCode === 'invalid_client' ||
-                              googleError === 'invalid_client' ||
-                              errorMessage.includes('Invalid OAuth client configuration');
-      
+      const isInvalidClient = errorMessage.includes('invalid_client') ||
+        errorCode === 'invalid_client' ||
+        googleError === 'invalid_client' ||
+        errorMessage.includes('Invalid OAuth client configuration');
+
       // Check if it's a refresh token issue
-      const isTokenError = googleError === 'invalid_grant' || 
-                          errorMessage.includes('invalid_grant') ||
-                          errorMessage.includes('Token has been expired or revoked') ||
-                          googleErrorDescription?.includes('Token has been expired or revoked');
-      
+      const isTokenError = googleError === 'invalid_grant' ||
+        errorMessage.includes('invalid_grant') ||
+        errorMessage.includes('Token has been expired or revoked') ||
+        googleErrorDescription?.includes('Token has been expired or revoked');
+
       if (isInvalidClient || isTokenError) {
         const config = getGoogleConfig();
         const diagnosticInfo = {
@@ -1009,9 +1105,9 @@ export async function refreshGoogleAccessToken(userId: string, organizationId: s
           googleError: googleError,
           googleErrorDescription: googleErrorDescription
         };
-        
+
         console.error('[googleDrive] OAuth error details:', diagnosticInfo);
-        
+
         // Provide more specific error message based on error type
         if (isTokenError) {
           throw new Error(`Google refresh token is invalid or revoked. The user needs to reconnect their Google account.
@@ -1023,24 +1119,22 @@ To fix:
 2. This will generate a new refresh token
 3. Verify the OAuth client is still active in Google Cloud Console
 
-Current config: clientId=${config.clientId ? 'set (' + config.clientId.substring(0, 20) + '...)' : 'missing'}, clientSecret=${config.clientSecret ? 'set' : 'missing'}`);
+    Current config: clientId=${usedClientId ? 'set (' + usedClientId.substring(0, 20) + '...)' : 'missing'}, clientSecret=${(oauth2Client as any)._clientSecret ? 'set' : 'missing'}`);
         } else {
           throw new Error(`Invalid OAuth client configuration. Please verify:
-1. GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set correctly in Firebase Functions
-   - Set via: firebase functions:config:set google.client_id="..." google.client_secret="..."
-   - Or via environment variables: GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET
+1. GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set correctly in Storage (Integration Settings)
 2. The client ID and secret match your Google Cloud Console OAuth credentials
-3. The redirect URI (${config.redirectUri}) is authorized in your Google Cloud Console
+3. The redirect URI is authorized in your Google Cloud Console
 4. The OAuth client is not deleted or disabled in Google Cloud Console
 5. The refresh token is valid and not revoked
 
 Google API Error: ${googleError || errorCode}
 Error Description: ${googleErrorDescription || errorMessage}
 
-Current config: clientId=${config.clientId ? 'set (' + config.clientId.substring(0, 20) + '...)' : 'missing'}, clientSecret=${config.clientSecret ? 'set' : 'missing'}`);
+Current config: clientId=${usedClientId ? 'set (' + usedClientId.substring(0, 20) + '...)' : 'missing'}, clientSecret=${(oauth2Client as any)._clientSecret ? 'set' : 'missing'}`);
         }
       }
-      
+
       // Re-throw with original error
       throw refreshError;
     }
@@ -1070,205 +1164,233 @@ Current config: clientId=${config.clientId ? 'set (' + config.clientId.substring
 /**
  * List Google Drive folders
  */
-export const listGoogleDriveFolders = functions.https.onCall(async (data, context) => {
-  try {
-    if (!context.auth) {
-      throw new Error('Authentication required');
+export const listGoogleDriveFolders = onCall(
+  {
+    region: 'us-central1',
+    cors: true,
+    secrets: [encryptionKey],
+  },
+  async (request) => {
+    try {
+      if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'Authentication required');
+      }
+
+      const userId = request.auth.uid;
+      const organizationId = request.auth.token.organizationId || 'default';
+      const { folderId = 'root' } = request.data;
+
+      // Get and refresh tokens
+      const tokens = await refreshGoogleAccessToken(userId, organizationId);
+      getOAuth2ClientForCredentials().setCredentials(tokens);
+
+      // Initialize Drive API
+      const drive = google.drive({ version: 'v3', auth: oauth2Client });
+
+      // List folders
+      const response = await drive.files.list({
+        q: `'${folderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+        fields: 'files(id, name, mimeType, createdTime, modifiedTime, parents)',
+        orderBy: 'name'
+      });
+
+      const folders = response.data.files?.map((file: any) => ({
+        id: file.id,
+        name: file.name,
+        mimeType: file.mimeType,
+        createdTime: file.createdTime,
+        modifiedTime: file.modifiedTime,
+        parents: file.parents
+      })) || [];
+
+      return { folders };
+
+    } catch (error: any) {
+      console.error('Failed to list Google Drive folders:', error);
+      throw error instanceof HttpsError ? error : new HttpsError('internal', error.message || 'Failed to list folders');
     }
-
-    const userId = context.auth.uid;
-    const organizationId = context.auth.token.organizationId || 'default';
-    const { folderId = 'root' } = data;
-
-    // Get and refresh tokens
-    const tokens = await refreshGoogleAccessToken(userId, organizationId);
-    getOAuth2ClientForCredentials().setCredentials(tokens);
-
-    // Initialize Drive API
-    const drive = google.drive({ version: 'v3', auth: oauth2Client });
-
-    // List folders
-    const response = await drive.files.list({
-      q: `'${folderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
-      fields: 'files(id, name, mimeType, createdTime, modifiedTime, parents)',
-      orderBy: 'name'
-    });
-
-    const folders = response.data.files?.map((file: any) => ({
-      id: file.id,
-      name: file.name,
-      mimeType: file.mimeType,
-      createdTime: file.createdTime,
-      modifiedTime: file.modifiedTime,
-      parents: file.parents
-    })) || [];
-
-    return createSuccessResponse({ folders });
-
-  } catch (error) {
-    console.error('Failed to list Google Drive folders:', error);
-    return createErrorResponse('Failed to list folders', error instanceof Error ? error.message : 'Unknown error');
   }
-});
+);
 
 /**
  * Get Google Drive files in a folder
  */
-export const getGoogleDriveFiles = functions.https.onCall(async (data, context) => {
-  try {
-    if (!context.auth) {
-      throw new Error('Authentication required');
+export const getGoogleDriveFiles = onCall(
+  {
+    region: 'us-central1',
+    cors: true,
+    secrets: [encryptionKey],
+  },
+  async (request) => {
+    try {
+      if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'Authentication required');
+      }
+
+      const userId = request.auth.uid;
+      const organizationId = request.auth.token.organizationId || 'default';
+      const { folderId } = request.data;
+
+      if (!folderId) {
+        throw new HttpsError('invalid-argument', 'Folder ID is required');
+      }
+
+      // Get and refresh tokens
+      const tokens = await refreshGoogleAccessToken(userId, organizationId);
+      getOAuth2ClientForCredentials().setCredentials(tokens);
+
+      // Initialize Drive API
+      const drive = google.drive({ version: 'v3', auth: oauth2Client });
+
+      // List files in folder
+      const response = await drive.files.list({
+        q: `'${folderId}' in parents and trashed=false`,
+        fields: 'files(id, name, mimeType, size, createdTime, modifiedTime, webViewLink, webContentLink)',
+        orderBy: 'name'
+      });
+
+      const files = response.data.files?.map((file: any) => ({
+        id: file.id,
+        name: file.name,
+        mimeType: file.mimeType,
+        size: file.size,
+        createdTime: file.createdTime,
+        modifiedTime: file.modifiedTime,
+        webViewLink: file.webViewLink,
+        webContentLink: file.webContentLink
+      })) || [];
+
+      return createSuccessResponse({ files });
+
+    } catch (error: any) {
+      console.error('Failed to get Google Drive files:', error);
+      throw error instanceof HttpsError ? error : new HttpsError('internal', error.message || 'Failed to get files');
     }
-
-    const userId = context.auth.uid;
-    const organizationId = context.auth.token.organizationId || 'default';
-    const { folderId } = data;
-
-    if (!folderId) {
-      throw new Error('Folder ID is required');
-    }
-
-    // Get and refresh tokens
-    const tokens = await refreshGoogleAccessToken(userId, organizationId);
-    getOAuth2ClientForCredentials().setCredentials(tokens);
-
-    // Initialize Drive API
-    const drive = google.drive({ version: 'v3', auth: oauth2Client });
-
-    // List files in folder
-    const response = await drive.files.list({
-      q: `'${folderId}' in parents and trashed=false`,
-      fields: 'files(id, name, mimeType, size, createdTime, modifiedTime, webViewLink, webContentLink)',
-      orderBy: 'name'
-    });
-
-    const files = response.data.files?.map((file: any) => ({
-      id: file.id,
-      name: file.name,
-      mimeType: file.mimeType,
-      size: file.size,
-      createdTime: file.createdTime,
-      modifiedTime: file.modifiedTime,
-      webViewLink: file.webViewLink,
-      webContentLink: file.webContentLink
-    })) || [];
-
-    return createSuccessResponse({ files });
-
-  } catch (error) {
-    console.error('Failed to get Google Drive files:', error);
-    return createErrorResponse('Failed to get files', error instanceof Error ? error.message : 'Unknown error');
   }
-});
+);
 
 /**
  * Create Google Drive folder
  */
-export const createGoogleDriveFolder = functions.https.onCall(async (data, context) => {
-  try {
-    if (!context.auth) {
-      throw new Error('Authentication required');
+export const createGoogleDriveFolder = onCall(
+  {
+    region: 'us-central1',
+    cors: true,
+    secrets: [encryptionKey],
+  },
+  async (request) => {
+    try {
+      if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'Authentication required');
+      }
+
+      const userId = request.auth.uid;
+      const organizationId = request.auth.token.organizationId || 'default';
+      const { name, parentId = 'root' } = request.data;
+
+      if (!name) {
+        throw new HttpsError('invalid-argument', 'Folder name is required');
+      }
+
+      // Get and refresh tokens
+      const tokens = await refreshGoogleAccessToken(userId, organizationId);
+      getOAuth2ClientForCredentials().setCredentials(tokens);
+
+      // Initialize Drive API
+      const drive = google.drive({ version: 'v3', auth: oauth2Client });
+
+      // Create folder
+      const response = await drive.files.create({
+        requestBody: {
+          name: name,
+          mimeType: 'application/vnd.google-apps.folder',
+          parents: [parentId]
+        },
+        fields: 'id, name, mimeType, createdTime, modifiedTime, parents'
+      });
+
+      const folder = {
+        id: response.data.id,
+        name: response.data.name,
+        mimeType: response.data.mimeType,
+        createdTime: response.data.createdTime,
+        modifiedTime: response.data.modifiedTime,
+        parents: response.data.parents
+      };
+
+      return createSuccessResponse({ folder });
+
+    } catch (error: any) {
+      console.error('Failed to create Google Drive folder:', error);
+      throw error instanceof HttpsError ? error : new HttpsError('internal', error.message || 'Failed to create folder');
     }
-
-    const userId = context.auth.uid;
-    const organizationId = context.auth.token.organizationId || 'default';
-    const { name, parentId = 'root' } = data;
-
-    if (!name) {
-      throw new Error('Folder name is required');
-    }
-
-    // Get and refresh tokens
-    const tokens = await refreshGoogleAccessToken(userId, organizationId);
-    getOAuth2ClientForCredentials().setCredentials(tokens);
-
-    // Initialize Drive API
-    const drive = google.drive({ version: 'v3', auth: oauth2Client });
-
-    // Create folder
-    const response = await drive.files.create({
-      requestBody: {
-        name: name,
-        mimeType: 'application/vnd.google-apps.folder',
-        parents: [parentId]
-      },
-      fields: 'id, name, mimeType, createdTime, modifiedTime, parents'
-    });
-
-    const folder = {
-      id: response.data.id,
-      name: response.data.name,
-      mimeType: response.data.mimeType,
-      createdTime: response.data.createdTime,
-      modifiedTime: response.data.modifiedTime,
-      parents: response.data.parents
-    };
-
-    return createSuccessResponse({ folder });
-
-  } catch (error) {
-    console.error('Failed to create Google Drive folder:', error);
-    return createErrorResponse('Failed to create folder', error instanceof Error ? error.message : 'Unknown error');
   }
-});
+);
 
 /**
  * Upload file to Google Drive
  */
-export const uploadToGoogleDrive = functions.https.onCall(async (data, context) => {
-  try {
-    if (!context.auth) {
-      throw new Error('Authentication required');
+export const uploadToGoogleDrive = onCall(
+  {
+    region: 'us-central1',
+    cors: true,
+    secrets: [encryptionKey],
+  },
+  async (request) => {
+    try {
+      if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'Authentication required');
+      }
+
+      const userId = request.auth.uid;
+      const organizationId = request.auth.token.organizationId || 'default';
+      const { fileName, fileContent, mimeType, folderId = 'root' } = request.data;
+
+      if (!fileName || !fileContent) {
+        throw new HttpsError('invalid-argument', 'File name and content are required');
+      }
+
+      // Get and refresh tokens
+      const tokens = await refreshGoogleAccessToken(userId, organizationId);
+      getOAuth2ClientForCredentials().setCredentials(tokens);
+
+      // Initialize Drive API
+      const drive = google.drive({ version: 'v3', auth: oauth2Client });
+
+      // Convert base64 content to buffer
+      const fileBuffer = Buffer.from(fileContent, 'base64');
+
+      // Upload file
+      const response = await drive.files.create({
+        requestBody: {
+          name: fileName,
+          parents: [folderId]
+        },
+        media: {
+          mimeType: mimeType || 'application/octet-stream',
+          body: fileBuffer
+        },
+        fields: 'id, name, mimeType, size, createdTime, modifiedTime, webViewLink'
+      });
+
+      const file = {
+        id: response.data.id,
+        name: response.data.name,
+        mimeType: response.data.mimeType,
+        size: response.data.size,
+        createdTime: response.data.createdTime,
+        modifiedTime: response.data.modifiedTime,
+        webViewLink: response.data.webViewLink
+      };
+
+      return createSuccessResponse({ file });
+
+    } catch (error: any) {
+      console.error('Failed to upload to Google Drive:', error);
+      throw error instanceof HttpsError ? error : new HttpsError('internal', error.message || 'Failed to upload file');
     }
-
-    const userId = context.auth.uid;
-    const organizationId = context.auth.token.organizationId || 'default';
-    const { fileName, fileContent, mimeType, folderId = 'root' } = data;
-
-    if (!fileName || !fileContent) {
-      throw new Error('File name and content are required');
-    }
-
-    // Get and refresh tokens
-    const tokens = await refreshGoogleAccessToken(userId, organizationId);
-    getOAuth2ClientForCredentials().setCredentials(tokens);
-
-    // Initialize Drive API
-    const drive = google.drive({ version: 'v3', auth: oauth2Client });
-
-    // Convert base64 content to buffer
-    const fileBuffer = Buffer.from(fileContent, 'base64');
-
-    // Upload file
-    const response = await drive.files.create({
-      requestBody: {
-        name: fileName,
-        parents: [folderId]
-      },
-      media: {
-        mimeType: mimeType || 'application/octet-stream',
-        body: fileBuffer
-      },
-      fields: 'id, name, mimeType, size, createdTime, modifiedTime, webViewLink'
-    });
-
-    const file = {
-      id: response.data.id,
-      name: response.data.name,
-      mimeType: response.data.mimeType,
-      size: response.data.size,
-      createdTime: response.data.createdTime,
-      modifiedTime: response.data.modifiedTime,
-      webViewLink: response.data.webViewLink
-    };
-
-    return createSuccessResponse({ file });
-
-  } catch (error) {
-    console.error('Failed to upload to Google Drive:', error);
-    return createErrorResponse('Failed to upload file', error instanceof Error ? error.message : 'Unknown error');
   }
-});
+);
 
 // REMOVED: exchangeGoogleCodeForTokens - using handleGoogleOAuthCallbackHttp instead
 
@@ -1370,178 +1492,191 @@ export const deleteGoogleDriveFile = functions.https.onCall(async (data, context
 /**
  * Get Google integration status
  */
-export const getGoogleIntegrationStatus = functions.https.onCall(async (data, context) => {
-  try {
-    if (!context.auth) {
-      throw new Error('Authentication required');
-    }
+export const getGoogleIntegrationStatus = onCall(
+  {
+    region: 'us-central1',
+    cors: true,
+  },
+  async (request) => {
+    try {
+      if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'Authentication required');
+      }
 
-    const userId = context.auth.uid;
-    const organizationId = context.auth.token.organizationId || 'standalone';
+      const userId = request.auth.uid;
+      const organizationId = request.auth.token.organizationId || 'standalone';
 
-    // Look in org-level location first (organizations/{orgId}/cloudIntegrations/google)
-    // This allows all users in the organization to share the same Google Drive credentials
-    let integrationDoc = await admin.firestore()
-      .collection('organizations')
-      .doc(organizationId)
-      .collection('cloudIntegrations')
-      .doc('google')
-      .get();
-
-    // Fallback to old user-specific location for migration compatibility
-    if (!integrationDoc.exists) {
-      integrationDoc = await admin.firestore()
+      // Look in org-level location first (organizations/{orgId}/cloudIntegrations/google)
+      // This allows all users in the organization to share the same Google Drive credentials
+      let integrationDoc = await admin.firestore()
         .collection('organizations')
         .doc(organizationId)
         .collection('cloudIntegrations')
-        .doc(`google_${userId}`)
+        .doc('google')
         .get();
+
+      // Fallback to old user-specific location for migration compatibility
+      if (!integrationDoc.exists) {
+        integrationDoc = await admin.firestore()
+          .collection('organizations')
+          .doc(organizationId)
+          .collection('cloudIntegrations')
+          .doc(`google_${userId}`)
+          .get();
+      }
+
+      // Fallback to old global location for migration compatibility
+      if (!integrationDoc.exists) {
+        integrationDoc = await admin.firestore()
+          .collection('cloudIntegrations')
+          .doc(`${organizationId}_google_${userId}`)
+          .get();
+      }
+
+      if (!integrationDoc.exists) {
+        return { connected: false };
+      }
+
+      const integrationData = integrationDoc.data();
+
+      // Check if connection is explicitly inactive
+      if (integrationData?.isActive === false) {
+        return { connected: false };
+      }
+
+      // Check if access token is expired
+      const expiresAt = integrationData?.expiresAt?.toDate();
+      const isExpired = expiresAt && expiresAt < new Date();
+
+      // Connection is valid if:
+      // 1. Not explicitly inactive AND
+      // 2. (Access token not expired OR refresh token exists)
+      // This allows the connection to persist even after access token expires, as long as refresh token exists
+      const hasRefreshToken = !!integrationData?.refreshToken;
+      const isConnected = !isExpired || hasRefreshToken;
+
+      return {
+        connected: isConnected,
+        accountEmail: integrationData?.accountEmail,
+        accountName: integrationData?.accountName,
+        expiresAt: expiresAt?.toISOString()
+      };
+
+    } catch (error: any) {
+      console.error('Failed to get Google integration status:', error);
+      throw error instanceof HttpsError ? error : new HttpsError('internal', error.message || 'Failed to get integration status');
     }
-
-    // Fallback to old global location for migration compatibility
-    if (!integrationDoc.exists) {
-      integrationDoc = await admin.firestore()
-        .collection('cloudIntegrations')
-        .doc(`${organizationId}_google_${userId}`)
-        .get();
-    }
-
-    if (!integrationDoc.exists) {
-      return createSuccessResponse({ connected: false });
-    }
-
-    const integrationData = integrationDoc.data();
-    
-    // Check if connection is explicitly inactive
-    if (integrationData?.isActive === false) {
-      return createSuccessResponse({ connected: false });
-    }
-    
-    // Check if access token is expired
-    const expiresAt = integrationData?.expiresAt?.toDate();
-    const isExpired = expiresAt && expiresAt < new Date();
-    
-    // Connection is valid if:
-    // 1. Not explicitly inactive AND
-    // 2. (Access token not expired OR refresh token exists)
-    // This allows the connection to persist even after access token expires, as long as refresh token exists
-    const hasRefreshToken = !!integrationData?.refreshToken;
-    const isConnected = !isExpired || hasRefreshToken;
-
-    return createSuccessResponse({
-      connected: isConnected,
-      accountEmail: integrationData?.accountEmail,
-      accountName: integrationData?.accountName,
-      expiresAt: expiresAt?.toISOString()
-    });
-
-  } catch (error) {
-    console.error('Failed to get Google integration status:', error);
-    return createErrorResponse('Failed to get integration status', error instanceof Error ? error.message : 'Unknown error');
   }
-});
+);
 
 /**
  * Index Google Drive folder - List files and store metadata for organization-wide access
  */
-export const indexGoogleDriveFolder = functions.https.onCall(async (data, context) => {
-  try {
-    // Verify authentication
-    if (!context.auth) {
-      return createErrorResponse('Authentication required', 'UNAUTHENTICATED');
-    }
+export const indexGoogleDriveFolder = onCall(
+  {
+    region: 'us-central1',
+    cors: true,
+    secrets: [encryptionKey],
+  },
+  async (request) => {
+    try {
+      // Verify authentication
+      if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'Authentication required');
+      }
 
-    const { folderId, organizationId } = data;
-    const userId = context.auth.uid;
+      const { folderId, organizationId } = request.data;
+      const userId = request.auth.uid;
 
-    if (!folderId || !organizationId) {
-      return createErrorResponse('Folder ID and organization ID are required', 'INVALID_ARGUMENT');
-    }
+      if (!folderId || !organizationId) {
+        throw new HttpsError('invalid-argument', 'Folder ID and organization ID are required');
+      }
 
-    console.log(`Indexing Google Drive folder ${folderId} for org ${organizationId} by user ${hashForLogging(userId)}`);
+      console.log(`Indexing Google Drive folder ${folderId} for org ${organizationId} by user ${hashForLogging(userId)}`);
 
-    // Get org-level encrypted tokens from Firestore
-    // Try org-level location first (organizations/{orgId}/cloudIntegrations/google)
-    let integrationDoc = await admin.firestore()
-      .collection('organizations')
-      .doc(organizationId)
-      .collection('cloudIntegrations')
-      .doc('google')
-      .get();
-
-    // Fallback to old user-specific location for migration compatibility
-    if (!integrationDoc.exists) {
-      integrationDoc = await admin.firestore()
+      // Get org-level encrypted tokens from Firestore
+      // Try org-level location first (organizations/{orgId}/cloudIntegrations/google)
+      let integrationDoc = await admin.firestore()
         .collection('organizations')
         .doc(organizationId)
         .collection('cloudIntegrations')
-        .doc(`google_${userId}`)
+        .doc('google')
         .get();
+
+      // Fallback to old user-specific location for migration compatibility
+      if (!integrationDoc.exists) {
+        integrationDoc = await admin.firestore()
+          .collection('organizations')
+          .doc(organizationId)
+          .collection('cloudIntegrations')
+          .doc(`google_${userId}`)
+          .get();
+      }
+
+      if (!integrationDoc.exists) {
+        throw new HttpsError('not-found', 'Google Drive not connected');
+      }
+
+      const integrationData = integrationDoc.data();
+      if (!integrationData?.encryptedTokens) {
+        throw new HttpsError('not-found', 'No OAuth tokens found');
+      }
+
+      // Decrypt tokens
+      const tokens = decryptTokens(integrationData.encryptedTokens);
+
+      // Set up OAuth client with user's tokens
+      getOAuth2ClientForCredentials().setCredentials(tokens);
+      const drive = google.drive({ version: 'v3', auth: oauth2Client });
+
+      // List files in the folder
+      const response = await drive.files.list({
+        q: `'${folderId}' in parents and trashed=false`,
+        fields: 'files(id, name, mimeType, size, createdTime, modifiedTime, webViewLink, parents)',
+        pageSize: 1000
+      });
+
+      const files = response.data.files || [];
+      console.log(`Found ${files.length} files in folder ${folderId}`);
+
+      // Store indexed files in Firestore (organization-wide collection)
+      const batch = admin.firestore().batch();
+      const indexedFilesRef = admin.firestore()
+        .collection('organizations')
+        .doc(organizationId)
+        .collection('indexedFiles');
+
+      for (const file of files) {
+        const fileDoc = {
+          name: file.name,
+          driveFileId: file.id,
+          mimeType: file.mimeType,
+          size: file.size ? parseInt(file.size) : 0,
+          webViewLink: file.webViewLink,
+          parentFolderId: folderId,
+          driveUserId: userId,
+          driveUserEmail: integrationData.accountEmail,
+          indexedBy: userId,
+          indexedAt: admin.firestore.FieldValue.serverTimestamp(),
+          organizationId: organizationId
+        };
+
+        batch.set(indexedFilesRef.doc(file.id!), fileDoc);
+      }
+
+      await batch.commit();
+
+      console.log(`Successfully indexed ${files.length} files from folder ${folderId}`);
+
+      return createSuccessResponse({
+        success: true,
+        filesIndexed: files.length,
+        folderId: folderId
+      });
+
+    } catch (error: any) {
+      console.error('Failed to index Google Drive folder:', error);
+      throw error instanceof HttpsError ? error : new HttpsError('internal', error.message || 'Failed to index folder');
     }
-
-    if (!integrationDoc.exists) {
-      return createErrorResponse('Google Drive not connected', 'NOT_FOUND');
-    }
-
-    const integrationData = integrationDoc.data();
-    if (!integrationData?.encryptedTokens) {
-      return createErrorResponse('No OAuth tokens found', 'NOT_FOUND');
-    }
-
-    // Decrypt tokens
-    const tokens = decryptTokens(integrationData.encryptedTokens);
-    
-    // Set up OAuth client with user's tokens
-    getOAuth2ClientForCredentials().setCredentials(tokens);
-    const drive = google.drive({ version: 'v3', auth: oauth2Client });
-
-    // List files in the folder
-    const response = await drive.files.list({
-      q: `'${folderId}' in parents and trashed=false`,
-      fields: 'files(id, name, mimeType, size, createdTime, modifiedTime, webViewLink, parents)',
-      pageSize: 1000
-    });
-
-    const files = response.data.files || [];
-    console.log(`Found ${files.length} files in folder ${folderId}`);
-
-    // Store indexed files in Firestore (organization-wide collection)
-    const batch = admin.firestore().batch();
-    const indexedFilesRef = admin.firestore()
-      .collection('organizations')
-      .doc(organizationId)
-      .collection('indexedFiles');
-
-    for (const file of files) {
-      const fileDoc = {
-        name: file.name,
-        driveFileId: file.id,
-        mimeType: file.mimeType,
-        size: file.size ? parseInt(file.size) : 0,
-        webViewLink: file.webViewLink,
-        parentFolderId: folderId,
-        driveUserId: userId,
-        driveUserEmail: integrationData.accountEmail,
-        indexedBy: userId,
-        indexedAt: admin.firestore.FieldValue.serverTimestamp(),
-        organizationId: organizationId
-      };
-
-      batch.set(indexedFilesRef.doc(file.id!), fileDoc);
-    }
-
-    await batch.commit();
-
-    console.log(`Successfully indexed ${files.length} files from folder ${folderId}`);
-
-    return createSuccessResponse({
-      success: true,
-      filesIndexed: files.length,
-      folderId: folderId
-    });
-
-  } catch (error) {
-    console.error('Failed to index Google Drive folder:', error);
-    return createErrorResponse('Failed to index folder', error instanceof Error ? error.message : 'Unknown error');
   }
-});
+);

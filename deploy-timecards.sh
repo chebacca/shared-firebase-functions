@@ -20,6 +20,8 @@ const { getTimecardAssignments, getTimecardAssignmentsHttp } = require('./timeca
 const { getAllTimecards, getAllTimecardsHttp } = require('./timecards/getAllTimecards');
 const { getTimecardUsers, getTimecardUsersHttp } = require('./timecards/getTimecardUsers');
 const { getTimecardConfigurations, getTimecardConfigurationsHttp } = require('./timecards/getTimecardConfigurations');
+const { clockIn } = require('./timecards/clockIn');
+const { clockOut } = require('./timecards/clockOut');
 
 module.exports = {
   getTimecardTemplates,
@@ -33,12 +35,14 @@ module.exports = {
   getTimecardUsers,
   getTimecardUsersHttp,
   getTimecardConfigurations,
-  getTimecardConfigurationsHttp
+  getTimecardConfigurationsHttp,
+  clockIn,
+  clockOut
 };
 EOF
 
     echo "🚀 Deploying to Firebase..."
-    firebase deploy --only functions:getTimecardTemplates,functions:getTimecardTemplatesHttp,functions:getTimecardAssignments,functions:getTimecardAssignmentsHttp,functions:getAllTimecards,functions:getAllTimecardsHttp,functions:getTimecardUsers,functions:getTimecardUsersHttp,functions:getTimecardConfigurations,functions:getTimecardConfigurationsHttp --project backbone-logic
+    firebase deploy --only functions:getTimecardTemplates,functions:getTimecardTemplatesHttp,functions:getTimecardAssignments,functions:getTimecardAssignmentsHttp,functions:getAllTimecards,functions:getAllTimecardsHttp,functions:getTimecardUsers,functions:getTimecardUsersHttp,functions:getTimecardConfigurations,functions:getTimecardConfigurationsHttp,functions:clockIn,functions:clockOut --project backbone-logic
     
     if [ $? -eq 0 ]; then
         echo "✅ Timecard functions deployed successfully!"

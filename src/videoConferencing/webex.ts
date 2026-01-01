@@ -34,16 +34,16 @@ function decryptToken(encryptedData: string): string {
   const [ivHex, authTagHex, encrypted] = encryptedData.split(':');
   const iv = Buffer.from(ivHex, 'hex');
   const authTag = Buffer.from(authTagHex, 'hex');
-  
+
   const algorithm = 'aes-256-gcm';
   const key = crypto.createHash('sha256').update(getEncryptionKey(), 'utf8').digest();
-  
+
   const decipher = crypto.createDecipheriv(algorithm, key, iv);
   decipher.setAuthTag(authTag);
-  
+
   let decrypted = decipher.update(encrypted, 'hex', 'utf8');
   decrypted += decipher.final('utf8');
-  
+
   return decrypted;
 }
 
@@ -70,7 +70,7 @@ async function getAuthenticatedWebexToken(organizationId: string): Promise<strin
   // Check if token is expired
   const now = Date.now();
   const expiresAt = connection.tokenExpiresAt?.toMillis() || 0;
-  
+
   let accessToken = decryptToken(connection.accessToken);
 
   // Refresh token if expired or about to expire (within 5 minutes)
@@ -103,7 +103,7 @@ async function getAuthenticatedWebexToken(organizationId: string): Promise<strin
         encrypted += cipher.final('hex');
         const authTag = cipher.getAuthTag();
         const encryptedAccessToken = `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
-        
+
         // Also update refresh token if provided
         let encryptedRefreshToken = connection.refreshToken;
         if (tokenResponse.data.refresh_token) {
@@ -198,6 +198,7 @@ export const createWebexMeeting = onCall(
           endTime: meetingData.end ? Timestamp.fromDate(new Date(meetingData.end)) : null,
           participants: participants || [],
           webexMeetingId: meetingData.id,
+          organizationId: organizationId, // Added for consistency
           createdBy: auth.uid,
           createdAt: Timestamp.now(),
           status: 'active',
@@ -218,11 +219,11 @@ export const createWebexMeeting = onCall(
 
     } catch (error: any) {
       console.error('❌ [Webex] Error creating meeting:', error);
-      
+
       if (error instanceof HttpsError) {
         throw error;
       }
-      
+
       const errorMessage = error.response?.data?.message || error.message || 'Unknown error';
       throw new HttpsError('internal', `Failed to create Webex meeting: ${errorMessage}`);
     }
@@ -235,8 +236,8 @@ export const createWebexMeeting = onCall(
 export const scheduleWebexMeeting = onCall(
   {
     region: 'us-central1',
-    invoker: 'public',  // Required for public access - callable functions handle CORS automatically
-    // Note: cors option is not needed for callable functions - they handle CORS automatically
+    invoker: 'public',  // Required for public access via callable SDK
+    cors: CORS_ORIGINS, // Use explicit origins array for stability
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -282,7 +283,7 @@ export const scheduleWebexMeeting = onCall(
           // Also check users collection for the organization
           const userDoc = await db.collection('users').doc(userId).get();
           const userData = userDoc.data();
-          
+
           if (userData?.organizationId !== organizationId) {
             throw new HttpsError(
               'permission-denied',
@@ -353,6 +354,7 @@ export const scheduleWebexMeeting = onCall(
           endTime: Timestamp.fromDate(new Date(endTimeValue)),
           participants: participants || [],
           webexMeetingId: meetingData.id,
+          organizationId: organizationId, // Added for consistency
           createdBy: auth.uid,
           createdAt: Timestamp.now(),
           status: 'scheduled',
@@ -373,11 +375,11 @@ export const scheduleWebexMeeting = onCall(
 
     } catch (error: any) {
       console.error('❌ [Webex] Error scheduling meeting:', error);
-      
+
       if (error instanceof HttpsError) {
         throw error;
       }
-      
+
       const errorMessage = error.response?.data?.message || error.message || 'Unknown error';
       throw new HttpsError('internal', `Failed to schedule Webex meeting: ${errorMessage}`);
     }
@@ -465,11 +467,11 @@ export const updateWebexMeeting = onCall(
 
     } catch (error: any) {
       console.error('❌ [Webex] Error updating meeting:', error);
-      
+
       if (error instanceof HttpsError) {
         throw error;
       }
-      
+
       const errorMessage = error.response?.data?.message || error.message || 'Unknown error';
       throw new HttpsError('internal', `Failed to update Webex meeting: ${errorMessage}`);
     }
@@ -542,11 +544,11 @@ export const cancelWebexMeeting = onCall(
 
     } catch (error: any) {
       console.error('❌ [Webex] Error cancelling meeting:', error);
-      
+
       if (error instanceof HttpsError) {
         throw error;
       }
-      
+
       const errorMessage = error.response?.data?.message || error.message || 'Unknown error';
       throw new HttpsError('internal', `Failed to cancel Webex meeting: ${errorMessage}`);
     }
@@ -601,11 +603,11 @@ export const getWebexMeetingDetails = onCall(
 
     } catch (error: any) {
       console.error('❌ [Webex] Error getting meeting details:', error);
-      
+
       if (error instanceof HttpsError) {
         throw error;
       }
-      
+
       throw new HttpsError('internal', `Failed to get meeting details: ${error.message || 'Unknown error'}`);
     }
   }

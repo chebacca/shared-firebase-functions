@@ -20,13 +20,13 @@ function encryptToken(text: string): string {
   // Use SHA-256 hash to derive a consistent 32-byte key from the secret
   const key = crypto.createHash('sha256').update(getEncryptionKey(), 'utf8').digest();
   const iv = crypto.randomBytes(16);
-  
+
   const cipher = crypto.createCipheriv(algorithm, key, iv);
   let encrypted = cipher.update(text, 'utf8', 'hex');
   encrypted += cipher.final('hex');
-  
+
   const authTag = cipher.getAuthTag();
-  
+
   return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
 }
 
@@ -37,18 +37,18 @@ function decryptToken(encryptedData: string): string {
   const [ivHex, authTagHex, encrypted] = encryptedData.split(':');
   const iv = Buffer.from(ivHex, 'hex');
   const authTag = Buffer.from(authTagHex, 'hex');
-  
+
   const algorithm = 'aes-256-gcm';
   // Ensure the key is exactly 32 bytes for AES-256-GCM
   // Use SHA-256 hash to derive a consistent 32-byte key from the secret
   const key = crypto.createHash('sha256').update(getEncryptionKey(), 'utf8').digest();
-  
+
   const decipher = crypto.createDecipheriv(algorithm, key, iv);
   decipher.setAuthTag(authTag);
-  
+
   let decrypted = decipher.update(encrypted, 'hex', 'utf8');
   decrypted += decipher.final('utf8');
-  
+
   return decrypted;
 }
 
@@ -57,20 +57,20 @@ function decryptToken(encryptedData: string): string {
  */
 export async function getGoogleConfig(organizationId: string) {
   console.log(`🔍 [GoogleConfig] Fetching config for org: ${organizationId}`);
-  
+
   const configDoc = await db
     .collection('organizations')
     .doc(organizationId)
     .collection('integrationSettings')
     .doc('google')
     .get();
-    
+
   if (!configDoc.exists) {
     // Fallback to environment variables for backward compatibility
     let envClientId = process.env.GOOGLE_CLIENT_ID;
     let envClientSecret = process.env.GOOGLE_CLIENT_SECRET;
     let envRedirectUri = process.env.GOOGLE_REDIRECT_URI;
-    
+
     // 🔥 CRITICAL FIX: Also check functions.config() for Firebase Functions v1 compatibility
     // This is where the credentials are actually stored in the current deployment
     if (!envClientId || !envClientSecret) {
@@ -87,11 +87,11 @@ export async function getGoogleConfig(organizationId: string) {
         console.log(`⚠️ [GoogleConfig] functions.config() not available:`, error?.message || error);
       }
     }
-    
+
     // NOTE: redirectUri should come from the client request, not env/config
     // This is a fallback only - the actual redirect URI is provided by the client
     envRedirectUri = envRedirectUri || 'https://backbone-logic.web.app/integration-settings';
-    
+
     if (envClientId && envClientSecret) {
       console.log(`⚠️ [GoogleConfig] Using environment/functions.config variables (legacy mode) for org: ${organizationId}`);
       return {
@@ -112,30 +112,44 @@ export async function getGoogleConfig(organizationId: string) {
         ],
       };
     }
-    
+
     console.warn(`⚠️ [GoogleConfig] No config found for org: ${organizationId}`);
     throw new HttpsError(
-      'failed-precondition', 
+      'failed-precondition',
       'Google Drive integration not configured. Please configure in Integration Settings.'
     );
   }
 
   const config = configDoc.data()!;
-  
+
   if (!config.isConfigured) {
     console.warn(`⚠️ [GoogleConfig] Config exists but not marked as configured for org: ${organizationId}`);
     throw new HttpsError(
-      'failed-precondition', 
+      'failed-precondition',
       'Google Drive integration not fully configured. Please complete setup in Integration Settings.'
     );
   }
-  
+
+  // Decrypt client secret if it looks encrypted (contains :)
+  let clientSecret = config.clientSecret;
+  if (config.clientSecret && config.clientSecret.includes(':')) {
+    try {
+      clientSecret = decryptToken(config.clientSecret);
+      console.log(`✅ [GoogleConfig] Decrypted client secret for org: ${organizationId}`);
+    } catch (error) {
+      console.warn(`⚠️ [GoogleConfig] Failed to decrypt client secret (falling back to plaintext):`, error);
+      clientSecret = config.clientSecret;
+    }
+  } else {
+    console.log(`ℹ️ [GoogleConfig] Using plaintext client secret for org: ${organizationId}`);
+  }
+
   console.log(`✅ [GoogleConfig] Config loaded for org: ${organizationId}`);
-  
+
   return {
     clientId: config.clientId,
-    clientSecret: decryptToken(config.clientSecret),
-    redirectUri: config.redirectUri || 'https://backbone-client.web.app/integration-settings',
+    clientSecret: clientSecret,
+    redirectUri: config.redirectUri || 'https://backbone-logic.web.app/integration-settings',
     scopes: config.scopes || [
       'https://www.googleapis.com/auth/drive.readonly',
       'https://www.googleapis.com/auth/drive.file',
@@ -155,7 +169,7 @@ export async function getGoogleConfig(organizationId: string) {
  * Save Google Drive configuration to Firestore
  */
 export const saveGoogleConfig = onCall(
-  { 
+  {
     region: 'us-central1',
     cors: true,
     secrets: [encryptionKey],
@@ -202,7 +216,7 @@ export const saveGoogleConfig = onCall(
         .set({
           clientId,
           clientSecret: encryptedClientSecret,
-          redirectUri: redirectUri || 'https://backbone-client.web.app/integration-settings',
+          redirectUri: redirectUri || 'https://backbone-logic.web.app/integration-settings',
           scopes: [
             'https://www.googleapis.com/auth/drive.readonly',
             'https://www.googleapis.com/auth/drive.file',
@@ -230,11 +244,11 @@ export const saveGoogleConfig = onCall(
 
     } catch (error) {
       console.error(`❌ [GoogleConfig] Error saving config:`, error);
-      
+
       if (error instanceof HttpsError) {
         throw error;
       }
-      
+
       throw new HttpsError('internal', 'Failed to save Google Drive configuration');
     }
   }
@@ -244,7 +258,7 @@ export const saveGoogleConfig = onCall(
  * Get Google Drive configuration status
  */
 export const getGoogleConfigStatus = onCall(
-  { 
+  {
     region: 'us-central1',
     cors: true,
     secrets: [encryptionKey],
@@ -295,7 +309,7 @@ export const getGoogleConfigStatus = onCall(
         // Check if connection is active (isActive !== false)
         const isActive = cloudData.isActive !== false;
         const hasTokens = !!(cloudData.tokens || cloudData.encryptedTokens || cloudData.accessToken || cloudData.refreshToken);
-        
+
         if (isActive && hasTokens) {
           console.log(`✅ [GoogleConfig] Found active connection in cloudIntegrations/google for org: ${organizationId}`);
           return {

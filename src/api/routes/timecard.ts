@@ -35,13 +35,13 @@ router.post('/clock-in', authenticateToken, async (req: express.Request, res: ex
     // Get today's date if not provided
     const today = date || new Date().toISOString().split('T')[0];
     const now = admin.firestore.Timestamp.now();
-    
+
     // Create date timestamp for query (start of day in UTC)
     const [year, month, day] = today.split('-').map(Number);
     const dateTimestamp = admin.firestore.Timestamp.fromDate(new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0)));
 
     // Check if user is already clocked in for today
-    const timecardQuery = await db.collection('timecardEntries')
+    const timecardQuery = await db.collection('timecard_entries')
       .where('userId', '==', userId)
       .where('organizationId', '==', userOrgId)
       .where('date', '==', dateTimestamp)
@@ -78,7 +78,7 @@ router.post('/clock-in', authenticateToken, async (req: express.Request, res: ex
       updatedAt: now
     };
 
-    const timecardRef = await db.collection('timecardEntries').add(timecardData);
+    const timecardRef = await db.collection('timecard_entries').add(timecardData);
     const timecardDoc = await timecardRef.get();
 
     // Update location status
@@ -146,26 +146,32 @@ router.post('/clock-out', authenticateToken, async (req: express.Request, res: e
 
     const now = admin.firestore.Timestamp.now();
     const today = new Date().toISOString().split('T')[0];
-    
-    // Create date timestamp for query (start of day in UTC)
-    const [year, month, day] = today.split('-').map(Number);
-    const dateTimestamp = admin.firestore.Timestamp.fromDate(new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0)));
 
-    // Find active timecard entry for today
-    const timecardQuery = await db.collection('timecardEntries')
+    // Look back 7 days to find any active session (handles overnight/long shifts and missing fields)
+    const lookbackDate = new Date();
+    lookbackDate.setDate(lookbackDate.getDate() - 7);
+    lookbackDate.setHours(0, 0, 0, 0);
+    const lookbackTimestamp = admin.firestore.Timestamp.fromDate(lookbackDate);
+
+    // Use existing index (Organization + User + Date) to find recent entries
+    const timecardQuery = await db.collection('timecard_entries')
       .where('userId', '==', userId)
       .where('organizationId', '==', userOrgId)
-      .where('date', '==', dateTimestamp)
-      .where('clockOutTime', '==', null)
-      .limit(1)
+      .where('date', '>=', lookbackTimestamp)
+      .orderBy('date', 'desc')
       .get();
 
-    if (timecardQuery.empty) {
+    // Find the first active entry (no clockOutTime AND no timeOut)
+    const timecardDoc = timecardQuery.docs.find(doc => {
+      const data = doc.data();
+      return !data.clockOutTime && !data.timeOut;
+    });
+
+    if (!timecardDoc) {
       res.status(400).json(createErrorResponse('Not clocked in', 'You are not currently clocked in'));
       return;
     }
 
-    const timecardDoc = timecardQuery.docs[0];
     const timecardRef = timecardDoc.ref;
     const timecardData = timecardDoc.data();
 

@@ -7,6 +7,7 @@
 
 import { onCall, onRequest } from 'firebase-functions/v2/https';
 import { getFirestore } from 'firebase-admin/firestore';
+import { getAuth } from 'firebase-admin/auth';
 import { createSuccessResponse, createErrorResponse, handleError, setCorsHeaders } from '../shared/utils';
 
 const db = getFirestore();
@@ -20,46 +21,113 @@ export const getDirectReports = onCall(
   },
   async (request) => {
     try {
-      const { organizationId, managerId } = request.data;
+      const { organizationId: providedOrgId, managerId: providedManagerId } = request.data;
+      const userId = request.auth?.uid;
+
+      if (!userId) {
+        throw new Error('Authentication required');
+      }
+
+      // Use provided managerId or authenticated user's ID
+      const managerId = providedManagerId || userId;
+
+      // Get organizationId from user's custom claims if not provided
+      let organizationId = providedOrgId;
+      if (!organizationId && userId) {
+        try {
+          const userRecord = await getAuth().getUser(userId);
+          organizationId = userRecord.customClaims?.organizationId as string;
+        } catch (error) {
+          console.warn('[GET DIRECT REPORTS] Could not get organizationId from claims:', error);
+        }
+      }
 
       if (!organizationId) {
         throw new Error('Organization ID is required');
       }
 
-      if (!managerId) {
-        throw new Error('Manager ID is required');
-      }
-
       console.log(`⏰ [GET DIRECT REPORTS] Getting direct reports for manager: ${managerId} in org: ${organizationId}`);
 
-      // Get team members who report to this manager
-      const teamMembersQuery = await db.collection('teamMembers')
+      // 🔥 PRIMARY: Query userDirectReports collection (matching frontend implementation)
+      let directReportsQuery = await db.collection('userDirectReports')
         .where('organizationId', '==', organizationId)
         .where('managerId', '==', managerId)
         .where('isActive', '==', true)
         .get();
 
-      const directReports = [];
+      let directReports = [];
       
-      for (const doc of teamMembersQuery.docs) {
-        const teamMember = doc.data();
+      // Process userDirectReports results
+      for (const doc of directReportsQuery.docs) {
+        const directReportData = doc.data();
+        const employeeId = directReportData.employeeId;
+        
+        if (!employeeId) continue;
         
         // Get user details from users collection
-        const userDoc = await db.collection('users').doc(teamMember.userId).get();
+        const userDoc = await db.collection('users').doc(employeeId).get();
         
         if (userDoc.exists) {
           const userData = userDoc.data();
           if (userData) {
             directReports.push({
-              id: teamMember.userId,
+              id: doc.id,
+              employeeId: employeeId,
+              managerId: managerId,
               email: userData.email,
-              displayName: userData.displayName || userData.name,
-              role: teamMember.role,
-              teamMemberRole: teamMember.teamMemberRole,
-              isActive: teamMember.isActive,
-              createdAt: teamMember.createdAt,
-              managerId: teamMember.managerId
+              displayName: userData.displayName || userData.name || `${userData.firstName || ''} ${userData.lastName || ''}`.trim(),
+              firstName: userData.firstName,
+              lastName: userData.lastName,
+              role: userData.role,
+              isActive: directReportData.isActive !== false,
+              canApproveTimecards: directReportData.canApproveTimecards !== false,
+              canApproveOvertime: directReportData.canApproveOvertime !== false,
+              department: directReportData.department || userData.department,
+              createdAt: directReportData.createdAt,
+              effectiveDate: directReportData.effectiveDate || directReportData.createdAt
             });
+          }
+        }
+      }
+
+      // 🔥 FALLBACK: If no results in userDirectReports, try directReports collection
+      if (directReports.length === 0) {
+        console.log('⚠️ [GET DIRECT REPORTS] No results in userDirectReports, trying directReports fallback...');
+        directReportsQuery = await db.collection('directReports')
+          .where('organizationId', '==', organizationId)
+          .where('managerId', '==', managerId)
+          .where('isActive', '==', true)
+          .get();
+
+        for (const doc of directReportsQuery.docs) {
+          const directReportData = doc.data();
+          const employeeId = directReportData.employeeId;
+          
+          if (!employeeId) continue;
+          
+          // Get user details from users collection
+          const userDoc = await db.collection('users').doc(employeeId).get();
+          
+          if (userDoc.exists) {
+            const userData = userDoc.data();
+            if (userData) {
+              directReports.push({
+                id: doc.id,
+                employeeId: employeeId,
+                managerId: managerId,
+                email: userData.email,
+                displayName: userData.displayName || userData.name || `${userData.firstName || ''} ${userData.lastName || ''}`.trim(),
+                firstName: userData.firstName,
+                lastName: userData.lastName,
+                role: userData.role,
+                isActive: directReportData.isActive !== false,
+                canApproveTimecards: directReportData.canApproveTimecards !== false,
+                canApproveOvertime: directReportData.canApproveOvertime !== false,
+                department: directReportData.department || userData.department,
+                createdAt: directReportData.createdAt,
+                effectiveDate: directReportData.effectiveDate || directReportData.createdAt
+              });
+            }
           }
         }
       }
@@ -112,34 +180,86 @@ export const getDirectReportsHttp = onRequest(
 
       console.log(`⏰ [GET DIRECT REPORTS HTTP] Getting direct reports for manager: ${managerId} in org: ${organizationId}`);
 
-      // Get team members who report to this manager
-      const teamMembersQuery = await db.collection('teamMembers')
+      // 🔥 PRIMARY: Query userDirectReports collection (matching frontend implementation)
+      let directReportsQuery = await db.collection('userDirectReports')
         .where('organizationId', '==', organizationId)
         .where('managerId', '==', managerId)
         .where('isActive', '==', true)
         .get();
 
-      const directReports = [];
+      let directReports = [];
       
-      for (const doc of teamMembersQuery.docs) {
-        const teamMember = doc.data();
+      // Process userDirectReports results
+      for (const doc of directReportsQuery.docs) {
+        const directReportData = doc.data();
+        const employeeId = directReportData.employeeId;
+        
+        if (!employeeId) continue;
         
         // Get user details from users collection
-        const userDoc = await db.collection('users').doc(teamMember.userId).get();
+        const userDoc = await db.collection('users').doc(employeeId).get();
         
         if (userDoc.exists) {
           const userData = userDoc.data();
           if (userData) {
             directReports.push({
-              id: teamMember.userId,
+              id: doc.id,
+              employeeId: employeeId,
+              managerId: managerId,
               email: userData.email,
-              displayName: userData.displayName || userData.name,
-              role: teamMember.role,
-              teamMemberRole: teamMember.teamMemberRole,
-              isActive: teamMember.isActive,
-              createdAt: teamMember.createdAt,
-              managerId: teamMember.managerId
+              displayName: userData.displayName || userData.name || `${userData.firstName || ''} ${userData.lastName || ''}`.trim(),
+              firstName: userData.firstName,
+              lastName: userData.lastName,
+              role: userData.role,
+              isActive: directReportData.isActive !== false,
+              canApproveTimecards: directReportData.canApproveTimecards !== false,
+              canApproveOvertime: directReportData.canApproveOvertime !== false,
+              department: directReportData.department || userData.department,
+              createdAt: directReportData.createdAt,
+              effectiveDate: directReportData.effectiveDate || directReportData.createdAt
             });
+          }
+        }
+      }
+
+      // 🔥 FALLBACK: If no results in userDirectReports, try directReports collection
+      if (directReports.length === 0) {
+        console.log('⚠️ [GET DIRECT REPORTS HTTP] No results in userDirectReports, trying directReports fallback...');
+        directReportsQuery = await db.collection('directReports')
+          .where('organizationId', '==', organizationId)
+          .where('managerId', '==', managerId)
+          .where('isActive', '==', true)
+          .get();
+
+        for (const doc of directReportsQuery.docs) {
+          const directReportData = doc.data();
+          const employeeId = directReportData.employeeId;
+          
+          if (!employeeId) continue;
+          
+          // Get user details from users collection
+          const userDoc = await db.collection('users').doc(employeeId).get();
+          
+          if (userDoc.exists) {
+            const userData = userDoc.data();
+            if (userData) {
+              directReports.push({
+                id: doc.id,
+                employeeId: employeeId,
+                managerId: managerId,
+                email: userData.email,
+                displayName: userData.displayName || userData.name || `${userData.firstName || ''} ${userData.lastName || ''}`.trim(),
+                firstName: userData.firstName,
+                lastName: userData.lastName,
+                role: userData.role,
+                isActive: directReportData.isActive !== false,
+                canApproveTimecards: directReportData.canApproveTimecards !== false,
+                canApproveOvertime: directReportData.canApproveOvertime !== false,
+                department: directReportData.department || userData.department,
+                createdAt: directReportData.createdAt,
+                effectiveDate: directReportData.effectiveDate || directReportData.createdAt
+              });
+            }
           }
         }
       }

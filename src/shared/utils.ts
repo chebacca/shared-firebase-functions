@@ -535,3 +535,22 @@ export const setCorsHeaders = (req: any, res: any): void => {
   res.set('Access-Control-Allow-Credentials', 'true');
   res.set('Access-Control-Max-Age', '3600'); // Cache preflight request for 1 hour
 };
+
+export const verifyAuthToken = async (req: any): Promise<{ userId: string; organizationId: string; }> => {
+  const authToken = req.query.auth as string || req.headers.authorization?.split('Bearer ')[1];
+
+  if (!authToken) {
+    throw new Error('Authentication required');
+  }
+
+  try {
+    const decoded = await admin.auth().verifyIdToken(authToken);
+    return {
+      userId: decoded.uid,
+      organizationId: decoded.organizationId || 'default'
+    };
+  } catch (error) {
+    console.error('Error verifying auth token:', error);
+    throw new Error('Invalid authentication token');
+  }
+};

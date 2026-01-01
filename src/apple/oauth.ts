@@ -32,13 +32,13 @@ function encryptToken(text: string): string {
 
   const key = crypto.createHash('sha256').update(encryptionKeyValue, 'utf8').digest();
   const iv = crypto.randomBytes(16);
-  
+
   const cipher = crypto.createCipheriv(algorithm, key, iv);
   let encrypted = cipher.update(text, 'utf8', 'hex');
   encrypted += cipher.final('hex');
-  
+
   const authTag = cipher.getAuthTag();
-  
+
   return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
 }
 
@@ -54,17 +54,17 @@ function decryptToken(encryptedData: string): string {
   const [ivHex, authTagHex, encrypted] = parts;
   const iv = Buffer.from(ivHex, 'hex');
   const authTag = Buffer.from(authTagHex, 'hex');
-  
+
   const algorithm = 'aes-256-gcm';
   const encryptionKeyValue = getEncryptionKey();
   const key = crypto.createHash('sha256').update(encryptionKeyValue, 'utf8').digest();
-  
+
   const decipher = crypto.createDecipheriv(algorithm, key, iv);
   decipher.setAuthTag(authTag);
-  
+
   let decrypted = decipher.update(encrypted, 'hex', 'utf8');
   decrypted += decipher.final('utf8');
-  
+
   return decrypted;
 }
 
@@ -284,7 +284,7 @@ export const appleConnectOAuthCallback = onCall(
       // Decode ID token to get user info
       const idToken = tokenData.id_token;
       let userInfo: { email?: string; name?: string; sub: string } = { sub: '' };
-      
+
       if (idToken) {
         const decoded = jwt.decode(idToken) as any;
         userInfo = {
@@ -299,7 +299,7 @@ export const appleConnectOAuthCallback = onCall(
       const encryptedRefreshToken = tokenData.refresh_token ? encryptToken(tokenData.refresh_token) : undefined;
 
       // Calculate expiry
-      const expiresAt = tokenData.expires_in 
+      const expiresAt = tokenData.expires_in
         ? Date.now() + (tokenData.expires_in * 1000)
         : Date.now() + (3600 * 1000); // Default 1 hour
 
@@ -361,11 +361,11 @@ export const appleConnectOAuthCallbackHttp = onRequest(
       // Handle OAuth error from Apple
       if (error) {
         console.error('❌ [AppleConnectOAuth] OAuth error from Apple:', error);
-        return res.redirect('https://backbone-logic.web.app/dashboard/integrations?apple_connect_error=authorization_failed');
+        return res.redirect('https://backbone-logic.web.app/integration-settings?apple_connect_error=authorization_failed');
       }
 
       if (!code || !state) {
-        return res.redirect('https://backbone-logic.web.app/dashboard/integrations?apple_connect_error=missing_parameters');
+        return res.redirect('https://backbone-logic.web.app/integration-settings?apple_connect_error=missing_parameters');
       }
 
       // Verify state
@@ -376,7 +376,7 @@ export const appleConnectOAuthCallbackHttp = onRequest(
         .get();
 
       if (stateQuery.empty) {
-        return res.redirect('https://backbone-logic.web.app/dashboard/integrations?apple_connect_error=invalid_state');
+        return res.redirect('https://backbone-logic.web.app/integration-settings?apple_connect_error=invalid_state');
       }
 
       const stateData = stateQuery.docs[0].data();
@@ -414,7 +414,7 @@ export const appleConnectOAuthCallbackHttp = onRequest(
       if (!tokenResponse.ok) {
         const errorText = await tokenResponse.text();
         console.error('❌ [AppleConnectOAuth] Token exchange failed:', errorText);
-        return res.redirect('https://backbone-logic.web.app/dashboard/integrations?apple_connect_error=token_exchange_failed');
+        return res.redirect('https://backbone-logic.web.app/integration-settings?apple_connect_error=token_exchange_failed');
       }
 
       const tokenData = await tokenResponse.json() as {
@@ -426,13 +426,13 @@ export const appleConnectOAuthCallbackHttp = onRequest(
       };
 
       if (!tokenData.access_token) {
-        return res.redirect('https://backbone-logic.web.app/dashboard/integrations?apple_connect_error=no_access_token');
+        return res.redirect('https://backbone-logic.web.app/integration-settings?apple_connect_error=no_access_token');
       }
 
       // Decode ID token to get user info
       const idToken = tokenData.id_token;
       let userInfo: { email?: string; name?: string; sub: string } = { sub: '' };
-      
+
       if (idToken) {
         const decoded = jwt.decode(idToken) as any;
         // Apple may send user info in the initial request body (form_post)
@@ -457,7 +457,7 @@ export const appleConnectOAuthCallbackHttp = onRequest(
       const encryptedRefreshToken = tokenData.refresh_token ? encryptToken(tokenData.refresh_token) : undefined;
 
       // Calculate expiry
-      const expiresAt = tokenData.expires_in 
+      const expiresAt = tokenData.expires_in
         ? Date.now() + (tokenData.expires_in * 1000)
         : Date.now() + (3600 * 1000);
 
@@ -486,12 +486,12 @@ export const appleConnectOAuthCallbackHttp = onRequest(
       console.log(`✅ [AppleConnectOAuth] OAuth callback completed for org: ${organizationId}`);
 
       // Redirect back to client application
-      const finalRedirectUri = clientRedirectUri || redirectUri || 'https://backbone-logic.web.app/dashboard/integrations';
+      const finalRedirectUri = clientRedirectUri || redirectUri || 'https://backbone-logic.web.app/integration-settings';
       return res.redirect(`${finalRedirectUri}?apple_connect=connected`);
 
     } catch (error) {
       console.error('❌ [AppleConnectOAuth] Error in HTTP callback handler:', error);
-      return res.redirect('https://backbone-logic.web.app/dashboard/integrations?apple_connect_error=callback_failed');
+      return res.redirect('https://backbone-logic.web.app/integration-settings?apple_connect_error=callback_failed');
     }
   }
 );

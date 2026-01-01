@@ -31,7 +31,16 @@ function encryptToken(text: string): string {
  * Decrypt sensitive data
  */
 function decryptToken(encryptedData: string): string {
+  if (!encryptedData || typeof encryptedData !== 'string') {
+    throw new Error('Cannot decrypt: encryptedData is missing or invalid');
+  }
+  
   const [ivHex, authTagHex, encrypted] = encryptedData.split(':');
+  
+  if (!ivHex || !authTagHex || !encrypted) {
+    throw new Error('Cannot decrypt: encryptedData format is invalid (expected format: iv:authTag:encrypted)');
+  }
+  
   const iv = Buffer.from(ivHex, 'hex');
   const authTag = Buffer.from(authTagHex, 'hex');
   
@@ -94,11 +103,52 @@ export async function getBoxConfig(organizationId: string) {
     );
   }
   
+  // Validate required fields
+  if (!config.clientId) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Box clientId is missing from configuration. Please reconfigure Box integration.'
+    );
+  }
+  
+  if (!config.clientSecret) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Box clientSecret is missing from configuration. Please reconfigure Box integration.'
+    );
+  }
+  
+  // Decrypt client secret if it looks encrypted (contains :)
+  // This matches Google Drive's pattern for handling encrypted vs plaintext secrets
+  let clientSecret = config.clientSecret;
+  if (config.clientSecret && config.clientSecret.includes(':')) {
+    try {
+      clientSecret = decryptToken(config.clientSecret);
+      console.log(`✅ [BoxConfig] Decrypted client secret for org: ${organizationId}`);
+    } catch (error) {
+      console.warn(`⚠️ [BoxConfig] Failed to decrypt client secret (falling back to plaintext):`, error);
+      clientSecret = config.clientSecret;
+    }
+  } else {
+    console.log(`ℹ️ [BoxConfig] Using plaintext client secret for org: ${organizationId}`);
+  }
+  
+  // CRITICAL: Trim whitespace from credentials (common issue from copy/paste or form inputs)
+  const trimmedClientId = config.clientId?.trim();
+  const trimmedClientSecret = clientSecret?.trim();
+  
+  if (!trimmedClientId || !trimmedClientSecret) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Box credentials are invalid after trimming whitespace. Please reconfigure Box integration.'
+    );
+  }
+  
   console.log(`✅ [BoxConfig] Config loaded for org: ${organizationId}`);
   
   return {
-    clientId: config.clientId,
-    clientSecret: decryptToken(config.clientSecret),
+    clientId: trimmedClientId,
+    clientSecret: trimmedClientSecret,
     redirectUri: config.redirectUri || 'https://clipshowpro.web.app/auth/box/callback.html',
     scope: config.scope || 'root_readwrite',
   };
@@ -126,6 +176,15 @@ export const saveBoxConfig = onCall(
       throw new HttpsError('invalid-argument', 'Missing required configuration fields');
     }
 
+    // CRITICAL: Trim whitespace from credentials before saving
+    // This prevents issues with copy/paste or form inputs that add extra spaces
+    const trimmedClientId = clientId.trim();
+    const trimmedClientSecret = clientSecret.trim();
+
+    if (!trimmedClientId || !trimmedClientSecret) {
+      throw new HttpsError('invalid-argument', 'Client ID and Client Secret cannot be empty after trimming whitespace');
+    }
+
     console.log(`💾 [BoxConfig] Saving config for org: ${organizationId} by user: ${auth.uid}`);
 
     try {
@@ -141,17 +200,17 @@ export const saveBoxConfig = onCall(
         throw new HttpsError('permission-denied', 'Only organization admins can configure integrations');
       }
 
-      // Encrypt sensitive fields
-      const encryptedClientSecret = encryptToken(clientSecret);
+      // Encrypt sensitive fields (using trimmed values)
+      const encryptedClientSecret = encryptToken(trimmedClientSecret);
 
-      // Save configuration
+      // Save configuration (using trimmed clientId)
       await db
         .collection('organizations')
         .doc(organizationId)
         .collection('integrationSettings')
         .doc('box')
         .set({
-          clientId,
+          clientId: trimmedClientId,
           clientSecret: encryptedClientSecret,
           redirectUri: redirectUri || 'https://clipshowpro.web.app/auth/box/callback.html',
           scope: scope || 'root_readwrite',

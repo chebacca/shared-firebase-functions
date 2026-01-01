@@ -9,6 +9,7 @@ export {
   initiateGoogleOAuthHttp, // HTTP version with CORS support for localhost
   handleGoogleOAuthCallbackHttp, // HTTP version for frontend callbacks
   refreshGoogleAccessTokenHttp, // HTTP version for token refresh
+  refreshGoogleAccessTokenCallable, // Callable version for token refresh (no console errors)
   refreshGoogleAccessToken, // Internal function for token refresh
   listGoogleDriveFolders,
   getGoogleDriveFiles,

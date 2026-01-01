@@ -18,7 +18,7 @@ import { google } from 'googleapis';
  */
 function encryptToken(text: string): string {
   const algorithm = 'aes-256-gcm';
-  
+
   // Get and validate encryption key
   let encryptionKeyValue: string;
   try {
@@ -52,14 +52,14 @@ function encryptToken(text: string): string {
   }
 
   const iv = crypto.randomBytes(16);
-  
+
   try {
     const cipher = crypto.createCipheriv(algorithm, key, iv);
     let encrypted = cipher.update(text, 'utf8', 'hex');
     encrypted += cipher.final('hex');
-    
+
     const authTag = cipher.getAuthTag();
-    
+
     // Return: iv:authTag:encrypted
     return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
   } catch (cipherError: any) {
@@ -95,16 +95,16 @@ function decryptToken(encryptedData: string): string {
 
     const iv = Buffer.from(ivHex, 'hex');
     const authTag = Buffer.from(authTagHex, 'hex');
-    
+
     if (iv.length !== 16) {
       throw new Error(`Invalid IV length. Expected 16 bytes, got ${iv.length}`);
     }
     if (authTag.length !== 16) {
       throw new Error(`Invalid auth tag length. Expected 16 bytes, got ${authTag.length}`);
     }
-    
+
     const algorithm = 'aes-256-gcm';
-    
+
     // Get and validate encryption key
     let encryptionKeyValue: string;
     try {
@@ -136,27 +136,27 @@ function decryptToken(encryptedData: string): string {
     if (!key || key.length !== 32) {
       throw new Error(`Invalid key length. Expected 32 bytes, got ${key?.length || 0}`);
     }
-    
+
     try {
       const decipher = crypto.createDecipheriv(algorithm, key, iv);
       decipher.setAuthTag(authTag);
-      
+
       let decrypted = decipher.update(encrypted, 'hex', 'utf8');
       decrypted += decipher.final('utf8');
-      
+
       if (!decrypted || decrypted.length === 0) {
         throw new Error('Decrypted token is empty');
       }
-      
+
       return decrypted;
     } catch (decryptError: any) {
       // Check for authentication tag verification failure
       const errorMessage = decryptError.message || String(decryptError);
-      const isAuthTagError = errorMessage.includes('Unsupported state') || 
-                             errorMessage.includes('unable to authenticate data') ||
-                             errorMessage.includes('auth tag') ||
-                             decryptError.code === 'ERR_CRYPTO_INVALID_TAG';
-      
+      const isAuthTagError = errorMessage.includes('Unsupported state') ||
+        errorMessage.includes('unable to authenticate data') ||
+        errorMessage.includes('auth tag') ||
+        decryptError.code === 'ERR_CRYPTO_INVALID_TAG';
+
       if (isAuthTagError) {
         console.error('❌ [GoogleOAuth] Authentication tag verification failed:', {
           errorMessage,
@@ -164,7 +164,7 @@ function decryptToken(encryptedData: string): string {
         });
         throw new Error('Token authentication failed. The Google Drive connection token may be corrupted or encrypted with a different key. Please re-connect your Google Drive account.');
       }
-      
+
       if (decryptError.message && decryptError.message.includes('Invalid key length')) {
         console.error('❌ [GoogleOAuth] Invalid key length error during decryption:', {
           keyLength: key?.length || 0,
@@ -340,7 +340,7 @@ export const googleOAuthRefresh = onCall(
       // Update connection with new tokens
       const encryptedAccessToken = encryptToken(credentials.access_token!);
       const encryptedRefreshToken = credentials.refresh_token ? encryptToken(credentials.refresh_token) : connectionData.refreshToken; // Keep existing if not provided
-      
+
       await connectionRef.update({
         accessToken: encryptedAccessToken,
         refreshToken: encryptedRefreshToken,
@@ -399,15 +399,15 @@ export const googleRevokeAccess = onCall(
       // Try to decrypt access token - if it fails, we'll still mark as inactive
       let accessToken: string | null = null;
       let tokenDecryptionFailed = false;
-      
+
       try {
         accessToken = decryptToken(connectionData.accessToken);
       } catch (decryptError: any) {
         const errorMessage = decryptError.message || String(decryptError);
         const isTokenCorrupted = errorMessage.includes('Token authentication failed') ||
-                                 errorMessage.includes('corrupted or encrypted with a different key') ||
-                                 errorMessage.includes('Invalid token format');
-        
+          errorMessage.includes('corrupted or encrypted with a different key') ||
+          errorMessage.includes('Invalid token format');
+
         if (isTokenCorrupted) {
           console.warn('⚠️ [GoogleOAuth] Cannot decrypt token for revocation - token is corrupted. Marking connection as inactive anyway.');
           tokenDecryptionFailed = true;
@@ -426,7 +426,7 @@ export const googleRevokeAccess = onCall(
               'Content-Type': 'application/x-www-form-urlencoded',
             },
           });
-          
+
           if (!revokeResponse.ok) {
             console.warn('⚠️ [GoogleOAuth] Google API returned error during revocation');
           }
@@ -447,7 +447,7 @@ export const googleRevokeAccess = onCall(
       return {
         success: true,
         tokenWasCorrupted: tokenDecryptionFailed,
-        message: tokenDecryptionFailed 
+        message: tokenDecryptionFailed
           ? 'Connection disconnected. The token was corrupted and could not be revoked with Google, but the connection has been marked as inactive.'
           : 'Connection successfully revoked and disconnected.',
       };
@@ -476,11 +476,11 @@ export const googleOAuthCallback = onRequest(
       // Handle OAuth error from Google
       if (error) {
         console.error('❌ [GoogleOAuth] OAuth error from Google:', error);
-        return res.redirect('https://clipshowpro.web.app/integration-settings?google_error=authorization_failed');
+        return res.redirect('https://backbone-logic.web.app/integration-settings?google_error=authorization_failed');
       }
 
       if (!code || !state) {
-        return res.redirect('https://clipshowpro.web.app/integration-settings?google_error=missing_parameters');
+        return res.redirect('https://backbone-logic.web.app/integration-settings?google_error=missing_parameters');
       }
 
       // Verify state and complete OAuth flow
@@ -490,11 +490,11 @@ export const googleOAuthCallback = onRequest(
         .get();
 
       if (stateDoc.empty) {
-        return res.redirect('https://clipshowpro.web.app/integration-settings?google_error=invalid_state');
+        return res.redirect('https://backbone-logic.web.app/integration-settings?google_error=invalid_state');
       }
 
       const stateData = stateDoc.docs[0].data();
-      
+
       // Exchange code for token (call internal function logic)
       const redirectUrl = await completeOAuthCallback(
         code as string,
@@ -506,7 +506,7 @@ export const googleOAuthCallback = onRequest(
 
     } catch (error) {
       console.error('❌ [GoogleOAuth] Error in callback handler:', error);
-      return res.redirect('https://clipshowpro.web.app/integration-settings?google_error=callback_failed');
+      return res.redirect('https://backbone-logic.web.app/integration-settings?google_error=callback_failed');
     }
   }
 );
@@ -620,7 +620,7 @@ async function completeOAuthCallback(code: string, state: string, stateData: any
 
     console.log(`✅ [GoogleOAuth] Connection established for ${connectionType} connection in org ${organizationId}`);
 
-    return 'https://clipshowpro.web.app/integration-settings?google_connected=true';
+    return 'https://backbone-logic.web.app/integration-settings?google_connected=true';
 
   } catch (error) {
     console.error('❌ [GoogleOAuth] Error completing callback:', error);

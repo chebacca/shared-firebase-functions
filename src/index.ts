@@ -129,67 +129,50 @@ export { appRoleDefinitionService, AppRoleDefinitionService } from './roles/AppR
 export { appRoleDefinitionsApi } from './roles/appRoleDefinitionsHttp';
 
 // Export Box integration functions (NEW MODULAR STRUCTURE - OAuth & Config)
-// OAuth functions: boxOAuthInitiate, boxOAuthRefresh, boxRevokeAccess, boxOAuthCallback
+// OAuth functions: boxOAuthInitiate, boxOAuthRefresh, boxRevokeAccess, boxOAuthCallback, boxOAuthCallbackHttp
 // Config functions: saveBoxConfig, getBoxConfigStatus
 export * from './box';
+// Explicitly export HTTP callback functions for server-side redirects
+export { boxOAuthCallbackHttp, boxOAuthInitiateHttp } from './box/oauth';
+export { dropboxOAuthCallbackHttp, dropboxOAuthInitiateHttp } from './dropbox/oauth';
 
 // Export Dropbox integration functions (NEW MODULAR STRUCTURE - OAuth & Config)
 // OAuth functions: dropboxOAuthInitiate, dropboxOAuthRefresh, dropboxRevokeAccess, dropboxOAuthCallback
 // Config functions: saveDropboxConfig, getDropboxConfigStatus
 export * from './dropbox';
 
-// Export Box API functions (LEGACY - still needed for file operations)
-// NOTE: OAuth functions (initiateBoxOAuthHttp, handleBoxOAuthCallback, saveBoxConfig) 
-// have been migrated to the new modular structure above. These are kept for backward compatibility
-// but should use the new functions: boxOAuthInitiate, boxOAuthCallback, saveBoxConfig (from box/config.ts)
+// Export Unified OAuth Functions (NEW - Works with ANY provider)
+// These replace the provider-specific OAuth functions above
 export {
-  // DEPRECATED OAuth functions - use boxOAuthInitiate, boxOAuthCallback from './box' instead
-  // initiateBoxOAuthHttp,  // DEPRECATED - use boxOAuthInitiate from './box'
-  // handleBoxOAuthCallback, // DEPRECATED - use boxOAuthCallback from './box'
-  // saveBoxConfig,          // DEPRECATED - use saveBoxConfig from './box/config'
+  initiateOAuth,
+  handleOAuthCallback,
+  refreshOAuthToken,
+  revokeOAuthConnection,
+  listAvailableProviders,
+  verifyIntegrationAccess
+} from './integrations/unified-oauth/functions';
 
-  // API functions (still active)
-  getBoxIntegrationStatus,
-  getBoxAccessToken,
-  listBoxFolders,
-  getBoxFiles,
-  createBoxFolder,
-  indexBoxFolder,
-  // uploadToBox, // Temporarily disabled due to GCF gen1 CPU configuration issue
-  uploadToBoxHttp,
-  refreshBoxAccessToken,
-  boxStream
-} from './box';
-
-// Export Dropbox API functions (LEGACY - still needed for file operations)
-// NOTE: OAuth functions (initiateDropboxOAuthHttp, handleDropboxOAuthCallback, saveDropboxConfig)
-// have been migrated to the new modular structure above. These are kept for backward compatibility
-// but should use the new functions: dropboxOAuthInitiate, dropboxOAuthCallback, saveDropboxConfig (from dropbox/config.ts)
+// Export Scheduled OAuth Functions
 export {
-  // DEPRECATED OAuth functions - use dropboxOAuthInitiate, dropboxOAuthCallback from './dropbox' instead
-  // initiateDropboxOAuthHttp,  // DEPRECATED - use dropboxOAuthInitiate from './dropbox'
-  // handleDropboxOAuthCallback, // DEPRECATED - use dropboxOAuthCallback from './dropbox'
-  // saveDropboxConfig,          // DEPRECATED - use saveDropboxConfig from './dropbox/config'
+  refreshExpiredTokens
+} from './integrations/unified-oauth/schedules/refreshTokens';
+export {
+  cleanupExpiredOAuthStates
+} from './integrations/unified-oauth/schedules/cleanupStates';
 
-  // API functions (still active)
-  getDropboxIntegrationStatus,
-  getDropboxAccessToken,
-  listDropboxFolders,
-  getDropboxFiles,
-  createDropboxFolder,
-  updateDropboxAccountInfo,
-  uploadToDropbox,
-  indexDropboxFolder,
-  refreshDropboxAccessToken,
-  setDropboxAccessToken,
-  testDropboxConfig
-} from './dropbox';
+// Export Migration Function
+export {
+  runOAuthMigration
+} from './integrations/unified-oauth/migrations/migrationFunction';
 
-// Export Google Drive OAuth functions (HTTP only - simplified)
+
+
+// Export Google Drive OAuth functions (HTTP and Callable)
 export {
   initiateGoogleOAuthHttp, // HTTP version with CORS support for localhost
   handleGoogleOAuthCallbackHttp, // HTTP version for frontend callbacks
   refreshGoogleAccessTokenHttp, // HTTP version for token refresh
+  refreshGoogleAccessTokenCallable, // Callable version for token refresh (no console errors)
   refreshGoogleAccessToken, // Internal function for token refresh
   listGoogleDriveFolders,
   getGoogleDriveFiles,
@@ -263,56 +246,56 @@ export {
 // Export main API function
 export { api, uploadNetworkDeliveryBible, getNetworkDeliveryDeliverables } from './api';
 
-// Export timecard functions
+// Export timecard functions (callable versions only - HTTP versions removed to reduce CPU quota)
 export {
   getTimecardTemplates,
-  getTimecardTemplatesHttp,
   createTimecardTemplate,
-  createTimecardTemplateHttp,
   updateTimecardTemplate,
-  updateTimecardTemplateHttp,
   deleteTimecardTemplate,
-  deleteTimecardTemplateHttp,
   getTimecardAssignments,
-  getTimecardAssignmentsHttp,
   getTimecardAnalytics,
-  getTimecardAnalyticsHttp,
   generateTimecardReport,
-  generateTimecardReportHttp,
   createTimecardSessionLink,
-  createTimecardSessionLinkHttp,
   removeTimecardSessionLink,
-  removeTimecardSessionLinkHttp,
   getAllTimecards,
-  getAllTimecardsHttp,
   getTimecardUsers,
-  getTimecardUsersHttp,
   getTimecardConfigurations,
-  getTimecardConfigurationsHttp,
+  createTimecardConfiguration,
+  updateTimecardConfiguration,
+  deleteTimecardConfiguration,
   getPendingApprovals,
-  getPendingApprovalsHttp,
   getMySubmissions,
-  getMySubmissionsHttp,
   getApprovalHistory,
-  getApprovalHistoryHttp,
   getDirectReports,
-  getDirectReportsHttp,
   timecardApprovalApi,
-  onTimecardStatusChange
+  onTimecardStatusChange,
+  // Approval functions
+  takeApprovalAction,
+  getTimecardHistory,
+  submitTimecardForApproval,
+  // Direct report functions
+  getAllDirectReports,
+  createDirectReport,
+  updateDirectReport,
+  deactivateDirectReport,
+  // Assignment functions
+  createTimecardAssignment,
+  updateTimecardAssignment,
+  deleteTimecardAssignment,
+  // Utility functions
+  getWeeklySummary,
+  bulkApproveTimecards,
+  // Clock in/out functions
+  clockIn,
+  clockOut
 } from './timecards';
 
-// Export budgeting functions
+// Export budgeting functions (callable versions only - HTTP versions removed to reduce CPU quota)
 export {
   getBudgets,
-  getBudgetsHttp,
   calculateBudgetVariance,
-  calculateBudgetVarianceHttp,
   syncTimecardToBudget,
-  syncTimecardToBudgetHttp,
-  updateCommittedAmountHttp,
-  revertCommittedAmountHttp,
-  aggregateTimecardCosts,
-  aggregateTimecardCostsHttp
+  aggregateTimecardCosts
 } from './budgeting';
 
 // Export FCM functions
@@ -325,44 +308,30 @@ export {
   unsubscribeFromFCMTopicHttp
 } from './fcm';
 
-// Export messaging functions
+// Export messaging functions (callable versions only - HTTP versions removed to reduce CPU quota)
 export {
   getMessageSessions,
-  getMessageSessionsHttp,
   createMessageSession,
-  createMessageSessionHttp,
   sendMessage,
-  sendMessageHttp,
   getMessages,
-  getMessagesHttp,
   markMessagesAsRead,
-  markMessagesAsReadHttp,
   deleteMessage,
-  deleteMessageHttp,
   getParticipants,
-  getParticipantsHttp,
   addParticipant,
-  addParticipantHttp,
   removeParticipant,
-  removeParticipantHttp,
-  updateMessageSession,
-  updateMessageSessionHttp
+  updateMessageSession
 } from './messaging';
 
-// Export AI agent functions
+// Export AI agent functions (callable versions only - HTTP versions removed to reduce CPU quota)
 export {
   callAIAgent,
-  callAIAgentHttp,
   getAIAgentHealth,
-  getAIAgentHealthHttp,
-  getUserPreferences,
-  getUserPreferencesHttp
+  getUserPreferences
 } from './aiAgent';
 
-// Export WebRTC functions
+// Export WebRTC functions (callable version only - HTTP version removed to reduce CPU quota)
 export {
-  getTURNCredentials,
-  getTURNCredentialsHttp
+  getTURNCredentials
 } from './webrtc';
 
 // Export call sheet functions

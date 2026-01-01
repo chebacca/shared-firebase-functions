@@ -50,16 +50,16 @@ function decryptToken(encryptedData: string): string {
   const [ivHex, authTagHex, encrypted] = encryptedData.split(':');
   const iv = Buffer.from(ivHex, 'hex');
   const authTag = Buffer.from(authTagHex, 'hex');
-  
+
   const algorithm = 'aes-256-gcm';
   const key = crypto.createHash('sha256').update(getEncryptionKey(), 'utf8').digest();
-  
+
   const decipher = crypto.createDecipheriv(algorithm, key, iv);
   decipher.setAuthTag(authTag);
-  
+
   let decrypted = decipher.update(encrypted, 'hex', 'utf8');
   decrypted += decipher.final('utf8');
-  
+
   return decrypted;
 }
 
@@ -68,7 +68,7 @@ function decryptToken(encryptedData: string): string {
  */
 async function getAuthenticatedGoogleClient(organizationId: string) {
   console.log(`🔍 [GoogleMeet] Getting authenticated client for org: ${organizationId}`);
-  
+
   // Prefer org-level googleConnections; fall back to cloudIntegrations/google so existing Firestore OAuth can be reused
   const connectionsSnapshot = await db
     .collection('organizations')
@@ -120,7 +120,7 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
       const cloudData = cloudIntegrationDoc.data() || {};
       if (cloudData.isActive !== false) {
         const encryptedTokens = (cloudData as any).tokens || (cloudData as any).encryptedTokens;
-        
+
         let decrypted: any = null;
         if (encryptedTokens) {
           try {
@@ -164,9 +164,22 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
             clientId: cloudData.clientId, // Store client ID used to create these tokens
             scopes: cloudData.scopes || [], // Preserve scopes from the connection document
           };
+
+          // CRITICAL: Validate scopes if they were tracked
+          if (cloudData.scopes && Array.isArray(cloudData.scopes)) {
+            const requiredCalendarScopes = [
+              'https://www.googleapis.com/auth/calendar',
+              'https://www.googleapis.com/auth/calendar.events'
+            ];
+            const hasCalendarScopes = requiredCalendarScopes.every(scope => cloudData.scopes.includes(scope));
+
+            if (!hasCalendarScopes && cloudData.scopes.length > 0) {
+              console.warn(`⚠️ [GoogleMeet] cloudIntegrations/google connection missing calendar scopes. Has: ${cloudData.scopes.join(', ')}`);
+            }
+          }
         } else {
           console.warn(`⚠️ [GoogleMeet] cloudIntegrations/google exists but no valid tokens found`);
-          console.warn(`   Token structure:`, {
+          console.warn(`Token structure:`, {
             hasTokens: !!encryptedTokens,
             tokensType: typeof encryptedTokens,
             hasAccessToken: !!(cloudData as any).accessToken || !!(cloudData as any).access_token,
@@ -221,7 +234,7 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
         if (settingsData.isConfigured === true) {
           // Check for tokens in the settings
           const tokens = (settingsData as any).tokens || (settingsData as any).encryptedTokens;
-          
+
           let decrypted: any = null;
           if (tokens) {
             try {
@@ -281,16 +294,16 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
   // Use the client ID stored with the tokens if available, otherwise get from config
   // This ensures we use the same client ID that was used to create the tokens
   let config: any = null;
-  
+
   // If we have a stored clientId in the connection, try to use it first
   if (connection.clientId) {
     console.log(`🔍 [GoogleMeet] Connection has stored clientId: ${connection.clientId.substring(0, 20)}...`);
-    
+
     // First check environment variables
     let envClientId = process.env.GOOGLE_CLIENT_ID;
     let envClientSecret = process.env.GOOGLE_CLIENT_SECRET;
     let envRedirectUri = process.env.GOOGLE_REDIRECT_URI;
-    
+
     // 🔥 CRITICAL FIX: Also check functions.config() for Firebase Functions v1 compatibility
     if (!envClientId || !envClientSecret) {
       const functionsConfig = getFunctionsConfig();
@@ -301,7 +314,7 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
         console.log(`🔍 [GoogleMeet] Found credentials in functions.config().google`);
       }
     }
-    
+
     if (envClientId === connection.clientId && envClientSecret) {
       console.log(`✅ [GoogleMeet] Found matching credentials in environment/functions.config variables`);
       config = {
@@ -328,7 +341,7 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
         .collection('integrationSettings')
         .doc('google')
         .get();
-      
+
       if (integrationSettingsDoc.exists) {
         const settingsData = integrationSettingsDoc.data()!;
         if (settingsData.clientId === connection.clientId && settingsData.isConfigured) {
@@ -354,7 +367,7 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
       }
     }
   }
-  
+
   // If we don't have config yet, try getGoogleConfig (standard flow)
   if (!config) {
     try {
@@ -370,7 +383,7 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
         let envClientId = process.env.GOOGLE_CLIENT_ID;
         let envClientSecret = process.env.GOOGLE_CLIENT_SECRET;
         let envRedirectUri = process.env.GOOGLE_REDIRECT_URI;
-        
+
         // 🔥 CRITICAL FIX: Also check functions.config() for Firebase Functions v1 compatibility
         if (!envClientId || !envClientSecret) {
           const functionsConfig = getFunctionsConfig();
@@ -381,7 +394,7 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
             console.log(`🔍 [GoogleMeet] Found credentials in functions.config().google (fallback)`);
           }
         }
-        
+
         if (envClientId && envClientSecret) {
           console.log(`✅ [GoogleMeet] Using environment/functions.config variables as fallback`);
           config = {
@@ -413,7 +426,7 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
       }
     }
   }
-  
+
   // Verify we have valid config
   if (!config || !config.clientId || !config.clientSecret) {
     throw new HttpsError(
@@ -421,7 +434,7 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
       'Google OAuth credentials not found. Please ensure GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set in Firebase Functions environment variables, or configure in Integration Settings.'
     );
   }
-  
+
   // Final verification: if we have a stored clientId, ensure it matches (should already be handled above)
   if (connection.clientId && connection.clientId !== config.clientId) {
     console.warn(`⚠️ [GoogleMeet] Client ID still doesn't match after credential lookup. This may cause token refresh issues.`);
@@ -445,6 +458,32 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
   if (!accessToken) {
     console.error(`❌ [GoogleMeet] No access token found in connection data`);
     throw new HttpsError('failed-precondition', 'No access token found in Google connection');
+  }
+
+  // VALIDATION: Check for required scopes (Calendar permissions)
+  // This helps provide a clear error message if the user needs to re-authorize
+  const requiredCalendarScopes = [
+    'https://www.googleapis.com/auth/calendar',
+    'https://www.googleapis.com/auth/calendar.events'
+  ];
+
+  const scopes = connection.scopes || [];
+  const hasCalendarScopes = requiredCalendarScopes.every(scope => scopes.includes(scope));
+
+  // If we have scopes tracked but missing calendar ones, or if scopes are missing entirely
+  // and we're about to do a calendar operation, we should warn or fail early.
+  // Note: We'll allow it if scopes is empty ONLY IF it's an old connection, 
+  // but most new connections should have scopes tracked.
+  if (scopes.length === 0) {
+    console.warn(`[GoogleMeet] Connection document is missing the 'scopes' field. This may be an older connection.`);
+    // We'll allow it to continue and hope for the best, unless the API call actually fails
+  } else if (!hasCalendarScopes) {
+    console.error(`❌ [GoogleMeet] Google OAuth connection is missing calendar permissions`);
+    console.error(`   Has scopes: ${scopes.join(', ')}`);
+    throw new HttpsError(
+      'failed-precondition',
+      'Google OAuth connection is missing calendar permissions. Please disconnect and reconnect your Google account in Integration Settings: https://backbone-logic.web.app/integration-settings'
+    );
   }
 
   console.log(`✅ [GoogleMeet] Using tokens - hasAccessToken: ${!!accessToken}, hasRefreshToken: ${!!refreshToken}`);
@@ -607,11 +646,11 @@ export const createMeetMeeting = onCall(
 
     } catch (error: any) {
       console.error('❌ [GoogleMeet] Error creating meeting:', error);
-      
+
       if (error instanceof HttpsError) {
         throw error;
       }
-      
+
       throw new HttpsError('internal', `Failed to create Google Meet: ${error.message || 'Unknown error'}`);
     }
   }
@@ -623,16 +662,17 @@ export const createMeetMeeting = onCall(
 export const scheduleMeetMeeting = onCall(
   {
     region: 'us-central1',
-    invoker: 'public',  // Required for public access
-    cors: true,         // Enable CORS support for callable functions
+    invoker: 'public',  // Required for public access via callable SDK
+    cors: CORS_ORIGINS, // Use explicit origins array for stability
     secrets: [encryptionKey],
   },
   async (request) => {
+    try {
       const { organizationId, title, startTime, endTime, participants, description } = request.data as {
         organizationId: string;
         title: string;
-      startTime: string;
-      endTime?: string;
+        startTime: string;
+        endTime?: string;
         participants?: string[];
         description?: string;
       };
@@ -641,65 +681,59 @@ export const scheduleMeetMeeting = onCall(
         throw new HttpsError('invalid-argument', 'Organization ID, title, and start time are required');
       }
 
-    if (!request.auth) {
+      if (!request.auth) {
         throw new HttpsError('unauthenticated', 'User must be authenticated');
       }
 
-    const auth = request.auth;
-    const userId = auth.uid;
-    const userEmail = auth.token.email || '';
+      const auth = request.auth;
+      const userId = auth.uid;
+      const userEmail = auth.token.email || '';
 
-    // Verify user belongs to the organization
-    const userOrganizationId = await getUserOrganizationId(userId, userEmail);
-    if (!userOrganizationId) {
-      throw new HttpsError('permission-denied', 'User is not associated with any organization');
-    }
+      // Verify user belongs to the organization
+      const userOrganizationId = await getUserOrganizationId(userId, userEmail);
+      if (!userOrganizationId) {
+        throw new HttpsError('permission-denied', 'User is not associated with any organization');
+      }
 
-    // Verify user belongs to the requested organization
-    if (userOrganizationId !== organizationId) {
-      // Check if user is a member of the organization via teamMembers collection
-      const teamMemberQuery = await db
-        .collection('teamMembers')
-        .where('userId', '==', userId)
-        .where('organizationId', '==', organizationId)
-        .limit(1)
-        .get();
-      
-      if (teamMemberQuery.empty) {
-        // Also check users collection for the organization
-        const userDoc = await db.collection('users').doc(userId).get();
-        const userData = userDoc.data();
-        
-        if (userData?.organizationId !== organizationId) {
-          throw new HttpsError(
-            'permission-denied',
-            'User does not have access to this organization'
-          );
+      // Verify user belongs to the requested organization
+      if (userOrganizationId !== organizationId) {
+        // Check if user is a member of the organization via teamMembers collection
+        const teamMemberQuery = await db
+          .collection('teamMembers')
+          .where('userId', '==', userId)
+          .where('organizationId', '==', organizationId)
+          .limit(1)
+          .get();
+
+        if (teamMemberQuery.empty) {
+          // Also check users collection for the organization
+          const userDoc = await db.collection('users').doc(userId).get();
+          const userData = userDoc.data();
+
+          if (userData?.organizationId !== organizationId) {
+            throw new HttpsError(
+              'permission-denied',
+              'User does not have access to this organization'
+            );
+          }
         }
       }
-    }
 
-    // Optional: Check if user is admin (for logging/auditing purposes)
-    // Regular members can schedule meetings, but we log admin status
-    let isAdmin = false;
-    try {
-      const userDoc = await db.collection('users').doc(userId).get();
-      if (userDoc.exists) {
-        const userData = userDoc.data();
-        isAdmin = isAdminUser(userData || {});
-      }
-    } catch (error) {
-      console.warn('Could not check admin status:', error);
-      // Continue even if admin check fails - regular members can schedule meetings
-    }
-
-    if (isAdmin) {
-      console.log(`✅ [scheduleMeetMeeting] Admin user ${userId} scheduling meeting for org ${organizationId}`);
-      } else {
-      console.log(`✅ [scheduleMeetMeeting] User ${userId} scheduling meeting for org ${organizationId}`);
+      // Optional: Check if user is admin (for logging/auditing purposes)
+      let isAdmin = false;
+      try {
+        const userDoc = await db.collection('users').doc(userId).get();
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+          isAdmin = isAdminUser(userData || {});
+        }
+      } catch (error) {
+        console.warn('Could not check admin status:', error);
       }
 
-    // Get authenticated client (will throw if connection not found or invalid)
+      console.log(`✅ [scheduleMeetMeeting] ${isAdmin ? 'Admin' : 'User'} ${userId} scheduling meeting for org ${organizationId}`);
+
+      // Get authenticated client (will throw if connection not found or invalid)
       const oauth2Client = await getAuthenticatedGoogleClient(organizationId);
       const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 
@@ -759,7 +793,7 @@ export const scheduleMeetMeeting = onCall(
           createdBy: auth.uid,
           createdAt: Timestamp.now(),
           status: 'scheduled',
-          organizationId: organizationId, // Add organizationId for easier querying and rule validation
+          organizationId: organizationId,
         });
 
       return {
@@ -774,6 +808,13 @@ export const scheduleMeetMeeting = onCall(
           endTime: meetingData.end?.dateTime,
         },
       };
+    } catch (error: any) {
+      console.error('❌ [GoogleMeet] Error scheduling meeting:', error);
+      if (error instanceof HttpsError) {
+        throw error;
+      }
+      throw new HttpsError('internal', `Failed to schedule Google Meet: ${error.message || 'Unknown error'}`);
+    }
   }
 );
 
@@ -854,22 +895,22 @@ export const updateMeetMeeting = onCall(
 
     } catch (error: any) {
       console.error('❌ [GoogleMeet] Error updating meeting:', error);
-      
+
       if (error instanceof HttpsError) {
         throw error;
       }
-      
+
       // Check for insufficient permissions errors
-      if (error.message?.includes('Insufficient Permission') || 
-          error.message?.includes('insufficient permission') ||
-          error.response?.data?.error === 'insufficientPermissions' ||
-          error.code === 403) {
+      if (error.message?.includes('Insufficient Permission') ||
+        error.message?.includes('insufficient permission') ||
+        error.response?.data?.error === 'insufficientPermissions' ||
+        error.code === 403) {
         throw new HttpsError(
           'permission-denied',
           'Insufficient permissions to update Google Calendar events. Please re-authenticate your Google account in Integration Settings with calendar permissions enabled.'
         );
       }
-      
+
       throw new HttpsError('internal', `Failed to update Google Meet: ${error.message || 'Unknown error'}`);
     }
   }
@@ -938,11 +979,11 @@ export const cancelMeetMeeting = onCall(
 
     } catch (error: any) {
       console.error('❌ [GoogleMeet] Error cancelling meeting:', error);
-      
+
       if (error instanceof HttpsError) {
         throw error;
       }
-      
+
       throw new HttpsError('internal', `Failed to cancel Google Meet: ${error.message || 'Unknown error'}`);
     }
   }
@@ -996,11 +1037,11 @@ export const getMeetMeetingDetails = onCall(
 
     } catch (error: any) {
       console.error('❌ [GoogleMeet] Error getting meeting details:', error);
-      
+
       if (error instanceof HttpsError) {
         throw error;
       }
-      
+
       throw new HttpsError('internal', `Failed to get meeting details: ${error.message || 'Unknown error'}`);
     }
   }

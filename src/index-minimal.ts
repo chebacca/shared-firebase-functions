@@ -29,7 +29,7 @@ import {
 
 // Import Box OAuth HTTP function
 import {
-  initiateBoxOAuthHttp
+  boxOAuthInitiateHttp
 } from './box';
 
 // Export all functions
@@ -43,5 +43,5 @@ export {
   testEmailConnection,
   executeAutomation,
   // Box OAuth
-  initiateBoxOAuthHttp
+  boxOAuthInitiateHttp
 };

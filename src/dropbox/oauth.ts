@@ -6,18 +6,20 @@
  */
 
 import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
-import { db } from '../shared/utils';
+import { db, verifyAuthToken, createSuccessResponse, createErrorResponse, setCorsHeaders } from '../shared/utils';
 import * as crypto from 'crypto';
 import { getDropboxConfig } from './config';
 import { Timestamp } from 'firebase-admin/firestore';
 import { encryptionKey, getEncryptionKey } from './secrets';
+
+import * as admin from 'firebase-admin';
 
 /**
  * Encrypt sensitive token data
  */
 function encryptToken(text: string): string {
   const algorithm = 'aes-256-gcm';
-  
+
   let encryptionKeyValue: string;
   try {
     encryptionKeyValue = getEncryptionKey();
@@ -48,14 +50,14 @@ function encryptToken(text: string): string {
   }
 
   const iv = crypto.randomBytes(16);
-  
+
   try {
     const cipher = crypto.createCipheriv(algorithm, key, iv);
     let encrypted = cipher.update(text, 'utf8', 'hex');
     encrypted += cipher.final('hex');
-    
+
     const authTag = cipher.getAuthTag();
-    
+
     return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
   } catch (cipherError: any) {
     if (cipherError.message && cipherError.message.includes('Invalid key length')) {
@@ -90,16 +92,16 @@ function decryptToken(encryptedData: string): string {
 
     const iv = Buffer.from(ivHex, 'hex');
     const authTag = Buffer.from(authTagHex, 'hex');
-    
+
     if (iv.length !== 16) {
       throw new Error(`Invalid IV length. Expected 16 bytes, got ${iv.length}`);
     }
     if (authTag.length !== 16) {
       throw new Error(`Invalid auth tag length. Expected 16 bytes, got ${authTag.length}`);
     }
-    
+
     const algorithm = 'aes-256-gcm';
-    
+
     let encryptionKeyValue: string;
     try {
       encryptionKeyValue = getEncryptionKey();
@@ -128,26 +130,26 @@ function decryptToken(encryptedData: string): string {
     if (!key || key.length !== 32) {
       throw new Error(`Invalid key length. Expected 32 bytes, got ${key?.length || 0}`);
     }
-    
+
     try {
       const decipher = crypto.createDecipheriv(algorithm, key, iv);
       decipher.setAuthTag(authTag);
-      
+
       let decrypted = decipher.update(encrypted, 'hex', 'utf8');
       decrypted += decipher.final('utf8');
-      
+
       if (!decrypted || decrypted.length === 0) {
         throw new Error('Decrypted token is empty');
       }
-      
+
       return decrypted;
     } catch (decryptError: any) {
       const errorMessage = decryptError.message || String(decryptError);
-      const isAuthTagError = errorMessage.includes('Unsupported state') || 
-                             errorMessage.includes('unable to authenticate data') ||
-                             errorMessage.includes('auth tag') ||
-                             decryptError.code === 'ERR_CRYPTO_INVALID_TAG';
-      
+      const isAuthTagError = errorMessage.includes('Unsupported state') ||
+        errorMessage.includes('unable to authenticate data') ||
+        errorMessage.includes('auth tag') ||
+        decryptError.code === 'ERR_CRYPTO_INVALID_TAG';
+
       if (isAuthTagError) {
         console.error('❌ [DropboxOAuth] Authentication tag verification failed:', {
           errorMessage,
@@ -155,7 +157,7 @@ function decryptToken(encryptedData: string): string {
         });
         throw new Error('Token authentication failed. The Dropbox connection token may be corrupted or encrypted with a different key. Please re-connect your Dropbox account.');
       }
-      
+
       if (decryptError.message && decryptError.message.includes('Invalid key length')) {
         console.error('❌ [DropboxOAuth] Invalid key length error during decryption:', {
           keyLength: key?.length || 0,
@@ -189,11 +191,12 @@ export const dropboxOAuthInitiate = onCall(
   },
   async (request) => {
     try {
-      const { organizationId, connectionType, userId, redirectUri } = request.data as {
+      const { organizationId, connectionType, userId, redirectUri, callbackUrl } = request.data as {
         organizationId: string;
         connectionType: 'user' | 'organization';
         userId?: string;
         redirectUri?: string;
+        callbackUrl?: string;
       };
 
       if (!organizationId || !connectionType) {
@@ -221,28 +224,36 @@ export const dropboxOAuthInitiate = onCall(
       // Get Dropbox configuration from Firestore
       const config = await getDropboxConfig(organizationId);
 
-      // Use provided redirectUri or default from config
-      const finalRedirectUri = redirectUri || config.redirectUri;
+      // The redirectUri for OAuth provider (Dropbox) should be the Firebase Function URL
+      // The redirectUrl parameter from client is the client app URL where user will be redirected after OAuth completes
+      // Use provided callbackUrl if available (for local dev), otherwise use production URL
+      const oauthCallbackUrl = callbackUrl || 'https://us-central1-backbone-logic.cloudfunctions.net/dropboxOAuthCallbackHttp';
+      // Use provided redirectUri as the client redirectUrl, or default
+      const clientRedirectUrl = redirectUri || 'https://backbone-logic.web.app/integration-settings';
 
       // Generate state parameter for OAuth
       const state = crypto.randomBytes(32).toString('hex');
       const stateExpiry = (Date.now() + (3600 * 1000)).toString(); // 1 hour
 
       // Store state in Firestore
+      // redirectUri: Firebase Function URL (for Dropbox OAuth callback - used in token exchange)
+      // redirectUrl: Client app URL (for final redirect after OAuth completes)
       await db.collection('dropboxOAuthStates').add({
         state,
         organizationId,
         connectionType,
         userId: userId || null,
-        redirectUri: finalRedirectUri,
+        redirectUri: oauthCallbackUrl, // Firebase Function URL for Dropbox to redirect to (used in token exchange)
+        redirectUrl: clientRedirectUrl, // Client app URL for final redirect
         expiry: stateExpiry,
       });
 
       // Generate Dropbox OAuth URL
+      // Use Firebase Function URL as redirect_uri for Dropbox
       const dropboxAuthBaseUrl = 'https://www.dropbox.com/oauth2/authorize';
       const authUrlParams = new URLSearchParams({
         client_id: config.appKey,
-        redirect_uri: finalRedirectUri,
+        redirect_uri: oauthCallbackUrl, // Firebase Function URL
         response_type: 'code',
         state: state,
         token_access_type: 'offline', // Request refresh token
@@ -311,7 +322,7 @@ export const dropboxOAuthRefresh = onCall(
       // Refresh token using Dropbox API
       const https = require('https');
       const querystring = require('querystring');
-      
+
       const tokenData = querystring.stringify({
         grant_type: 'refresh_token',
         refresh_token: refreshToken,
@@ -345,16 +356,16 @@ export const dropboxOAuthRefresh = onCall(
                 if (errorData.error_description) {
                   errorMessage = errorData.error_description;
                 }
-              } catch {}
+              } catch { }
               reject(new Error(errorMessage));
             }
           });
         });
-        
+
         req.on('error', (error: any) => {
           reject(error);
         });
-        
+
         req.write(tokenData);
         req.end();
       });
@@ -366,7 +377,7 @@ export const dropboxOAuthRefresh = onCall(
       // Update connection with new tokens
       const encryptedAccessToken = encryptToken(tokenResponse.access_token);
       const encryptedRefreshToken = tokenResponse.refresh_token ? encryptToken(tokenResponse.refresh_token) : connectionData.refreshToken;
-      
+
       await connectionRef.update({
         accessToken: encryptedAccessToken,
         refreshToken: encryptedRefreshToken,
@@ -425,15 +436,15 @@ export const dropboxRevokeAccess = onCall(
       // Try to decrypt access token for revocation
       let accessToken: string | null = null;
       let tokenDecryptionFailed = false;
-      
+
       try {
         accessToken = decryptToken(connectionData.accessToken);
       } catch (decryptError: any) {
         const errorMessage = decryptError.message || String(decryptError);
         const isTokenCorrupted = errorMessage.includes('Token authentication failed') ||
-                                 errorMessage.includes('corrupted or encrypted with a different key') ||
-                                 errorMessage.includes('Invalid token format');
-        
+          errorMessage.includes('corrupted or encrypted with a different key') ||
+          errorMessage.includes('Invalid token format');
+
         if (isTokenCorrupted) {
           console.warn('⚠️ [DropboxOAuth] Cannot decrypt token for revocation - token is corrupted. Marking connection as inactive anyway.');
           tokenDecryptionFailed = true;
@@ -464,7 +475,7 @@ export const dropboxRevokeAccess = onCall(
       return {
         success: true,
         tokenWasCorrupted: tokenDecryptionFailed,
-        message: tokenDecryptionFailed 
+        message: tokenDecryptionFailed
           ? 'Connection disconnected. The token was corrupted, but the connection has been marked as inactive.'
           : 'Connection successfully disconnected.',
       };
@@ -477,26 +488,21 @@ export const dropboxRevokeAccess = onCall(
 );
 
 /**
- * HTTP endpoint for Dropbox OAuth callback
- * This is called by Dropbox after user authorizes the app
+ * Callable endpoint for Dropbox OAuth callback
+ * This is called by the frontend after redirect
  */
-export const dropboxOAuthCallback = onRequest(
+export const dropboxOAuthCallback = onCall(
   {
     region: 'us-central1',
     cors: true,
     secrets: [encryptionKey],
   },
-  async (req, res) => {
+  async (request) => {
     try {
-      const { code, state, error } = req.query;
-
-      if (error) {
-        console.error('❌ [DropboxOAuth] OAuth error from Dropbox:', error);
-        return res.redirect('https://clipshowpro.web.app/integration-settings?dropbox_error=authorization_failed');
-      }
+      const { code, state } = request.data as { code: string; state: string };
 
       if (!code || !state) {
-        return res.redirect('https://clipshowpro.web.app/integration-settings?dropbox_error=missing_parameters');
+        throw new HttpsError('invalid-argument', 'Missing code or state parameters');
       }
 
       // Verify state and complete OAuth flow
@@ -506,30 +512,177 @@ export const dropboxOAuthCallback = onRequest(
         .get();
 
       if (stateDoc.empty) {
-        return res.redirect('https://clipshowpro.web.app/integration-settings?dropbox_error=invalid_state');
+        throw new HttpsError('not-found', 'Invalid or expired state parameter');
       }
 
       const stateData = stateDoc.docs[0].data();
-      
+
       // Exchange code for token (call internal function logic)
-      const redirectUrl = await completeOAuthCallback(
+      const result = await completeOAuthCallbackLogic(
+        code,
+        state,
+        stateData
+      );
+
+      return {
+        success: true,
+        accountEmail: result.accountEmail,
+        accountName: result.accountName,
+        connected: true
+      };
+
+    } catch (error: any) {
+      console.error('❌ [DropboxOAuth] Error in callable handler:', error);
+      throw error instanceof HttpsError ? error : new HttpsError('internal', error.message || 'Failed to complete Dropbox connection');
+    }
+  }
+);
+
+/**
+ * Helper function to get redirect URL from state or return null
+ */
+async function getDropboxRedirectUrlFromState(state: string | undefined, errorType: string): Promise<string | null> {
+  if (!state) return null;
+
+  try {
+    const stateDoc = await db.collection('dropboxOAuthStates')
+      .where('state', '==', state)
+      .limit(1)
+      .get();
+
+    if (!stateDoc.empty) {
+      const stateData = stateDoc.docs[0].data();
+      if (stateData.redirectUrl) {
+        // Replace success param with error param, preserving the origin
+        let errorRedirectUrl = stateData.redirectUrl
+          .replace('dropbox_connected=true', `dropbox_error=${errorType}`)
+          .replace('dropbox_connected=true&', `dropbox_error=${errorType}&`);
+        // If no success param exists, append error param
+        if (!errorRedirectUrl.includes('dropbox_error=') && !errorRedirectUrl.includes('dropbox_connected=')) {
+          const separator = errorRedirectUrl.includes('?') ? '&' : '?';
+          errorRedirectUrl = `${errorRedirectUrl}${separator}dropbox_error=${errorType}`;
+        }
+        return errorRedirectUrl;
+      }
+    }
+  } catch (e) {
+    console.warn('⚠️ [DropboxOAuth] Could not get redirect URL from state:', e);
+  }
+
+  return null;
+}
+
+/**
+ * Return HTML error page when state is missing/expired
+ */
+function sendDropboxErrorPage(res: any, message: string) {
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>OAuth Error</title>
+      <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+        h1 { color: #d32f2f; }
+        p { color: #666; }
+      </style>
+    </head>
+    <body>
+      <h1>OAuth Session Expired</h1>
+      <p>${message}</p>
+      <p>Please return to the application and try again.</p>
+    </body>
+    </html>
+  `;
+  res.status(400).send(html);
+}
+
+/**
+ * HTTP endpoint for Dropbox OAuth callback
+ * This is called by Dropbox after user authorizes the app
+ */
+export const dropboxOAuthCallbackHttp = onRequest(
+  {
+    region: 'us-central1',
+    cors: true,
+    secrets: [encryptionKey],
+  },
+  async (req, res) => {
+    try {
+      const { code, state, error } = req.query;
+
+      // Handle OAuth error from Dropbox
+      if (error) {
+        console.error('❌ [DropboxOAuth] OAuth error from Dropbox:', error);
+        const errorRedirectUrl = await getDropboxRedirectUrlFromState(state as string | undefined, 'authorization_failed');
+        if (errorRedirectUrl) {
+          return res.redirect(errorRedirectUrl);
+        }
+        // If no redirect URL available, show error page
+        return sendDropboxErrorPage(res, 'Dropbox authorization was denied or failed. Please try again.');
+      }
+
+      if (!code || !state) {
+        const missingParamsRedirect = await getDropboxRedirectUrlFromState(state as string | undefined, 'missing_parameters');
+        if (missingParamsRedirect) {
+          return res.redirect(missingParamsRedirect);
+        }
+        // If no redirect URL available, show error page
+        return sendDropboxErrorPage(res, 'OAuth callback is missing required parameters. Please try again.');
+      }
+
+      // Verify state and complete OAuth flow
+      const stateDoc = await db.collection('dropboxOAuthStates')
+        .where('state', '==', state)
+        .limit(1)
+        .get();
+
+      if (stateDoc.empty) {
+        // State expired or invalid - show error page instead of redirecting to production
+        return sendDropboxErrorPage(res, 'OAuth session has expired. Please return to the application and try connecting again.');
+      }
+
+      const stateData = stateDoc.docs[0].data();
+      console.log(`🔗 [DropboxOAuth] Retrieved state data, redirectUrl: ${stateData.redirectUrl || 'not found'}`);
+
+      // redirectUrl must be present in state - if not, this is a configuration error
+      if (!stateData.redirectUrl) {
+        console.error('❌ [DropboxOAuth] redirectUrl missing from state document - this should not happen');
+        return sendDropboxErrorPage(res, 'OAuth configuration error. Please contact support.');
+      }
+
+      // Exchange code for token (call internal function logic)
+      const result = await completeOAuthCallbackLogic(
         code as string,
         state as string,
         stateData
       );
 
-      return res.redirect(redirectUrl);
+      const finalRedirectUrl = result.redirectUrl || stateData.redirectUrl.replace('dropbox_error=', 'dropbox_connected=true').replace(/dropbox_error=[^&]*/, 'dropbox_connected=true');
+      console.log(`🔗 [DropboxOAuth] Redirecting to: ${finalRedirectUrl}`);
+      return res.redirect(finalRedirectUrl);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ [DropboxOAuth] Error in callback handler:', error);
-      return res.redirect('https://clipshowpro.web.app/integration-settings?dropbox_error=callback_failed');
+
+      const errorMessage = error?.message || 'unknown_error';
+      // Create a safe error code that includes details but is URL safe
+      const safeErrorDetails = encodeURIComponent(errorMessage.substring(0, 200));
+      const errorParam = `callback_failed&dropbox_error_details=${safeErrorDetails}`;
+
+      const callbackFailedRedirect = await getDropboxRedirectUrlFromState(req.query.state as string | undefined, errorParam);
+      if (callbackFailedRedirect) {
+        return res.redirect(callbackFailedRedirect);
+      }
+      // If no redirect URL available, show error page
+      return sendDropboxErrorPage(res, `An error occurred during OAuth callback: ${errorMessage}`);
     }
   }
 );
 
-async function completeOAuthCallback(code: string, state: string, stateData: any) {
+async function completeOAuthCallbackLogic(code: string, state: string, stateData: any) {
   try {
-    const { organizationId, connectionType, userId, redirectUri } = stateData;
+    const { organizationId, connectionType, userId, redirectUri, redirectUrl } = stateData;
 
     // Get Dropbox configuration
     const dropboxConfig = await getDropboxConfig(organizationId);
@@ -537,11 +690,13 @@ async function completeOAuthCallback(code: string, state: string, stateData: any
     // Exchange code for access token using Dropbox API
     const https = require('https');
     const querystring = require('querystring');
-    
+
+    // Use redirectUri from state (Firebase Function URL) for token exchange
+    const tokenExchangeRedirectUri = redirectUri || 'https://us-central1-backbone-logic.cloudfunctions.net/dropboxOAuthCallbackHttp';
     const tokenData = querystring.stringify({
       code: code,
       grant_type: 'authorization_code',
-      redirect_uri: redirectUri || dropboxConfig.redirectUri,
+      redirect_uri: tokenExchangeRedirectUri,
       client_id: dropboxConfig.appKey,
       client_secret: dropboxConfig.appSecret
     });
@@ -572,16 +727,16 @@ async function completeOAuthCallback(code: string, state: string, stateData: any
               if (errorData.error_description) {
                 errorMessage = errorData.error_description;
               }
-            } catch {}
+            } catch { }
             reject(new Error(errorMessage));
           }
         });
       });
-      
+
       req.on('error', (error: any) => {
         reject(error);
       });
-      
+
       req.write(tokenData);
       req.end();
     });
@@ -615,11 +770,11 @@ async function completeOAuthCallback(code: string, state: string, stateData: any
           }
         });
       });
-      
+
       req.on('error', (error: any) => {
         reject(error);
       });
-      
+
       req.write(JSON.stringify({}));
       req.end();
     });
@@ -660,6 +815,36 @@ async function completeOAuthCallback(code: string, state: string, stateData: any
       .add(connectionData);
 
     const connectionId = connectionRef.id;
+
+    // ALSO save to the unified cloudIntegrations location for compatibility with existing UI
+    try {
+      const unifiedIntegrationRef = db
+        .collection('organizations')
+        .doc(organizationId)
+        .collection('cloudIntegrations')
+        .doc('dropbox');
+
+      // Prepare unified document format
+      const unifiedDoc = {
+        userId: userId || 'system',
+        organizationId: organizationId,
+        provider: 'dropbox',
+        accountEmail: userInfoResponse.email || '',
+        accountName: userInfoResponse.name?.display_name || userInfoResponse.name?.given_name || 'Dropbox User',
+        accountId: userInfoResponse.account_id,
+        // We store the connection ID reference
+        connectionId: connectionId,
+        isActive: true,
+        connectionMethod: 'oauth',
+        connectedAt: Timestamp.now(),
+        updatedAt: Timestamp.now()
+      };
+
+      await unifiedIntegrationRef.set(unifiedDoc, { merge: true });
+      console.log(`✅ [DropboxOAuth] Saved to cloudIntegrations/dropbox for organization ${organizationId}`);
+    } catch (unifiedError) {
+      console.warn('⚠️ [DropboxOAuth] Failed to save to cloudIntegrations:', unifiedError);
+    }
 
     // Create or update integration record
     try {
@@ -703,8 +888,31 @@ async function completeOAuthCallback(code: string, state: string, stateData: any
     }
 
     console.log(`✅ [DropboxOAuth] Connection established for ${connectionType} connection in org ${organizationId}`);
+    console.log(`🔗 [DropboxOAuth] redirectUrl from stateData: ${stateData.redirectUrl || 'not provided'}`);
 
-    return 'https://clipshowpro.web.app/integration-settings?dropbox_connected=true';
+    // Use redirect URL from state, or default to backbone-logic.web.app
+    // The redirectUrl in state is the client app URL where the user should be redirected after OAuth
+    // This is different from redirectUri which is used for token exchange
+    const finalRedirectUrl = stateData.redirectUrl || 'https://backbone-logic.web.app/integration-settings?dropbox_connected=true';
+
+    // Ensure the redirect URL has the success parameter
+    let redirectUrlWithParam = finalRedirectUrl;
+    if (!redirectUrlWithParam.includes('dropbox_connected=')) {
+      const separator = redirectUrlWithParam.includes('?') ? '&' : '?';
+      redirectUrlWithParam = `${redirectUrlWithParam}${separator}dropbox_connected=true`;
+    } else {
+      // Replace any existing dropbox_error with dropbox_connected
+      redirectUrlWithParam = redirectUrlWithParam.replace(/dropbox_error=[^&]*/g, 'dropbox_connected=true');
+    }
+
+    console.log(`🔗 [DropboxOAuth] Final redirect URL: ${redirectUrlWithParam}`);
+
+    return {
+      success: true,
+      accountEmail: userInfoResponse.email || '',
+      accountName: userInfoResponse.name?.display_name || '',
+      redirectUrl: redirectUrlWithParam
+    };
 
   } catch (error) {
     console.error('❌ [DropboxOAuth] Error completing callback:', error);
@@ -712,3 +920,99 @@ async function completeOAuthCallback(code: string, state: string, stateData: any
   }
 }
 
+
+/**
+ * Initiate Dropbox OAuth flow (HTTP version)
+ * Used by client-side redirect flow
+ */
+export const dropboxOAuthInitiateHttp = onRequest(
+  {
+    region: 'us-central1',
+    cors: true,
+    secrets: [encryptionKey],
+  },
+  async (req, res) => {
+    try {
+      // Handle preflight requests
+      if (req.method === 'OPTIONS') {
+        setCorsHeaders(req, res);
+        res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        res.set('Access-Control-Max-Age', '3600');
+        res.status(200).send('');
+        return;
+      }
+
+      // Set CORS headers
+      setCorsHeaders(req, res);
+
+      // Verify user authentication
+      let userId: string;
+      let organizationId: string;
+
+      try {
+        const authResult = await verifyAuthToken(req);
+        userId = authResult.userId;
+        organizationId = authResult.organizationId;
+      } catch (authError) {
+        res.status(401).json(createErrorResponse('Authentication required'));
+        return;
+      }
+
+      const { redirectUri, callbackUrl } = req.body;
+      const connectionType = 'organization'; // Default to organization-level connection
+
+      console.log(`🚀 [DropboxOAuth] Initiating OAuth flow (HTTP) for org: ${organizationId} by user: ${userId}`);
+
+      // Get Dropbox configuration from Firestore
+      const config = await getDropboxConfig(organizationId);
+
+      // The redirectUri for OAuth provider should be the Firebase Function URL
+      const oauthCallbackUrl = callbackUrl || 'https://us-central1-backbone-logic.cloudfunctions.net/dropboxOAuthCallbackHttp';
+
+      if (!redirectUri) {
+        res.status(400).json(createErrorResponse('redirectUri is required'));
+        return;
+      }
+      const clientRedirectUrl = redirectUri;
+
+      // Generate state parameter
+      const state = crypto.randomBytes(32).toString('hex');
+      const stateExpiry = (Date.now() + (3600 * 1000)).toString(); // 1 hour
+
+      // Store state
+      await db.collection('dropboxOAuthStates').add({
+        state,
+        organizationId,
+        connectionType,
+        userId: userId || null,
+        redirectUri: oauthCallbackUrl,
+        redirectUrl: clientRedirectUrl,
+        expiry: stateExpiry,
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      // Generate Dropbox OAuth URL
+      const dropboxAuthBaseUrl = 'https://www.dropbox.com/oauth2/authorize';
+      const authUrlParams = new URLSearchParams({
+        client_id: config.appKey,
+        redirect_uri: oauthCallbackUrl,
+        response_type: 'code',
+        state: state,
+        token_access_type: 'offline',
+      });
+      const authUrl = `${dropboxAuthBaseUrl}?${authUrlParams.toString()}`;
+
+      console.log(`✅ [DropboxOAuth] Initiated OAuth flow (HTTP) successfully`);
+
+      res.status(200).json(createSuccessResponse({
+        authUrl,
+        state,
+      }));
+
+    } catch (error: any) {
+      console.error('❌ [DropboxOAuth] Error initiating OAuth (HTTP):', error);
+      const statusCode = error.code === 'permission-denied' ? 403 : 500;
+      res.status(statusCode).json(createErrorResponse('Failed to initiate OAuth', error.message));
+    }
+  }
+);

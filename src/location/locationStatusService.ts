@@ -19,7 +19,7 @@ export interface LocationActivity {
   status: string; // Display status like "On Prem", "On Location", "Wrapped", "Another Location"
   wrappedStatus?: WrappedStatus;
   timestamp: FirebaseFirestore.Timestamp;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, any> | null;
 }
 
 export interface UserLocationState {
@@ -46,11 +46,11 @@ export function calculateLocationStatus(
   // Wrapped status takes highest priority
   if (wrappedStatus === 'wrapped') return 'wrapped';
   if (wrappedStatus === 'another_location') return 'another_location';
-  
+
   // Timecard status takes priority over QR scan
   if (isTimecardClockedIn) return 'on_location';
   if (isQrScannedIn) return 'on_prem';
-  
+
   return null; // Blank
 }
 
@@ -79,7 +79,7 @@ export async function getLocationStatus(userId: string): Promise<UserLocationSta
   try {
     // Try to get from users collection first
     const userDoc = await db.collection('users').doc(userId).get();
-    
+
     if (userDoc.exists) {
       const userData = userDoc.data();
       return {
@@ -94,13 +94,13 @@ export async function getLocationStatus(userId: string): Promise<UserLocationSta
         lastLocationUpdate: userData?.lastLocationUpdate || admin.firestore.FieldValue.serverTimestamp() as any
       };
     }
-    
+
     // Fallback to teamMembers collection
     const teamMemberQuery = await db.collection('teamMembers')
       .where('userId', '==', userId)
       .limit(1)
       .get();
-    
+
     if (!teamMemberQuery.empty) {
       const memberData = teamMemberQuery.docs[0].data();
       return {
@@ -115,7 +115,7 @@ export async function getLocationStatus(userId: string): Promise<UserLocationSta
         lastLocationUpdate: memberData?.lastLocationUpdate || admin.firestore.FieldValue.serverTimestamp() as any
       };
     }
-    
+
     return null;
   } catch (error) {
     console.error('[LocationStatusService] Error getting location status:', error);
@@ -134,17 +134,17 @@ export async function updateLocationStatus(
 ): Promise<UserLocationState> {
   try {
     const now = admin.firestore.FieldValue.serverTimestamp();
-    
+
     // Get current state
     const currentState = await getLocationStatus(userId);
-    
+
     // Determine new state based on activity type
     let isQrScannedIn = currentState?.isQrScannedIn || false;
     let isTimecardClockedIn = currentState?.isTimecardClockedIn || false;
     let newWrappedStatus: WrappedStatus = wrappedStatus !== undefined ? wrappedStatus : (currentState?.wrappedStatus || null);
     let lastQrScanTime = currentState?.lastQrScanTime;
     let lastTimecardClockInTime = currentState?.lastTimecardClockInTime;
-    
+
     // Update state based on activity type
     switch (activityType) {
       case 'qr_checkin':
@@ -180,18 +180,18 @@ export async function updateLocationStatus(
         newWrappedStatus = wrappedStatus;
         break;
     }
-    
+
     // Calculate new location status
     const newLocationStatus = calculateLocationStatus(
       isQrScannedIn,
       isTimecardClockedIn,
       newWrappedStatus
     );
-    
+
     // Update user document
     const userRef = db.collection('users').doc(userId);
     const userDoc = await userRef.get();
-    
+
     const updateData: any = {
       currentLocationStatus: newLocationStatus,
       isQrScannedIn,
@@ -199,15 +199,15 @@ export async function updateLocationStatus(
       wrappedStatus: newWrappedStatus,
       lastLocationUpdate: now
     };
-    
+
     if (activityType === 'qr_checkin' || activityType === 'qr_checkout') {
-      updateData.lastQrScanTime = lastQrScanTime;
+      updateData.lastQrScanTime = lastQrScanTime || null;
     }
-    
+
     if (activityType === 'timecard_clockin' || activityType === 'timecard_clockout') {
-      updateData.lastTimecardClockInTime = lastTimecardClockInTime;
+      updateData.lastTimecardClockInTime = lastTimecardClockInTime || null;
     }
-    
+
     if (userDoc.exists) {
       await userRef.update(updateData);
     } else {
@@ -216,7 +216,7 @@ export async function updateLocationStatus(
         .where('userId', '==', userId)
         .limit(1)
         .get();
-      
+
       if (!teamMemberQuery.empty) {
         await teamMemberQuery.docs[0].ref.update(updateData);
       } else {
@@ -227,7 +227,7 @@ export async function updateLocationStatus(
         }, { merge: true });
       }
     }
-    
+
     // Return updated state
     return {
       userId,
@@ -264,9 +264,9 @@ export async function logLocationActivity(
       activityType,
       status: getLocationStatusDisplay(status),
       wrappedStatus,
-      metadata
+      metadata: metadata || null
     };
-    
+
     await db.collection('location_activity_history').add({
       ...activity,
       timestamp: admin.firestore.FieldValue.serverTimestamp()
@@ -289,27 +289,27 @@ export async function getLocationHistory(
 ): Promise<LocationActivity[]> {
   try {
     let query: FirebaseFirestore.Query = db.collection('location_activity_history');
-    
+
     if (userId) {
       query = query.where('userId', '==', userId);
     }
-    
+
     if (organizationId) {
       query = query.where('organizationId', '==', organizationId);
     }
-    
+
     if (startDate) {
       query = query.where('timestamp', '>=', Timestamp.fromDate(startDate));
     }
-    
+
     if (endDate) {
       query = query.where('timestamp', '<=', Timestamp.fromDate(endDate));
     }
-    
+
     query = query.orderBy('timestamp', 'desc').limit(limit);
-    
+
     const snapshot = await query.get();
-    
+
     return snapshot.docs.map(doc => ({
       ...doc.data(),
       timestamp: doc.data().timestamp

@@ -20,13 +20,13 @@ function encryptToken(text: string): string {
   const algorithm = 'aes-256-gcm';
   const key = crypto.createHash('sha256').update(getEncryptionKey(), 'utf8').digest();
   const iv = crypto.randomBytes(16);
-  
+
   const cipher = crypto.createCipheriv(algorithm, key, iv);
   let encrypted = cipher.update(text, 'utf8', 'hex');
   encrypted += cipher.final('hex');
-  
+
   const authTag = cipher.getAuthTag();
-  
+
   return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
 }
 
@@ -37,16 +37,16 @@ function decryptToken(encryptedData: string): string {
   const [ivHex, authTagHex, encrypted] = encryptedData.split(':');
   const iv = Buffer.from(ivHex, 'hex');
   const authTag = Buffer.from(authTagHex, 'hex');
-  
+
   const algorithm = 'aes-256-gcm';
   const key = crypto.createHash('sha256').update(getEncryptionKey(), 'utf8').digest();
-  
+
   const decipher = crypto.createDecipheriv(algorithm, key, iv);
   decipher.setAuthTag(authTag);
-  
+
   let decrypted = decipher.update(encrypted, 'hex', 'utf8');
   decrypted += decipher.final('utf8');
-  
+
   return decrypted;
 }
 
@@ -199,9 +199,9 @@ export const webexOAuthRefresh = onCall(
       // Update connection with new tokens
       const encryptedAccessToken = encryptToken(access_token);
       const encryptedRefreshToken = refresh_token ? encryptToken(refresh_token) : connectionData.refreshToken;
-      
+
       const expiresAt = expires_in ? Timestamp.fromMillis(Date.now() + (expires_in * 1000)) : null;
-      
+
       await connectionRef.update({
         accessToken: encryptedAccessToken,
         refreshToken: encryptedRefreshToken,
@@ -218,15 +218,15 @@ export const webexOAuthRefresh = onCall(
 
     } catch (error: any) {
       console.error('❌ [WebexOAuth] Error refreshing token:', error);
-      
+
       if (error instanceof HttpsError) {
         throw error;
       }
-      
+
       if (error.response?.status === 401) {
         throw new HttpsError('unauthenticated', 'Invalid refresh token. Please reconnect Webex.');
       }
-      
+
       throw new HttpsError('internal', 'Failed to refresh token');
     }
   }
@@ -292,11 +292,11 @@ export const webexOAuthRevoke = onCall(
 
     } catch (error) {
       console.error('❌ [WebexOAuth] Error revoking access:', error);
-      
+
       if (error instanceof HttpsError) {
         throw error;
       }
-      
+
       throw new HttpsError('internal', 'Failed to revoke access');
     }
   }
@@ -337,7 +337,7 @@ export const webexOAuthCallback = onRequest(
       }
 
       const stateData = stateDoc.docs[0].data();
-      
+
       // Exchange code for token (call internal function logic)
       const redirectUrl = await completeOAuthCallback(
         code as string,
@@ -443,7 +443,7 @@ async function completeOAuthCallback(code: string, state: string, stateData: any
 
   } catch (error: any) {
     console.error('❌ [WebexOAuth] Error completing OAuth callback:', error);
-    
+
     const redirectBase = stateData?.redirectUri || 'https://backbone-logic.web.app/integration-settings';
     const separator = redirectBase.includes('?') ? '&' : '?';
     const errorMessage = error.response?.data?.error_description || error.message || 'Unknown error';

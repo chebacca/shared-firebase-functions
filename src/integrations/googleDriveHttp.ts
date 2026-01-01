@@ -65,7 +65,7 @@ export const initiateGoogleOAuthHttp = functions.https.onRequest(async (req, res
   try {
     // Set CORS headers
     setCorsHeaders(req, res);
-    
+
     // Handle preflight requests
     if (req.method === 'OPTIONS') {
       res.status(200).send('');
@@ -81,30 +81,44 @@ export const initiateGoogleOAuthHttp = functions.https.onRequest(async (req, res
     // Verify user authentication
     const { userId, organizationId } = await verifyAuthToken(req);
 
+    // Get client-provided return URL (where to redirect after OAuth completes)
+    const body = req.body || {};
+    // Default to /dashboard/integrations (correct route) instead of /integration-settings
+    const clientReturnUrl = body.redirectUri || body.returnUrl || `${body.origin || 'https://backbone-logic.web.app'}/dashboard/integrations`;
+
+    // Use unified OAuth callback URL for Google OAuth redirect
+    // This must match what's configured in Google Cloud Console
+    const oauthCallbackUrl = 'https://us-central1-backbone-logic.cloudfunctions.net/handleOAuthCallback';
+
     // Generate secure state parameter
     const state = generateSecureState();
 
     // Store state in Firestore for verification
+    // Structure matches unified OAuth system expectations
     await admin.firestore()
       .collection('oauthStates')
       .doc(state)
       .set({
-        userId,
-        organizationId,
+        state, // State value (document ID is also the state)
         provider: 'google',
+        organizationId,
+        userId,
+        redirectUrl: clientReturnUrl, // Client app URL (where to redirect after OAuth completes)
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        expiresAt: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 10 * 60 * 1000)) // 10 minutes
+        expiresAt: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 3600000)) // 1 hour (matches unified system)
       });
 
     // Generate authorization URL
+    // CRITICAL: Must use the unified callback URL that's configured in Google Cloud Console
     const authUrl = oauth2Client.generateAuthUrl({
       access_type: 'offline',
       scope: SCOPES,
       state: state,
-      prompt: 'consent' // Force consent to get refresh token
+      prompt: 'consent', // Force consent to get refresh token
+      redirect_uri: oauthCallbackUrl // Use unified callback URL
     });
 
-    console.log(`Google OAuth initiated for user ${hashForLogging(userId)} in org ${organizationId}`);
+    console.log(`Google OAuth initiated for user ${hashForLogging(userId)} in org ${organizationId} with oauthCallbackUrl: ${oauthCallbackUrl}, clientReturnUrl: ${clientReturnUrl}`);
 
     const response = createSuccessResponse({
       authUrl,
@@ -128,7 +142,7 @@ export const handleGoogleOAuthCallbackHttp = functions.https.onRequest(async (re
   try {
     // Set CORS headers
     setCorsHeaders(req, res);
-    
+
     // Handle preflight requests
     if (req.method === 'OPTIONS') {
       res.status(200).send('');
@@ -167,9 +181,19 @@ export const handleGoogleOAuthCallbackHttp = functions.https.onRequest(async (re
       throw new Error('State parameter has expired');
     }
 
+    // Use the redirectUri stored in state (or fallback to default)
+    // This allows dynamic redirect URIs (e.g. for localhost vs production)
+    const redirectUri = stateData.redirectUri || REDIRECT_URI;
+
+    console.log(`Exchanging Google code for tokens using redirectUri: ${redirectUri}`);
+
     // Exchange authorization code for tokens
-    const { tokens } = await oauth2Client.getToken(code);
-    
+    // Must pass the SAME redirect_uri that was used to generate the authUrl
+    const { tokens } = await oauth2Client.getToken({
+      code,
+      redirect_uri: redirectUri
+    });
+
     // Encrypt tokens before storing
     const encryptedTokens = encryptTokens(tokens);
 
@@ -214,7 +238,7 @@ export const handleGoogleOAuthCallbackHttp = functions.https.onRequest(async (re
 export const getGoogleIntegrationStatusHttp = functions.https.onRequest(async (req, res) => {
   // Set CORS headers first thing - before any error handling
   setCorsHeaders(req, res);
-  
+
   // Handle preflight requests
   if (req.method === 'OPTIONS') {
     res.status(204).end();
@@ -230,10 +254,10 @@ export const getGoogleIntegrationStatusHttp = functions.https.onRequest(async (r
 
     // Check if this is a request from Clip Show Pro (no auth required for status check)
     const userAgent = req.headers['user-agent'] || '';
-    const isClipShowPro = userAgent.includes('Clip Show Pro') || 
-                         req.headers['x-client-type'] === 'clip-show-pro' ||
-                         req.headers['origin']?.includes('localhost:4001') ||
-                         req.headers['origin']?.includes('localhost:4010');
+    const isClipShowPro = userAgent.includes('Clip Show Pro') ||
+      req.headers['x-client-type'] === 'clip-show-pro' ||
+      req.headers['origin']?.includes('localhost:4001') ||
+      req.headers['origin']?.includes('localhost:4010');
 
     if (isClipShowPro) {
       // For Clip Show Pro, return a simple status without authentication
@@ -255,7 +279,7 @@ export const getGoogleIntegrationStatusHttp = functions.https.onRequest(async (r
     const userDoc = await admin.firestore().collection('users').doc(userId).get();
     const userData = userDoc.data();
     const userOrgId = userData?.organizationId || organizationId || 'default-org';
-    
+
     // Try multiple collection paths for Google Drive tokens
     let integrationDoc = await admin.firestore()
       .collection('organizations')
@@ -263,7 +287,7 @@ export const getGoogleIntegrationStatusHttp = functions.https.onRequest(async (r
       .collection('integrations')
       .doc('google_drive')
       .get();
-    
+
     if (!integrationDoc.exists) {
       // Fallback to userIntegrations collection
       integrationDoc = await admin.firestore()
@@ -271,7 +295,7 @@ export const getGoogleIntegrationStatusHttp = functions.https.onRequest(async (r
         .doc(`${userId}_google`)
         .get();
     }
-    
+
     if (!integrationDoc.exists) {
       // Fallback to cloudIntegrations collection
       integrationDoc = await admin.firestore()
@@ -291,30 +315,30 @@ export const getGoogleIntegrationStatusHttp = functions.https.onRequest(async (r
     }
 
     const integrationData = integrationDoc.data()!;
-    
+
     // Check if tokens are still valid
     try {
       const tokens = decryptTokens(integrationData.tokens);
       oauth2Client.setCredentials(tokens);
-      
+
       // Test the connection by getting user info
       const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
       const userInfo = await oauth2.userinfo.get();
-      
+
       const response = createSuccessResponse({
         connected: true,
         accountEmail: userInfo.data.email,
         connectedAt: integrationData.connectedAt?.toDate()
       });
       res.status(200).json(response);
-      
+
     } catch (tokenError) {
       // Tokens are invalid, mark as disconnected
       await admin.firestore()
         .collection('userIntegrations')
         .doc(`${userId}_google`)
         .delete();
-      
+
       const response = createSuccessResponse({
         connected: false,
         accountEmail: null,
@@ -336,7 +360,7 @@ export const getGoogleIntegrationStatusHttp = functions.https.onRequest(async (r
 export const listGoogleDriveFoldersHttp = functions.https.onRequest(async (req, res) => {
   // Set CORS headers first thing - before any error handling
   setCorsHeaders(req, res);
-  
+
   // Handle preflight requests
   if (req.method === 'OPTIONS') {
     res.status(204).end();
@@ -357,7 +381,7 @@ export const listGoogleDriveFoldersHttp = functions.https.onRequest(async (req, 
     const userDoc = await admin.firestore().collection('users').doc(userId).get();
     const userData = userDoc.data();
     const userOrgId = userData?.organizationId || organizationId || 'default-org';
-    
+
     // Try multiple collection paths for Google Drive tokens
     let integrationDoc = await admin.firestore()
       .collection('organizations')
@@ -365,7 +389,7 @@ export const listGoogleDriveFoldersHttp = functions.https.onRequest(async (req, 
       .collection('integrations')
       .doc('google_drive')
       .get();
-    
+
     if (!integrationDoc.exists) {
       // Fallback to userIntegrations collection
       integrationDoc = await admin.firestore()
@@ -373,7 +397,7 @@ export const listGoogleDriveFoldersHttp = functions.https.onRequest(async (req, 
         .doc(`${userId}_google`)
         .get();
     }
-    
+
     if (!integrationDoc.exists) {
       // Fallback to cloudIntegrations collection
       integrationDoc = await admin.firestore()
@@ -427,7 +451,7 @@ export const listGoogleDriveFoldersHttp = functions.https.onRequest(async (req, 
 export const getGoogleDriveFilesHttp = functions.https.onRequest(async (req, res) => {
   // Set CORS headers first thing - before any error handling
   setCorsHeaders(req, res);
-  
+
   // Handle preflight requests
   if (req.method === 'OPTIONS') {
     res.status(204).end();
@@ -454,7 +478,7 @@ export const getGoogleDriveFilesHttp = functions.https.onRequest(async (req, res
     const userDoc = await admin.firestore().collection('users').doc(userId).get();
     const userData = userDoc.data();
     const userOrgId = userData?.organizationId || organizationId || 'default-org';
-    
+
     // Try multiple collection paths for Google Drive tokens
     let integrationDoc = await admin.firestore()
       .collection('organizations')
@@ -462,7 +486,7 @@ export const getGoogleDriveFilesHttp = functions.https.onRequest(async (req, res
       .collection('integrations')
       .doc('google_drive')
       .get();
-    
+
     if (!integrationDoc.exists) {
       // Fallback to userIntegrations collection
       integrationDoc = await admin.firestore()
@@ -470,7 +494,7 @@ export const getGoogleDriveFilesHttp = functions.https.onRequest(async (req, res
         .doc(`${userId}_google`)
         .get();
     }
-    
+
     if (!integrationDoc.exists) {
       // Fallback to cloudIntegrations collection
       integrationDoc = await admin.firestore()
@@ -527,7 +551,7 @@ export const createGoogleDriveFolderHttp = functions.https.onRequest(async (req,
   try {
     // Set CORS headers
     setCorsHeaders(req, res);
-    
+
     // Handle preflight requests
     if (req.method === 'OPTIONS') {
       res.status(200).send('');
@@ -604,7 +628,7 @@ export const uploadToGoogleDriveHttp = functions.https.onRequest(async (req, res
   try {
     // Set CORS headers
     setCorsHeaders(req, res);
-    
+
     // Handle preflight requests
     if (req.method === 'OPTIONS') {
       res.status(200).send('');

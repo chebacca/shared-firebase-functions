@@ -1,16 +1,17 @@
 /**
  * 🔥 MESSAGING FUNCTIONS
  * Handles message sessions, messages, and participants
+ * HTTP versions removed to reduce CPU quota - use callable versions instead
  */
 
-export { getMessageSessions, getMessageSessionsHttp } from './getMessageSessions';
-export { createMessageSession, createMessageSessionHttp } from './createMessageSession';
-export { sendMessage, sendMessageHttp } from './sendMessage';
-export { getMessages, getMessagesHttp } from './getMessages';
-export { markMessagesAsRead, markMessagesAsReadHttp } from './markMessagesAsRead';
-export { deleteMessage, deleteMessageHttp } from './deleteMessage';
-export { getParticipants, getParticipantsHttp } from './getParticipants';
-export { addParticipant, addParticipantHttp } from './addParticipant';
-export { removeParticipant, removeParticipantHttp } from './removeParticipant';
-export { updateMessageSession, updateMessageSessionHttp } from './updateMessageSession';
+export { getMessageSessions } from './getMessageSessions';
+export { createMessageSession } from './createMessageSession';
+export { sendMessage } from './sendMessage';
+export { getMessages } from './getMessages';
+export { markMessagesAsRead } from './markMessagesAsRead';
+export { deleteMessage } from './deleteMessage';
+export { getParticipants } from './getParticipants';
+export { addParticipant } from './addParticipant';
+export { removeParticipant } from './removeParticipant';
+export { updateMessageSession } from './updateMessageSession';
 

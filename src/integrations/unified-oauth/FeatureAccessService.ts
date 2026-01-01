@@ -1,0 +1,249 @@
+/**
+ * Feature Access Service
+ * 
+ * Ensures all apps have required scopes for their features
+ * Provides verification and scope management
+ */
+
+import { db } from '../../shared/utils';
+import { Timestamp } from 'firebase-admin/firestore';
+
+/**
+ * Feature names used across apps
+ */
+export type FeatureName = 
+  | 'file.upload'
+  | 'file.download'
+  | 'folder.browse'
+  | 'file.share'
+  | 'docs.create'
+  | 'sheets.access'
+  | 'send.message'
+  | 'create.channel'
+  | 'post.channel'
+  | 'upload.file';
+
+/**
+ * Provider names
+ */
+export type ProviderName = 'google' | 'box' | 'dropbox' | 'slack';
+
+/**
+ * App names
+ */
+export type AppName = 
+  | 'dashboard'
+  | 'clipshow'
+  | 'cns'
+  | 'callsheet'
+  | 'cuesheet'
+  | 'timecard'
+  | 'iwm'
+  | 'addressbook'
+  | 'mobile'
+  | 'bridge';
+
+/**
+ * Feature to scope mapping
+ */
+const FEATURE_SCOPE_MAP: Record<ProviderName, Record<FeatureName, string[]>> = {
+  google: {
+    'file.upload': ['https://www.googleapis.com/auth/drive.file'],
+    'file.download': ['https://www.googleapis.com/auth/drive.readonly'],
+    'folder.browse': ['https://www.googleapis.com/auth/drive.readonly'],
+    'docs.create': ['https://www.googleapis.com/auth/documents'],
+    'sheets.access': ['https://www.googleapis.com/auth/spreadsheets'],
+    'file.share': ['https://www.googleapis.com/auth/drive.file'],
+    'send.message': [],
+    'create.channel': [],
+    'post.channel': [],
+    'upload.file': []
+  },
+  box: {
+    'file.upload': ['root_readwrite'],
+    'file.download': ['root_readonly'],
+    'folder.browse': ['root_readonly'],
+    'file.share': ['root_readwrite'],
+    'docs.create': [],
+    'sheets.access': [],
+    'send.message': [],
+    'create.channel': [],
+    'post.channel': [],
+    'upload.file': []
+  },
+  dropbox: {
+    'file.upload': ['files.content.write', 'files.metadata.write'],
+    'file.download': ['files.content.read', 'files.metadata.read'],
+    'folder.browse': ['files.metadata.read'],
+    'file.share': ['sharing.read', 'sharing.write'],
+    'docs.create': [],
+    'sheets.access': [],
+    'send.message': [],
+    'create.channel': [],
+    'post.channel': [],
+    'upload.file': []
+  },
+  slack: {
+    'send.message': ['chat:write'],
+    'create.channel': ['channels:write'],
+    'post.channel': ['chat:write', 'channels:read'],
+    'upload.file': ['files:write'],
+    'file.upload': [],
+    'file.download': [],
+    'folder.browse': [],
+    'file.share': [],
+    'docs.create': [],
+    'sheets.access': []
+  }
+};
+
+/**
+ * App feature requirements
+ */
+const APP_FEATURES: Record<AppName, Record<ProviderName, FeatureName[]>> = {
+  dashboard: {
+    google: ['file.upload', 'file.download', 'folder.browse', 'file.share'],
+    box: ['file.upload', 'file.download', 'folder.browse', 'file.share'],
+    dropbox: ['file.upload', 'file.download', 'folder.browse', 'file.share'],
+    slack: ['send.message', 'post.channel']
+  },
+  clipshow: {
+    google: ['file.upload', 'file.download', 'folder.browse', 'docs.create'],
+    box: ['file.upload', 'file.download', 'folder.browse'],
+    dropbox: ['file.upload', 'file.download', 'folder.browse'],
+    slack: ['send.message', 'post.channel']
+  },
+  cns: {
+    google: ['file.upload', 'file.download', 'folder.browse'],
+    box: ['file.upload', 'file.download'],
+    dropbox: ['file.upload', 'file.download'],
+    slack: []
+  },
+  callsheet: {
+    google: ['file.upload', 'file.download'],
+    box: ['file.upload', 'file.download'],
+    dropbox: ['file.upload', 'file.download'],
+    slack: []
+  },
+  cuesheet: {
+    google: ['file.upload', 'file.download', 'sheets.access'],
+    box: ['file.upload', 'file.download'],
+    dropbox: ['file.upload', 'file.download'],
+    slack: []
+  },
+  timecard: {
+    google: ['file.upload', 'file.download'],
+    box: ['file.upload', 'file.download'],
+    dropbox: ['file.upload', 'file.download'],
+    slack: []
+  },
+  iwm: {
+    google: ['file.upload', 'file.download'],
+    box: ['file.upload', 'file.download'],
+    dropbox: ['file.upload', 'file.download'],
+    slack: []
+  },
+  addressbook: {
+    google: ['file.upload', 'file.download'],
+    box: ['file.upload', 'file.download'],
+    dropbox: ['file.upload', 'file.download'],
+    slack: []
+  },
+  mobile: {
+    google: ['file.upload', 'file.download'],
+    box: ['file.upload', 'file.download'],
+    dropbox: ['file.upload', 'file.download'],
+    slack: []
+  },
+  bridge: {
+    google: ['file.upload', 'file.download'],
+    box: ['file.upload', 'file.download'],
+    dropbox: ['file.upload', 'file.download'],
+    slack: []
+  }
+};
+
+/**
+ * Feature Access Service
+ */
+export class FeatureAccessService {
+  /**
+   * Get required scopes for a specific feature
+   */
+  static getRequiredScopes(
+    provider: ProviderName,
+    features: FeatureName[]
+  ): string[] {
+    const scopeMap = FEATURE_SCOPE_MAP[provider];
+    if (!scopeMap) {
+      return [];
+    }
+
+    const requiredScopes = new Set<string>();
+    
+    features.forEach(feature => {
+      const scopes = scopeMap[feature] || [];
+      scopes.forEach(scope => requiredScopes.add(scope));
+    });
+    
+    return Array.from(requiredScopes);
+  }
+  
+  /**
+   * Verify connection has required scopes for features
+   */
+  static async verifyScopes(
+    organizationId: string,
+    provider: ProviderName,
+    features: FeatureName[]
+  ): Promise<{ hasAccess: boolean; missingScopes: string[] }> {
+    // Get connection
+    const connectionDoc = await db
+      .collection('organizations')
+      .doc(organizationId)
+      .collection('cloudIntegrations')
+      .doc(provider)
+      .get();
+    
+    if (!connectionDoc.exists) {
+      return { hasAccess: false, missingScopes: [] };
+    }
+    
+    const connectionData = connectionDoc.data()!;
+    const grantedScopes = connectionData.scopes || [];
+    const requiredScopes = this.getRequiredScopes(provider, features);
+    
+    const missingScopes = requiredScopes.filter(
+      scope => !grantedScopes.includes(scope)
+    );
+    
+    return {
+      hasAccess: missingScopes.length === 0,
+      missingScopes
+    };
+  }
+  
+  /**
+   * Get all features an app needs from a provider
+   */
+  static getAppFeatures(appName: AppName, provider: ProviderName): FeatureName[] {
+    return APP_FEATURES[appName]?.[provider] || [];
+  }
+
+  /**
+   * Get union of all scopes needed by all apps for a provider
+   * This is what should be requested during OAuth
+   */
+  static getAllRequiredScopesForProvider(provider: ProviderName): string[] {
+    const allScopes = new Set<string>();
+    
+    Object.values(APP_FEATURES).forEach(appFeatures => {
+      const features = appFeatures[provider] || [];
+      const scopes = this.getRequiredScopes(provider, features);
+      scopes.forEach(scope => allScopes.add(scope));
+    });
+    
+    return Array.from(allScopes);
+  }
+}
+

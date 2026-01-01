@@ -1,23 +1,41 @@
-// Export all timecard functions (both Firebase Callable and HTTP versions)
-export { getTimecardTemplates, getTimecardTemplatesHttp } from './getTimecardTemplates';
-export { createTimecardTemplate, createTimecardTemplateHttp } from './createTimecardTemplate';
-export { updateTimecardTemplate, updateTimecardTemplateHttp } from './updateTimecardTemplate';
-export { deleteTimecardTemplate, deleteTimecardTemplateHttp } from './deleteTimecardTemplate';
-export { getTimecardAssignments, getTimecardAssignmentsHttp } from './getTimecardAssignments';
-export { getTimecardAnalytics, getTimecardAnalyticsHttp } from './getTimecardAnalytics';
-export { generateTimecardReport, generateTimecardReportHttp } from './generateTimecardReport';
+// Export all timecard functions (callable versions only - HTTP versions removed to reduce CPU quota)
+export { getTimecardTemplates } from './getTimecardTemplates';
+export { createTimecardTemplate } from './createTimecardTemplate';
+export { updateTimecardTemplate } from './updateTimecardTemplate';
+export { deleteTimecardTemplate } from './deleteTimecardTemplate';
+export { getTimecardAssignments } from './getTimecardAssignments';
+export { getTimecardAnalytics } from './getTimecardAnalytics';
+export { generateTimecardReport } from './generateTimecardReport';
 export { 
-  createTimecardSessionLink, 
-  createTimecardSessionLinkHttp,
-  removeTimecardSessionLink,
-  removeTimecardSessionLinkHttp 
+  createTimecardSessionLink,
+  removeTimecardSessionLink
 } from './timecardSessionLinks';
-export { getAllTimecards, getAllTimecardsHttp } from './getAllTimecards';
-export { getTimecardUsers, getTimecardUsersHttp } from './getTimecardUsers';
-export { getTimecardConfigurations, getTimecardConfigurationsHttp } from './getTimecardConfigurations';
-export { getPendingApprovals, getPendingApprovalsHttp } from './getPendingApprovals';
-export { getMySubmissions, getMySubmissionsHttp } from './getMySubmissions';
-export { getApprovalHistory, getApprovalHistoryHttp } from './getApprovalHistory';
-export { getDirectReports, getDirectReportsHttp } from './getDirectReports';
+export { getAllTimecards } from './getAllTimecards';
+export { getTimecardUsers } from './getTimecardUsers';
+export { getTimecardConfigurations } from './getTimecardConfigurations';
+export { createTimecardConfiguration } from './createTimecardConfiguration';
+export { updateTimecardConfiguration } from './updateTimecardConfiguration';
+export { deleteTimecardConfiguration } from './deleteTimecardConfiguration';
+export { getPendingApprovals } from './getPendingApprovals';
+export { getMySubmissions } from './getMySubmissions';
+export { getApprovalHistory } from './getApprovalHistory';
+export { getDirectReports } from './getDirectReports';
 export { timecardApprovalApi } from './timecardApprovalApi';
 export { onTimecardStatusChange } from './onTimecardStatusChange';
+
+// Export approval functions
+export { takeApprovalAction, getTimecardHistory, submitTimecardForApproval } from './approval';
+
+// Export direct report functions
+export { getAllDirectReports, createDirectReport, updateDirectReport, deactivateDirectReport } from './directReports';
+
+// Export assignment functions
+export { createTimecardAssignment, updateTimecardAssignment, deleteTimecardAssignment } from './assignments';
+
+// Export utility functions
+export { getWeeklySummary } from './getWeeklySummary';
+export { bulkApproveTimecards } from './bulkApproveTimecards';
+
+// Export clock in/out functions
+export { clockIn } from './clockIn';
+export { clockOut } from './clockOut';

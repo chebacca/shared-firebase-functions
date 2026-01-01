@@ -84,12 +84,41 @@ export async function getSlackConfig(organizationId: string) {
   
   console.log(`✅ [SlackConfig] Config loaded for org: ${organizationId}`);
   
+  // Decrypt secrets if encrypted, otherwise use as-is
+  let clientSecret = config.clientSecret;
+  let signingSecret = config.signingSecret;
+  
+  // Check if encrypted (format: "iv:authTag:encrypted" - 3 parts)
+  const clientSecretParts = clientSecret.split(':');
+  if (clientSecretParts.length === 3) {
+    try {
+      clientSecret = decryptToken(clientSecret);
+      console.log(`✅ [SlackConfig] Decrypted client secret`);
+    } catch (error: any) {
+      console.warn(`⚠️ [SlackConfig] Failed to decrypt client secret: ${error?.message}, using as-is`);
+    }
+  } else {
+    console.log(`ℹ️ [SlackConfig] Client secret not encrypted, using as-is`);
+  }
+  
+  const signingSecretParts = signingSecret.split(':');
+  if (signingSecretParts.length === 3) {
+    try {
+      signingSecret = decryptToken(signingSecret);
+      console.log(`✅ [SlackConfig] Decrypted signing secret`);
+    } catch (error: any) {
+      console.warn(`⚠️ [SlackConfig] Failed to decrypt signing secret: ${error?.message}, using as-is`);
+    }
+  } else {
+    console.log(`ℹ️ [SlackConfig] Signing secret not encrypted, using as-is`);
+  }
+  
   return {
     appId: config.appId,
     clientId: config.clientId,
-    clientSecret: decryptToken(config.clientSecret),
-    signingSecret: decryptToken(config.signingSecret),
-    redirectUri: config.redirectUri || 'https://us-central1-backbone-logic.cloudfunctions.net/slackOAuthCallback',
+    clientSecret: clientSecret,
+    signingSecret: signingSecret,
+    redirectUri: config.redirectUri || 'https://us-central1-backbone-logic.cloudfunctions.net/handleOAuthCallback',
     scopes: config.scopes || [
       'channels:read',
       'channels:history',
@@ -128,7 +157,14 @@ export const saveSlackConfig = onCall(
       throw new HttpsError('invalid-argument', 'Missing required configuration fields');
     }
 
-    console.log(`💾 [SlackConfig] Saving config for org: ${organizationId} by user: ${auth.uid}`);
+    console.log(`💾 [SlackConfig] Saving config for org: ${organizationId} by user: ${auth.uid}`, {
+      hasAppId: !!appId,
+      hasClientId: !!clientId,
+      hasClientSecret: !!clientSecret,
+      hasSigningSecret: !!signingSecret,
+      clientIdLength: clientId?.length,
+      clientSecretLength: clientSecret?.length
+    });
 
     try {
       // Verify user is admin of the organization
@@ -148,35 +184,40 @@ export const saveSlackConfig = onCall(
       const encryptedClientSecret = encryptToken(clientSecret);
       const encryptedSigningSecret = encryptToken(signingSecret);
 
+      console.log(`💾 [SlackConfig] Encrypted secrets, saving to Firestore...`);
+
       // Save configuration
-      await db
+      const configRef = db
         .collection('organizations')
         .doc(organizationId)
         .collection('integrationSettings')
-        .doc('slack')
-        .set({
-          appId,
-          clientId,
-          clientSecret: encryptedClientSecret,
-          signingSecret: encryptedSigningSecret,
-          redirectUri: 'https://us-central1-backbone-logic.cloudfunctions.net/slackOAuthCallback',
-          scopes: [
-            'channels:read',
-            'channels:history',
-            'chat:write',
-            'reactions:write',
-            'files:write',
-            'users:read',
-            'groups:read',
-            'groups:history',
-            'im:history',
-            'im:read'
-          ],
-          isConfigured: true,
-          configuredBy: auth.uid,
-        });
+        .doc('slack');
+      
+      await configRef.set({
+        appId,
+        clientId: clientId.trim(),
+        clientSecret: encryptedClientSecret,
+        signingSecret: encryptedSigningSecret,
+        redirectUri: 'https://us-central1-backbone-logic.cloudfunctions.net/handleOAuthCallback', // Use unified callback
+        scopes: [
+          'channels:read',
+          'channels:history',
+          'chat:write',
+          'reactions:write',
+          'files:write',
+          'users:read',
+          'groups:read',
+          'groups:history',
+          'im:history',
+          'im:read'
+        ],
+        isConfigured: true,
+        configuredBy: auth.uid,
+        configuredAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
 
-      console.log(`✅ [SlackConfig] Config saved successfully for org: ${organizationId}`);
+      console.log(`✅ [SlackConfig] Config saved successfully to integrationSettings/slack for org: ${organizationId}`);
 
       return {
         success: true,

@@ -1,8 +1,17 @@
 /**
  * Slack OAuth Functions
  * 
- * Handle OAuth flow for Slack workspace connections
- * Supports both user-level and organization-level connections
+ * ⚠️ DEPRECATED - DO NOT USE ⚠️
+ * 
+ * These functions are deprecated and replaced by the unified OAuth system.
+ * Use the following functions instead:
+ * - initiateOAuth (from integrations/unified-oauth/functions.ts)
+ * - handleOAuthCallback (from integrations/unified-oauth/functions.ts)
+ * - refreshOAuthToken (from integrations/unified-oauth/functions.ts)
+ * - revokeOAuthConnection (from integrations/unified-oauth/functions.ts)
+ * 
+ * This file is kept for reference only and is NOT exported.
+ * All OAuth functions are now handled by the unified OAuth system.
  */
 
 import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
