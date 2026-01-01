@@ -26,12 +26,12 @@ function getEncryptionKey(): string {
     console.log('✅ [encryption] Using encryption key from environment variable');
     return envKey;
   }
-  
+
   // Fall back to Firebase Config (Firebase Functions v1)
   try {
     const config = functions.config();
     const key = config?.integrations?.encryption_key;
-    
+
     if (key && key.trim().length > 0) {
       console.log('✅ [encryption] Using encryption key from Firebase Config');
       return key;
@@ -40,7 +40,7 @@ function getEncryptionKey(): string {
     // Config might not be available in v2 functions
     console.warn('⚠️ [encryption] functions.config() not available, trying environment variables');
   }
-  
+
   console.error('❌ [encryption] Encryption key not found in environment variables or config');
   console.error('   Available env vars:', Object.keys(process.env).filter(k => k.includes('ENCRYPTION') || k.includes('INTEGRATION')));
   throw new Error('Encryption key not configured. Please set INTEGRATIONS_ENCRYPTION_KEY or ENCRYPTION_KEY environment variable, or configure integrations.encryption_key in Firebase Config.');
@@ -62,15 +62,15 @@ export function encryptTokens(tokens: any): string {
     const salt = crypto.randomBytes(SALT_LENGTH);
     const iv = crypto.randomBytes(IV_LENGTH);
     const key = deriveKey(masterKey, salt);
-    
+
     const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
     cipher.setAAD(salt);
-    
+
     let encrypted = cipher.update(JSON.stringify(tokens), 'utf8', 'hex');
     encrypted += cipher.final('hex');
-    
+
     const tag = cipher.getAuthTag();
-    
+
     // Combine salt + iv + tag + encrypted data
     const combined = Buffer.concat([
       salt,
@@ -78,7 +78,7 @@ export function encryptTokens(tokens: any): string {
       tag,
       Buffer.from(encrypted, 'hex')
     ]);
-    
+
     return combined.toString('base64');
   } catch (error) {
     console.error('Token encryption failed:', error);
@@ -92,7 +92,7 @@ export function encryptTokens(tokens: any): string {
 export function decryptTokens(encryptedData: string): any {
   try {
     const masterKey = getEncryptionKey();
-    
+
     // Validate base64 format
     if (!encryptedData || typeof encryptedData !== 'string') {
       throw new Error('Invalid encrypted data: must be a non-empty base64 string');
@@ -105,28 +105,28 @@ export function decryptTokens(encryptedData: string): any {
     }
 
     const combined = Buffer.from(encryptedData, 'base64');
-    
+
     // Validate buffer size (must be at least salt + iv + tag)
     const minSize = SALT_LENGTH + IV_LENGTH + TAG_LENGTH;
     if (combined.length < minSize) {
       throw new Error(`Encrypted data too short: expected at least ${minSize} bytes, got ${combined.length}`);
     }
-    
+
     // Extract components
     const salt = combined.subarray(0, SALT_LENGTH);
     const iv = combined.subarray(SALT_LENGTH, SALT_LENGTH + IV_LENGTH);
     const tag = combined.subarray(SALT_LENGTH + IV_LENGTH, SALT_LENGTH + IV_LENGTH + TAG_LENGTH);
     const encrypted = combined.subarray(SALT_LENGTH + IV_LENGTH + TAG_LENGTH);
-    
+
     const key = deriveKey(masterKey, salt);
-    
+
     const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
     decipher.setAAD(salt);
     decipher.setAuthTag(tag);
-    
+
     let decrypted = decipher.update(encrypted, undefined, 'utf8');
     decrypted += decipher.final('utf8');
-    
+
     // Validate decrypted data is valid JSON
     try {
       return JSON.parse(decrypted);
@@ -144,6 +144,41 @@ export function decryptTokens(encryptedData: string): any {
   } catch (error) {
     console.error('Token decryption failed:', error);
     throw new Error(`Failed to decrypt tokens: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+/**
+ * Decrypt tokens using the legacy colon-hex format (used in early Box/Dropbox implementations)
+ * Format: iv:authTag:encrypted
+ */
+export function decryptLegacyToken(encryptedData: string, encryptionKeyOverride?: string): string {
+  try {
+    if (!encryptedData || typeof encryptedData !== 'string') {
+      throw new Error('Invalid token format');
+    }
+
+    const parts = encryptedData.split(':');
+    if (parts.length !== 3) {
+      throw new Error(`Invalid legacy token format: expected 3 parts, got ${parts.length}`);
+    }
+
+    const [ivHex, authTagHex, encrypted] = parts;
+    const iv = Buffer.from(ivHex, 'hex');
+    const authTag = Buffer.from(authTagHex, 'hex');
+
+    const masterKey = encryptionKeyOverride || getEncryptionKey();
+    const key = crypto.createHash('sha256').update(masterKey, 'utf8').digest();
+
+    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+    decipher.setAuthTag(authTag);
+
+    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+
+    return decrypted;
+  } catch (error) {
+    console.error('Legacy token decryption failed:', error);
+    throw error;
   }
 }
 

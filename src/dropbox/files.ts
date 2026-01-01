@@ -1,7 +1,7 @@
 import * as functions from 'firebase-functions';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
-import { encryptTokens, decryptTokens, hashForLogging } from '../integrations/encryption';
+import { encryptTokens, decryptTokens, decryptLegacyToken, hashForLogging } from '../integrations/encryption';
 import { createSuccessResponse, createErrorResponse, setCorsHeaders } from '../shared/utils';
 import { encryptionKey } from './secrets';
 import { getDropboxConfig } from './config';
@@ -84,7 +84,49 @@ export async function refreshDropboxAccessToken(userId: string, organizationId: 
         }
 
         const integrationData = integrationDoc.data();
-        const encryptedTokens = integrationData?.encryptedTokens;
+        let encryptedTokens = integrationData?.encryptedTokens;
+
+        // MIGRATION: If encryptedTokens missing but connectionId exists, migrate from dropboxConnections
+        if (!encryptedTokens && integrationData?.connectionId) {
+            console.log(`[DropboxTokenRefresh] encryptedTokens missing, attempting migration using connectionId: ${integrationData.connectionId}`);
+            try {
+                const connectionDoc = await admin.firestore()
+                    .collection('organizations')
+                    .doc(organizationId)
+                    .collection('dropboxConnections')
+                    .doc(integrationData.connectionId)
+                    .get();
+
+                if (connectionDoc.exists) {
+                    const connData = connectionDoc.data();
+                    if (connData?.accessToken) {
+                        console.log(`[DropboxTokenRefresh] Found tokens in dropboxConnections, migrating to cloudIntegrations...`);
+
+                        // Decrypt legacy format
+                        const accessToken = decryptLegacyToken(connData.accessToken);
+                        const refreshToken = connData.refreshToken ? decryptLegacyToken(connData.refreshToken) : undefined;
+
+                        const migratedTokens = {
+                            accessToken,
+                            refreshToken,
+                            expiresAt: connData.tokenExpiresAt?.toDate?.() || null
+                        };
+
+                        // Encrypt with new format
+                        encryptedTokens = encryptTokens(migratedTokens);
+
+                        // Save to unified doc for next time
+                        await integrationDoc.ref.update({
+                            encryptedTokens,
+                            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                        });
+                        console.log(`[DropboxTokenRefresh] Successfully migrated tokens to cloudIntegrations/dropbox`);
+                    }
+                }
+            } catch (migrationError) {
+                console.warn(`[DropboxTokenRefresh] Migration failed:`, migrationError);
+            }
+        }
 
         if (!encryptedTokens) {
             throw new Error('No tokens found for Dropbox integration.');

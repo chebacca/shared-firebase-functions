@@ -13,6 +13,7 @@ import { Timestamp } from 'firebase-admin/firestore';
 import { encryptionKey, getEncryptionKey } from './secrets';
 
 import * as admin from 'firebase-admin';
+import { encryptTokens } from '../integrations/encryption';
 
 /**
  * Encrypt sensitive token data
@@ -824,6 +825,14 @@ async function completeOAuthCallbackLogic(code: string, state: string, stateData
         .collection('cloudIntegrations')
         .doc('dropbox');
 
+      // Encrypt tokens using the shared binary-base64 format for unified access
+      const unifiedTokens = {
+        accessToken: tokenResponse.access_token,
+        refreshToken: tokenResponse.refresh_token,
+        expiresAt: tokenResponse.expires_in ? Date.now() + (tokenResponse.expires_in * 1000) : null
+      };
+      const unifiedEncryptedTokens = encryptTokens(unifiedTokens);
+
       // Prepare unified document format
       const unifiedDoc = {
         userId: userId || 'system',
@@ -832,16 +841,18 @@ async function completeOAuthCallbackLogic(code: string, state: string, stateData
         accountEmail: userInfoResponse.email || '',
         accountName: userInfoResponse.name?.display_name || userInfoResponse.name?.given_name || 'Dropbox User',
         accountId: userInfoResponse.account_id,
-        // We store the connection ID reference
+        // We store both the connection ID and the unified encrypted tokens
         connectionId: connectionId,
+        encryptedTokens: unifiedEncryptedTokens, // CRITICAL: Added this for refreshDropboxAccessToken
         isActive: true,
         connectionMethod: 'oauth',
         connectedAt: Timestamp.now(),
-        updatedAt: Timestamp.now()
+        updatedAt: Timestamp.now(),
+        expiresAt: tokenResponse.expires_in ? Timestamp.fromMillis(Date.now() + tokenResponse.expires_in * 1000) : null
       };
 
       await unifiedIntegrationRef.set(unifiedDoc, { merge: true });
-      console.log(`✅ [DropboxOAuth] Saved to cloudIntegrations/dropbox for organization ${organizationId}`);
+      console.log(`✅ [DropboxOAuth] Saved to cloudIntegrations/dropbox with encryptedTokens for organization ${organizationId}`);
     } catch (unifiedError) {
       console.warn('⚠️ [DropboxOAuth] Failed to save to cloudIntegrations:', unifiedError);
     }

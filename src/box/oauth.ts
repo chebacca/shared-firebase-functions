@@ -12,6 +12,7 @@ import { getBoxConfig } from './config';
 import { Timestamp } from 'firebase-admin/firestore';
 import { encryptionKey, getEncryptionKey } from './secrets';
 import * as admin from 'firebase-admin';
+import { encryptTokens } from '../integrations/encryption';
 
 
 /**
@@ -759,6 +760,14 @@ async function completeOAuthCallbackLogic(code: string, state: string, stateData
         .collection('cloudIntegrations')
         .doc('box');
 
+      // Encrypt tokens using the shared binary-base64 format for unified access
+      const unifiedTokens = {
+        accessToken: tokenInfo.accessToken,
+        refreshToken: tokenInfo.refreshToken,
+        expiresAt: tokenInfo.expiresAt
+      };
+      const unifiedEncryptedTokens = encryptTokens(unifiedTokens);
+
       // Prepare unified document format
       const unifiedDoc = {
         userId: userId || 'system',
@@ -767,16 +776,18 @@ async function completeOAuthCallbackLogic(code: string, state: string, stateData
         accountEmail: userInfo.login || userInfo.email || '',
         accountName: userInfo.name || 'Box User',
         accountId: userInfo.id,
-        // We store the connection ID reference
+        // We store both the connection ID and the unified encrypted tokens
         connectionId: connectionId,
+        encryptedTokens: unifiedEncryptedTokens, // CRITICAL: Added this for refreshBoxAccessToken
         isActive: true,
         connectionMethod: 'oauth',
         connectedAt: Timestamp.now(),
-        updatedAt: Timestamp.now()
+        updatedAt: Timestamp.now(),
+        expiresAt: tokenInfo.expiresAt ? Timestamp.fromMillis(tokenInfo.expiresAt) : null
       };
 
       await unifiedIntegrationRef.set(unifiedDoc, { merge: true });
-      console.log(`✅ [BoxOAuth] Saved to cloudIntegrations/box for organization ${organizationId}`);
+      console.log(`✅ [BoxOAuth] Saved to cloudIntegrations/box with encryptedTokens for organization ${organizationId}`);
     } catch (unifiedError) {
       console.warn('⚠️ [BoxOAuth] Failed to save to cloudIntegrations:', unifiedError);
     }
