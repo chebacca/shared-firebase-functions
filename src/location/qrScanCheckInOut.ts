@@ -30,15 +30,27 @@ async function createTimecardEntry(
 ): Promise<boolean> {
   try {
     // Check if user is already clocked in
+    // Look back 7 days to find any active session (handles overnight/long shifts)
+    const lookbackDate = new Date();
+    lookbackDate.setDate(lookbackDate.getDate() - 7);
+    lookbackDate.setHours(0, 0, 0, 0);
+    const lookbackTimestamp = admin.firestore.Timestamp.fromDate(lookbackDate);
+
+    // Find active timecard entries (no clockOutTime) within the last 7 days
     const timecardQuery = await db.collection('timecard_entries')
       .where('userId', '==', userId)
       .where('organizationId', '==', organizationId)
-      .where('clockOutTime', '==', null)
-      .limit(1)
+      .where('date', '>=', lookbackTimestamp)
       .get();
 
-    if (!timecardQuery.empty) {
-      console.log(`⏰ [QR SCAN] User ${userId} is already clocked in, skipping timecard creation`);
+    // Check if there are any active entries (no clockOutTime AND no timeOut)
+    const hasActiveEntry = timecardQuery.docs.some(doc => {
+      const data = doc.data();
+      return !data.clockOutTime && !data.timeOut;
+    });
+
+    if (hasActiveEntry) {
+      console.log(`⏰ [QR SCAN] User ${userId} is already clocked in (found active entry in last 7 days), skipping timecard creation`);
       return false;
     }
 
@@ -96,6 +108,151 @@ async function createTimecardEntry(
   } catch (error: any) {
     console.error('❌ [QR SCAN] Error creating timecard entry:', error);
     throw error;
+  }
+}
+
+/**
+ * Helper function to clock out a user from their active timecard entry
+ * Returns true if timecard was clocked out, false if user was not clocked in
+ */
+async function clockOutTimecardEntry(
+  userId: string,
+  organizationId: string,
+  wrappedStatus: WrappedStatus
+): Promise<boolean> {
+  try {
+    const now = admin.firestore.Timestamp.now();
+
+    // Look back 7 days to find any active session (handles overnight/long shifts)
+    const lookbackDate = new Date();
+    lookbackDate.setDate(lookbackDate.getDate() - 7);
+    lookbackDate.setHours(0, 0, 0, 0);
+    const lookbackTimestamp = admin.firestore.Timestamp.fromDate(lookbackDate);
+
+    console.log(`🔍 [QR SCAN] Looking for active timecard entries for user ${userId}, org ${organizationId}, lookback: ${lookbackTimestamp.toDate().toISOString()}`);
+
+    // Find active timecard entries (no clockOutTime)
+    const timecardQuery = await db.collection('timecard_entries')
+      .where('userId', '==', userId)
+      .where('organizationId', '==', organizationId)
+      .where('date', '>=', lookbackTimestamp)
+      .get();
+
+    console.log(`🔍 [QR SCAN] Found ${timecardQuery.docs.length} timecard entries in last 7 days`);
+
+    // Find the first active entry (no clockOutTime AND no timeOut)
+    const activeEntry = timecardQuery.docs.find(doc => {
+      const data = doc.data();
+      const isActive = !data.clockOutTime && !data.timeOut;
+      if (isActive) {
+        console.log(`✅ [QR SCAN] Found active entry: ${doc.id}, clockInTime: ${data.clockInTime?.toDate?.()?.toISOString() || 'N/A'}`);
+      }
+      return isActive;
+    });
+
+    if (!activeEntry) {
+      console.log(`⏰ [QR SCAN] User ${userId} is not clocked in (checked ${timecardQuery.docs.length} entries), skipping timecard clock-out`);
+      // Log details of entries found for debugging
+      if (timecardQuery.docs.length > 0) {
+        timecardQuery.docs.forEach((doc, idx) => {
+          const data = doc.data();
+          console.log(`  Entry ${idx + 1}: ${doc.id}, date: ${data.date?.toDate?.()?.toISOString() || 'N/A'}, clockOutTime: ${data.clockOutTime ? data.clockOutTime.toDate().toISOString() : 'null'}, timeOut: ${data.timeOut ? data.timeOut.toDate().toISOString() : 'null'}`);
+        });
+      }
+      return false;
+    }
+
+    const entryRef = activeEntry.ref;
+    const entryData = activeEntry.data();
+
+    // Calculate total hours
+    const clockInTime = entryData.clockInTime?.toDate?.() || new Date(entryData.clockInTime);
+    const clockOutTime = now.toDate();
+    const totalHours = (clockOutTime.getTime() - clockInTime.getTime()) / (1000 * 60 * 60);
+
+    // Check if there are more open entries (multiple clock in/out sessions)
+    const hasMoreOpenEntries = timecardQuery.docs.some(doc => {
+      if (doc.id === activeEntry.id) return false;
+      const data = doc.data();
+      return !data.clockOutTime && !data.timeOut;
+    });
+
+    // Update the active entry with clockOutTime
+    await entryRef.update({
+      clockOutTime: now,
+      timeOut: now, // Backward compatibility
+      totalHours: totalHours,
+      regularHours: totalHours, // Simplified - could calculate overtime based on rules
+      status: 'PENDING',
+      updatedAt: now
+    });
+
+    console.log(`✅ [QR SCAN] Clocked out timecard entry for user ${userId}, totalHours: ${totalHours.toFixed(2)}, hasMoreOpenEntries: ${hasMoreOpenEntries}`);
+
+    // Update location status with timecard clock-out
+    // Only set isTimecardClockedIn to false if this is the final clock out (no more open entries)
+    if (!hasMoreOpenEntries) {
+      // This is the final clock out, update location status to mark as not clocked in
+      await updateLocationStatus(
+        userId,
+        organizationId,
+        'timecard_clockout',
+        wrappedStatus
+      );
+    } else {
+      // There are more open entries, just update wrappedStatus without changing isTimecardClockedIn
+      // We'll update the location status separately to preserve isTimecardClockedIn = true
+      const currentState = await getLocationStatus(userId);
+      if (currentState) {
+        // Update only wrappedStatus and location status, keeping isTimecardClockedIn = true
+        const newLocationStatus = calculateLocationStatus(
+          currentState.isQrScannedIn || false,
+          true, // Keep isTimecardClockedIn as true since there are more open entries
+          wrappedStatus
+        );
+        
+        // Update both users and teamMembers collections
+        const userRef = db.collection('users').doc(userId);
+        const teamMemberRef = db.collection('teamMembers').doc(userId);
+        
+        // Ensure wrappedStatus is never undefined - use null instead
+        const wrappedStatusValue: WrappedStatus | null = (wrappedStatus !== undefined && wrappedStatus !== null) ? wrappedStatus : null;
+        
+        const updateData: any = {
+          wrappedStatus: wrappedStatusValue,
+          currentLocationStatus: newLocationStatus || null,
+          lastLocationUpdate: admin.firestore.FieldValue.serverTimestamp()
+        };
+        
+        // Final safety check: remove any undefined values
+        Object.keys(updateData).forEach(key => {
+          if (updateData[key] === undefined) {
+            console.warn(`[clockOutTimecardEntry] Removing undefined value for key: ${key}`);
+            delete updateData[key];
+          }
+        });
+        
+        await Promise.all([
+          userRef.set(updateData, { merge: true }),
+          teamMemberRef.set(updateData, { merge: true })
+        ]);
+      }
+    }
+
+    // Log location activity
+    await logLocationActivity(
+      userId,
+      organizationId,
+      'timecard_clockout',
+      wrappedStatus === 'wrapped' ? 'wrapped' : 'another_location',
+      wrappedStatus
+    );
+
+    return true;
+  } catch (error: any) {
+    console.error('❌ [QR SCAN] Error clocking out timecard entry:', error);
+    // Don't throw - allow QR checkout to succeed even if timecard clock-out fails
+    return false;
   }
 }
 
@@ -208,6 +365,21 @@ export const qrScanCheckInOut = onCall(
         }
 
         console.log(`🚪 [QR SCAN] Checking out user: ${userId} (found in ${foundInTeamMembers ? 'teamMembers' : 'users'}), wrappedStatus: ${wrappedStatus}`);
+        
+        // If user is checking out for the day (wrapped), also clock them out of timecard
+        let timecardClockedOut = false;
+        if (wrappedStatus === 'wrapped') {
+          try {
+            timecardClockedOut = await clockOutTimecardEntry(userId, organizationId, wrappedStatus as WrappedStatus);
+            if (timecardClockedOut) {
+              console.log(`✅ [QR SCAN] User ${userId} clocked out of timecard during QR checkout`);
+            }
+          } catch (timecardError: any) {
+            console.error('⚠️ [QR SCAN] Error clocking out timecard during QR checkout, but continuing with QR checkout:', timecardError);
+            // Don't fail the entire operation if timecard clock-out fails
+          }
+        }
+
         const updatedState = await updateLocationStatus(
           userId,
           organizationId,
@@ -228,7 +400,8 @@ export const qrScanCheckInOut = onCall(
           action: 'checkout',
           status: getLocationStatusDisplay(updatedState.currentLocationStatus),
           locationStatus: updatedState.currentLocationStatus,
-          wrappedStatus
+          wrappedStatus,
+          timecardClockedOut
         }, 'Successfully checked out');
       }
     } catch (error: any) {
@@ -361,6 +534,21 @@ export const qrScanCheckInOutHttp = onRequest(
         }
 
         console.log(`🚪 [QR SCAN HTTP] Checking out user: ${userId} (found in ${foundInTeamMembers ? 'teamMembers' : 'users'}), wrappedStatus: ${wrappedStatus}`);
+        
+        // If user is checking out for the day (wrapped), also clock them out of timecard
+        let timecardClockedOut = false;
+        if (wrappedStatus === 'wrapped') {
+          try {
+            timecardClockedOut = await clockOutTimecardEntry(userId, organizationId, wrappedStatus as WrappedStatus);
+            if (timecardClockedOut) {
+              console.log(`✅ [QR SCAN HTTP] User ${userId} clocked out of timecard during QR checkout`);
+            }
+          } catch (timecardError: any) {
+            console.error('⚠️ [QR SCAN HTTP] Error clocking out timecard during QR checkout, but continuing with QR checkout:', timecardError);
+            // Don't fail the entire operation if timecard clock-out fails
+          }
+        }
+
         const updatedState = await updateLocationStatus(
           userId,
           organizationId,
@@ -381,7 +569,8 @@ export const qrScanCheckInOutHttp = onRequest(
           action: 'checkout',
           status: getLocationStatusDisplay(updatedState.currentLocationStatus),
           locationStatus: updatedState.currentLocationStatus,
-          wrappedStatus
+          wrappedStatus,
+          timecardClockedOut
         }, 'Successfully checked out'));
       }
     } catch (error: any) {

@@ -273,10 +273,21 @@ export async function updateLocationStatus(
       await userRef.update(updateData);
     } else {
       // Create new user document if it doesn't exist
-      await userRef.set({
+      // Ensure no undefined values when spreading
+      const newUserData: any = {
         organizationId,
         ...updateData
-      }, { merge: true });
+      };
+      
+      // Final safety check for new document creation
+      Object.keys(newUserData).forEach(key => {
+        if (newUserData[key] === undefined) {
+          console.warn(`[LocationStatusService] Removing undefined value for key: ${key} in new user document`);
+          delete newUserData[key];
+        }
+      });
+      
+      await userRef.set(newUserData, { merge: true });
     }
 
     // Also update teamMembers collection (Location Tracking page reads from here)
@@ -342,6 +353,9 @@ export async function updateLocationStatus(
       console.warn(`⚠️ [LocationStatusService] No teamMember found/updated for userId: ${userId}, organizationId: ${organizationId}`);
     }
 
+    // Ensure wrappedStatus is never undefined in return value
+    const returnWrappedStatus: WrappedStatus = (newWrappedStatus !== undefined && newWrappedStatus !== null) ? newWrappedStatus : null;
+    
     // Return updated state
     return {
       userId,
@@ -349,7 +363,7 @@ export async function updateLocationStatus(
       currentLocationStatus: newLocationStatus,
       isQrScannedIn,
       isTimecardClockedIn,
-      wrappedStatus: newWrappedStatus,
+      wrappedStatus: returnWrappedStatus,
       lastQrScanTime: lastQrScanTime as any,
       lastTimecardClockInTime: lastTimecardClockInTime as any,
       lastLocationUpdate: now as any
@@ -372,19 +386,32 @@ export async function logLocationActivity(
   metadata?: Record<string, any>
 ): Promise<void> {
   try {
+    // Ensure wrappedStatus is never undefined - use null instead
+    const wrappedStatusValue: WrappedStatus = (wrappedStatus !== undefined && wrappedStatus !== null) ? wrappedStatus : null;
+    
     const activity: Omit<LocationActivity, 'timestamp'> = {
       userId,
       organizationId,
       activityType,
       status: getLocationStatusDisplay(status),
-      wrappedStatus,
+      wrappedStatus: wrappedStatusValue,
       metadata: metadata || null
     };
 
-    await db.collection('location_activity_history').add({
+    // Final safety check: remove any undefined values
+    const activityData: any = {
       ...activity,
       timestamp: admin.firestore.FieldValue.serverTimestamp()
+    };
+    
+    Object.keys(activityData).forEach(key => {
+      if (activityData[key] === undefined) {
+        console.warn(`[logLocationActivity] Removing undefined value for key: ${key}`);
+        delete activityData[key];
+      }
     });
+
+    await db.collection('location_activity_history').add(activityData);
   } catch (error) {
     console.error('[LocationStatusService] Error logging location activity:', error);
     throw error;
