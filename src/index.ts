@@ -194,6 +194,7 @@ export {
   getUserOrganization,
   updateUserOrganization,
   getUserProjects,
+  getUserActiveProjects,
   discoverCollections,
   discoverCollectionsHttp,
   transferAuthToken,

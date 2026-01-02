@@ -77,25 +77,31 @@ export function getLocationStatusDisplay(status: LocationStatus): string {
  */
 export async function getLocationStatus(userId: string): Promise<UserLocationState | null> {
   try {
-    // Try to get from users collection first
-    const userDoc = await db.collection('users').doc(userId).get();
-
-    if (userDoc.exists) {
-      const userData = userDoc.data();
-      return {
-        userId,
-        organizationId: userData?.organizationId || '',
-        currentLocationStatus: userData?.currentLocationStatus || null,
-        isQrScannedIn: userData?.isQrScannedIn || false,
-        isTimecardClockedIn: userData?.isTimecardClockedIn || false,
-        wrappedStatus: userData?.wrappedStatus || null,
-        lastQrScanTime: userData?.lastQrScanTime,
-        lastTimecardClockInTime: userData?.lastTimecardClockInTime,
-        lastLocationUpdate: userData?.lastLocationUpdate || admin.firestore.FieldValue.serverTimestamp() as any
-      };
+    // Check teamMembers collection FIRST (mobile app uses teamMembers, not users)
+    // Strategy 1: Try document ID = userId
+    try {
+      const teamMemberRef = db.collection('teamMembers').doc(userId);
+      const teamMemberDoc = await teamMemberRef.get();
+      
+      if (teamMemberDoc.exists) {
+        const memberData = teamMemberDoc.data();
+        return {
+          userId,
+          organizationId: memberData?.organizationId || '',
+          currentLocationStatus: memberData?.currentLocationStatus || null,
+          isQrScannedIn: memberData?.isQrScannedIn || false,
+          isTimecardClockedIn: memberData?.isTimecardClockedIn || false,
+          wrappedStatus: memberData?.wrappedStatus || null,
+          lastQrScanTime: memberData?.lastQrScanTime,
+          lastTimecardClockInTime: memberData?.lastTimecardClockInTime,
+          lastLocationUpdate: memberData?.lastLocationUpdate || admin.firestore.FieldValue.serverTimestamp() as any
+        };
+      }
+    } catch (docIdError) {
+      console.log('[LocationStatusService] Could not find teamMember by doc ID, trying query...');
     }
 
-    // Fallback to teamMembers collection
+    // Strategy 2: Query by userId field
     const teamMemberQuery = await db.collection('teamMembers')
       .where('userId', '==', userId)
       .limit(1)
@@ -113,6 +119,24 @@ export async function getLocationStatus(userId: string): Promise<UserLocationSta
         lastQrScanTime: memberData?.lastQrScanTime,
         lastTimecardClockInTime: memberData?.lastTimecardClockInTime,
         lastLocationUpdate: memberData?.lastLocationUpdate || admin.firestore.FieldValue.serverTimestamp() as any
+      };
+    }
+
+    // Fallback to users collection (for licensing website compatibility)
+    const userDoc = await db.collection('users').doc(userId).get();
+
+    if (userDoc.exists) {
+      const userData = userDoc.data();
+      return {
+        userId,
+        organizationId: userData?.organizationId || '',
+        currentLocationStatus: userData?.currentLocationStatus || null,
+        isQrScannedIn: userData?.isQrScannedIn || false,
+        isTimecardClockedIn: userData?.isTimecardClockedIn || false,
+        wrappedStatus: userData?.wrappedStatus || null,
+        lastQrScanTime: userData?.lastQrScanTime,
+        lastTimecardClockInTime: userData?.lastTimecardClockInTime,
+        lastLocationUpdate: userData?.lastLocationUpdate || admin.firestore.FieldValue.serverTimestamp() as any
       };
     }
 
@@ -141,7 +165,12 @@ export async function updateLocationStatus(
     // Determine new state based on activity type
     let isQrScannedIn = currentState?.isQrScannedIn || false;
     let isTimecardClockedIn = currentState?.isTimecardClockedIn || false;
-    let newWrappedStatus: WrappedStatus = wrappedStatus !== undefined ? wrappedStatus : (currentState?.wrappedStatus || null);
+    // Ensure wrappedStatus is never undefined - use null instead
+    let newWrappedStatus: WrappedStatus = wrappedStatus !== undefined && wrappedStatus !== null 
+      ? wrappedStatus 
+      : (currentState?.wrappedStatus !== undefined && currentState?.wrappedStatus !== null 
+          ? currentState.wrappedStatus 
+          : null);
     let lastQrScanTime = currentState?.lastQrScanTime;
     let lastTimecardClockInTime = currentState?.lastTimecardClockInTime;
 
@@ -192,40 +221,125 @@ export async function updateLocationStatus(
     const userRef = db.collection('users').doc(userId);
     const userDoc = await userRef.get();
 
+    // Ensure wrappedStatus is null instead of undefined (double-check before writing to Firestore)
+    const wrappedStatusValue: WrappedStatus | null = (newWrappedStatus !== undefined && newWrappedStatus !== null) ? newWrappedStatus : null;
+
+    // Build updateData object, ensuring no undefined values
     const updateData: any = {
-      currentLocationStatus: newLocationStatus,
-      isQrScannedIn,
-      isTimecardClockedIn,
-      wrappedStatus: newWrappedStatus,
+      currentLocationStatus: newLocationStatus || null,
+      isQrScannedIn: isQrScannedIn || false,
+      isTimecardClockedIn: isTimecardClockedIn || false,
+      wrappedStatus: wrappedStatusValue, // Already ensured to be null if undefined
       lastLocationUpdate: now
     };
 
+    // Add timestamp fields, ensuring no undefined values
     if (activityType === 'qr_checkin' || activityType === 'qr_checkout') {
       updateData.lastQrScanTime = lastQrScanTime || null;
+      // Also set lastQrCheckInTime/OutTime for Location Tracking page compatibility
+      if (activityType === 'qr_checkin') {
+        updateData.lastQrCheckInTime = lastQrScanTime || null;
+        // Ensure lastQrCheckOutTime is explicitly null for check-in
+        updateData.lastQrCheckOutTime = null;
+      } else if (activityType === 'qr_checkout') {
+        updateData.lastQrCheckOutTime = now;
+        // Ensure lastQrCheckInTime is preserved or null
+        updateData.lastQrCheckInTime = lastQrScanTime || null;
+      }
+    } else {
+      // For non-QR activities, preserve existing values or set to null
+      updateData.lastQrScanTime = lastQrScanTime || null;
+      updateData.lastQrCheckInTime = lastQrScanTime || null;
+      updateData.lastQrCheckOutTime = null;
     }
 
     if (activityType === 'timecard_clockin' || activityType === 'timecard_clockout') {
       updateData.lastTimecardClockInTime = lastTimecardClockInTime || null;
+    } else {
+      // For non-timecard activities, preserve existing value or set to null
+      updateData.lastTimecardClockInTime = lastTimecardClockInTime || null;
     }
+    
+    // Final safety check: remove any undefined values
+    Object.keys(updateData).forEach(key => {
+      if (updateData[key] === undefined) {
+        console.warn(`[LocationStatusService] Removing undefined value for key: ${key}`);
+        delete updateData[key];
+      }
+    });
 
+    // Update users collection
     if (userDoc.exists) {
       await userRef.update(updateData);
     } else {
-      // Try teamMembers collection
-      const teamMemberQuery = await db.collection('teamMembers')
-        .where('userId', '==', userId)
-        .limit(1)
-        .get();
+      // Create new user document if it doesn't exist
+      await userRef.set({
+        organizationId,
+        ...updateData
+      }, { merge: true });
+    }
 
-      if (!teamMemberQuery.empty) {
-        await teamMemberQuery.docs[0].ref.update(updateData);
-      } else {
-        // Create new user document if it doesn't exist
-        await userRef.set({
-          organizationId,
-          ...updateData
-        }, { merge: true });
+    // Also update teamMembers collection (Location Tracking page reads from here)
+    // Try multiple strategies to find and update the teamMember document
+    let teamMemberUpdated = false;
+
+    // Strategy 1: Try document ID directly (common pattern where doc ID = userId)
+    try {
+      const teamMemberDocRef = db.collection('teamMembers').doc(userId);
+      const teamMemberDoc = await teamMemberDocRef.get();
+      
+      if (teamMemberDoc.exists) {
+        const teamMemberData = teamMemberDoc.data();
+        // Verify organization matches
+        if (teamMemberData?.organizationId === organizationId || !teamMemberData?.organizationId) {
+          await teamMemberDocRef.update(updateData);
+          console.log(`✅ [LocationStatusService] Updated teamMembers (by doc ID) for userId: ${userId}`);
+          teamMemberUpdated = true;
+        }
       }
+    } catch (docIdError: any) {
+      console.log(`ℹ️ [LocationStatusService] Could not update teamMember by doc ID: ${docIdError.message}`);
+    }
+
+    // Strategy 2: Query by userId and organizationId (if not already updated)
+    if (!teamMemberUpdated) {
+      try {
+        const teamMemberQuery = await db.collection('teamMembers')
+          .where('userId', '==', userId)
+          .where('organizationId', '==', organizationId)
+          .limit(1)
+          .get();
+
+        if (!teamMemberQuery.empty) {
+          await teamMemberQuery.docs[0].ref.update(updateData);
+          console.log(`✅ [LocationStatusService] Updated teamMembers (by query) for userId: ${userId}`);
+          teamMemberUpdated = true;
+        }
+      } catch (queryError: any) {
+        console.log(`ℹ️ [LocationStatusService] Could not query teamMember: ${queryError.message}`);
+      }
+    }
+
+    // Strategy 3: Try without organizationId filter (fallback)
+    if (!teamMemberUpdated) {
+      try {
+        const teamMemberQueryFallback = await db.collection('teamMembers')
+          .where('userId', '==', userId)
+          .limit(1)
+          .get();
+        
+        if (!teamMemberQueryFallback.empty) {
+          await teamMemberQueryFallback.docs[0].ref.update(updateData);
+          console.log(`✅ [LocationStatusService] Updated teamMembers (fallback query) for userId: ${userId}`);
+          teamMemberUpdated = true;
+        }
+      } catch (fallbackError: any) {
+        console.log(`ℹ️ [LocationStatusService] Could not query teamMember (fallback): ${fallbackError.message}`);
+      }
+    }
+
+    if (!teamMemberUpdated) {
+      console.warn(`⚠️ [LocationStatusService] No teamMember found/updated for userId: ${userId}, organizationId: ${organizationId}`);
     }
 
     // Return updated state

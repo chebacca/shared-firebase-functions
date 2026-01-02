@@ -5,6 +5,7 @@
 
 import { onRequest } from 'firebase-functions/v2/https';
 import { onCall } from 'firebase-functions/v2/https';
+import { HttpsError } from 'firebase-functions/v2/https';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import * as admin from 'firebase-admin';
@@ -799,13 +800,77 @@ export const getUserProjects = onCall(async (request) => {
       projects: accessibleProjects,
       totalCount: accessibleProjects.length
     };
-
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error getting user projects:', error);
+    throw new HttpsError('internal', error.message || 'Failed to get user projects');
+  }
+});
+
+/**
+ * Get user's active projects (filtered by active status and project assignments)
+ */
+export const getUserActiveProjects = onCall(async (request) => {
+  try {
+    const { uid } = request.data;
+    
+    if (!uid) {
+      throw new Error('User ID is required');
+    }
+
+    // Get user from Firebase Auth
+    const userRecord = await auth.getUser(uid);
+    const customClaims = userRecord.customClaims || {};
+    const organizationId = customClaims.organizationId;
+    const projectAssignments = customClaims.projectAssignments || {};
+
+    // Get project IDs from assignments
+    const assignedProjectIds = Object.keys(projectAssignments);
+
+    if (assignedProjectIds.length === 0) {
+      return {
+        success: true,
+        projects: [],
+        totalCount: 0
+      };
+    }
+
+    // Fetch project documents
+    const projects = await Promise.all(
+      assignedProjectIds.map(async (projectId) => {
+        try {
+          const projectDoc = await db.collection('projects').doc(projectId).get();
+          if (projectDoc.exists) {
+            const data = projectDoc.data();
+            // Only return active projects
+            if (data?.status === 'active') {
+              return {
+                id: projectDoc.id,
+                name: data.name || 'Unnamed Project',
+                description: data.description || '',
+                status: data.status || 'active',
+                organizationId: data.organizationId || organizationId,
+                ...data
+              };
+            }
+          }
+          return null;
+        } catch (err) {
+          console.warn(`Failed to fetch project ${projectId}:`, err);
+          return null;
+        }
+      })
+    );
+
+    const activeProjects = projects.filter(p => p !== null);
+
     return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to get projects'
+      success: true,
+      projects: activeProjects,
+      totalCount: activeProjects.length
     };
+  } catch (error: any) {
+    console.error('Error getting user active projects:', error);
+    throw new HttpsError('internal', error.message || 'Failed to get user active projects');
   }
 });
 
