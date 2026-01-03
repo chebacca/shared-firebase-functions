@@ -11,6 +11,7 @@ import { db } from '../../shared/utils';
 import { Timestamp } from 'firebase-admin/firestore';
 import { encryptToken, decryptToken, generateSecureState } from './encryption';
 import { encryptionKey } from './encryption';
+import { encryptTokens } from '../encryption';
 
 /**
  * Unified OAuth Service
@@ -259,6 +260,26 @@ export class UnifiedOAuthService {
       // Only add refreshToken if it exists
       if (encryptedRefreshToken) {
         connectionData.refreshToken = encryptedRefreshToken;
+      }
+      
+      // For Box and Dropbox, also create encryptedTokens field (expected by refreshBoxAccessToken/refreshDropboxAccessToken)
+      // This ensures compatibility with the token refresh functions that expect the unified format
+      if (providerName === 'box' || providerName === 'dropbox') {
+        try {
+          // Use original unencrypted tokens from the tokens object
+          const unifiedTokens = {
+            accessToken: tokens.accessToken,
+            refreshToken: tokens.refreshToken || '',
+            expiresAt: tokens.expiresAt ? (tokens.expiresAt instanceof Date ? tokens.expiresAt.getTime() : tokens.expiresAt) : null
+          };
+          
+          // Encrypt using the unified format (base64-encoded binary)
+          connectionData.encryptedTokens = encryptTokens(unifiedTokens);
+          console.log(`✅ [OAuthService] Created encryptedTokens field for ${providerName}`);
+        } catch (encryptError) {
+          console.warn(`⚠️ [OAuthService] Failed to create encryptedTokens for ${providerName}, will use legacy format:`, encryptError);
+          // Continue without encryptedTokens - migration logic in refresh functions will handle it
+        }
       }
       
       await db

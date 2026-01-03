@@ -1,11 +1,65 @@
 import * as functions from 'firebase-functions';
 import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
+import { getStorage } from 'firebase-admin/storage';
 import { encryptTokens, decryptTokens, decryptLegacyToken, hashForLogging } from '../integrations/encryption';
 import { createSuccessResponse, createErrorResponse, setCorsHeaders, verifyAuthToken } from '../shared/utils';
 import { sendSystemAlert } from '../utils/systemAlerts';
 import { encryptionKey } from './secrets';
 import { getBoxConfig } from './config';
+
+/**
+ * Get MIME type from file name extension
+ */
+function getMimeTypeFromFileName(fileName: string): string {
+    const ext = fileName.split('.').pop()?.toLowerCase();
+    
+    const mimeTypes: Record<string, string> = {
+        // Video
+        'mp4': 'video/mp4',
+        'mov': 'video/quicktime',
+        'avi': 'video/x-msvideo',
+        'wmv': 'video/x-ms-wmv',
+        'flv': 'video/x-flv',
+        'webm': 'video/webm',
+        'mkv': 'video/x-matroska',
+        'm4v': 'video/x-m4v',
+        'mpg': 'video/mpeg',
+        'mpeg': 'video/mpeg',
+        '3gp': 'video/3gpp',
+        
+        // Audio
+        'mp3': 'audio/mpeg',
+        'wav': 'audio/wav',
+        'ogg': 'audio/ogg',
+        'flac': 'audio/flac',
+        'm4a': 'audio/mp4',
+        'aac': 'audio/aac',
+        'wma': 'audio/x-ms-wma',
+        
+        // Images
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'png': 'image/png',
+        'gif': 'image/gif',
+        'bmp': 'image/bmp',
+        'webp': 'image/webp',
+        'svg': 'image/svg+xml',
+        
+        // Documents
+        'pdf': 'application/pdf',
+        'doc': 'application/msword',
+        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'xls': 'application/vnd.ms-excel',
+        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'ppt': 'application/vnd.ms-powerpoint',
+        'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'txt': 'text/plain',
+        'csv': 'text/csv',
+    };
+    
+    return mimeTypes[ext || ''] || 'application/octet-stream';
+}
 
 /**
  * Get Box SDK instance with configuration
@@ -98,14 +152,63 @@ export const getBoxIntegrationStatus = onCall(
                 expiresAt = new Date(Number(integrationData.expiresAtMillis));
             }
 
-            const isExpired = expiresAt && expiresAt < new Date();
+            // Quick check: if access token is expired, definitely not connected
+            const accessTokenExpired = expiresAt && expiresAt < new Date();
+            if (accessTokenExpired) {
+                return createSuccessResponse({
+                    connected: false,
+                    accountEmail: integrationData?.accountEmail,
+                    accountName: integrationData?.accountName,
+                    expiresAt: expiresAt?.toISOString() || null
+                });
+            }
 
-            return createSuccessResponse({
-                connected: !isExpired,
-                accountEmail: integrationData?.accountEmail,
-                accountName: integrationData?.accountName,
-                expiresAt: expiresAt?.toISOString() || null
-            });
+            // ✅ CRITICAL: Actually validate the refresh token by attempting to refresh
+            // This catches cases where the refresh token has expired even if expiresAt hasn't passed
+            // We do this to ensure the status check is accurate
+            try {
+                // Try to refresh the token - this validates both access and refresh tokens
+                const tokens = await refreshBoxAccessToken(userId, organizationId);
+                
+                // If refresh succeeded, tokens are valid
+                if (tokens && tokens.accessToken) {
+                    return createSuccessResponse({
+                        connected: true,
+                        accountEmail: integrationData?.accountEmail,
+                        accountName: integrationData?.accountName,
+                        expiresAt: tokens.expiresAt instanceof Date
+                            ? tokens.expiresAt.toISOString()
+                            : (typeof tokens.expiresAt === 'string'
+                                ? tokens.expiresAt
+                                : (tokens.expiresAt?.toDate?.()?.toISOString() || expiresAt?.toISOString() || null))
+                    });
+                } else {
+                    // Refresh returned no tokens - connection invalid
+                    return createSuccessResponse({
+                        connected: false,
+                        accountEmail: integrationData?.accountEmail,
+                        accountName: integrationData?.accountName,
+                        expiresAt: expiresAt?.toISOString() || null
+                    });
+                }
+            } catch (refreshError: any) {
+                // If refresh fails, the connection is invalid
+                const errorMessage = refreshError?.message || String(refreshError);
+                console.log(`[BoxIntegrationStatus] Token refresh validation failed: ${errorMessage}`);
+                
+                // Check if it's an expired token error
+                const isExpiredError = errorMessage.includes('expired') ||
+                                     errorMessage.includes('Expired Auth') ||
+                                     errorMessage.includes('invalid_grant') ||
+                                     errorMessage.includes('refresh token');
+                
+                return createSuccessResponse({
+                    connected: false,
+                    accountEmail: integrationData?.accountEmail,
+                    accountName: integrationData?.accountName,
+                    expiresAt: expiresAt?.toISOString() || null
+                });
+            }
 
         } catch (error: any) {
             console.error('Failed to get Box integration status:', error);
@@ -1243,6 +1346,8 @@ export const downloadBoxFile = onCall(
         region: 'us-central1',
         cors: true,
         secrets: [encryptionKey],
+        memory: '512MiB', // Increased from default 256MiB for large video files
+        timeoutSeconds: 540, // 9 minutes (max for 2nd gen functions)
     },
     async (request) => {
         try {
@@ -1265,7 +1370,28 @@ export const downloadBoxFile = onCall(
             
             // Use the existing refreshBoxAccessToken function to get a valid token
             // This handles all the migration logic and token refresh automatically
-            const tokens = await refreshBoxAccessToken(userId, organizationId);
+            let tokens;
+            try {
+                tokens = await refreshBoxAccessToken(userId, organizationId);
+            } catch (refreshError: any) {
+                // Handle expired token errors specifically
+                const errorMessage = refreshError?.message || String(refreshError);
+                const isExpiredError = errorMessage.includes('expired') ||
+                                     errorMessage.includes('Expired Auth') ||
+                                     errorMessage.includes('invalid_grant') ||
+                                     errorMessage.includes('refresh token');
+                
+                if (isExpiredError) {
+                    console.log(`[BoxFiles] Token refresh failed due to expired token for org: ${organizationId}`);
+                    throw new HttpsError(
+                        'failed-precondition',
+                        'Box connection has expired. Please reconnect your Box account in Integration Settings.'
+                    );
+                }
+                
+                // Re-throw other errors
+                throw refreshError;
+            }
             
             if (!tokens || !tokens.accessToken) {
                 throw new HttpsError('failed-precondition', 'Box connection not found. Please connect Box in Integration Settings.');
@@ -1280,25 +1406,63 @@ export const downloadBoxFile = onCall(
             // Get file info for metadata
             const fileInfo = await client.files.get(fileId);
             const fileName = fileInfo.name;
-            const mimeType = fileInfo.type || 'application/octet-stream';
+            
+            // Box API doesn't provide MIME type directly, infer from file extension
+            const mimeType = getMimeTypeFromFileName(fileName);
 
-            // Convert stream to buffer
-            const chunks: Buffer[] = [];
-            for await (const chunk of fileStream) {
-                chunks.push(chunk);
-            }
-            const buffer = Buffer.concat(chunks);
+            // Upload directly to Firebase Storage (streaming to avoid memory issues)
+            const storage = getStorage();
+            const bucket = storage.bucket();
+            
+            // Create a unique storage path: box-files/{orgId}/{fileId}/{fileName}
+            const storagePath = `box-files/${organizationId}/${fileId}/${fileName}`;
+            const file = bucket.file(storagePath);
 
-            // Convert to base64 for transmission
-            const content = buffer.toString('base64');
+            console.log(`📤 [BoxFiles] Uploading to Firebase Storage: ${storagePath}`);
 
-            console.log(`✅ [BoxFiles] File downloaded successfully: ${fileName} (${buffer.length} bytes)`);
+            // Stream the file directly to Storage (avoids loading entire file into memory)
+            const writeStream = file.createWriteStream({
+                metadata: {
+                    contentType: mimeType,
+                    metadata: {
+                        boxFileId: fileId,
+                        organizationId: organizationId,
+                        originalFileName: fileName,
+                        uploadedBy: userId,
+                        uploadedAt: new Date().toISOString()
+                    }
+                }
+            });
+
+            // Pipe the Box stream to Storage with proper error handling
+            await new Promise<void>((resolve, reject) => {
+                fileStream.on('error', (error: Error) => {
+                    writeStream.destroy();
+                    reject(error);
+                });
+                writeStream.on('error', reject);
+                writeStream.on('finish', resolve);
+                fileStream.pipe(writeStream);
+            });
+
+            // Make file readable by authenticated users (or generate signed URL)
+            await file.makePublic();
+
+            // Generate signed URL (valid for 1 hour)
+            const [signedUrl] = await file.getSignedUrl({
+                action: 'read',
+                expires: Date.now() + 3600000 // 1 hour
+            });
+
+            console.log(`✅ [BoxFiles] File uploaded to Storage successfully: ${fileName} (${storagePath})`);
 
             return {
                 success: true,
-                content,
+                downloadUrl: signedUrl,
+                storagePath: storagePath,
                 fileName,
-                mimeType
+                mimeType,
+                fileSize: fileInfo.size || 0
             };
 
         } catch (error: any) {
