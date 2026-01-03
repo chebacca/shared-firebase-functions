@@ -58,111 +58,104 @@ function decryptToken(encryptedData: string): string {
 export async function getGoogleConfig(organizationId: string) {
   console.log(`🔍 [GoogleConfig] Fetching config for org: ${organizationId}`);
 
-  const configDoc = await db
+  // Read from integrationConfigs (single source of truth)
+  // Check for google_docs or google_drive type configs
+  const configsSnapshot = await db
     .collection('organizations')
     .doc(organizationId)
-    .collection('integrationSettings')
-    .doc('google')
+    .collection('integrationConfigs')
+    .where('type', 'in', ['google_docs', 'google_drive'])
+    .limit(1)
     .get();
 
-  if (!configDoc.exists) {
-    // Fallback to environment variables for backward compatibility
-    let envClientId = process.env.GOOGLE_CLIENT_ID;
-    let envClientSecret = process.env.GOOGLE_CLIENT_SECRET;
-    let envRedirectUri = process.env.GOOGLE_REDIRECT_URI;
-
-    // 🔥 CRITICAL FIX: Also check functions.config() for Firebase Functions v1 compatibility
-    // This is where the credentials are actually stored in the current deployment
-    if (!envClientId || !envClientSecret) {
-      try {
-        // Access v1 functions.config() - imported at top level
-        const functionsConfig = functions.config();
-        if (functionsConfig && functionsConfig.google) {
-          envClientId = envClientId || functionsConfig.google.client_id;
-          envClientSecret = envClientSecret || functionsConfig.google.client_secret;
-          envRedirectUri = envRedirectUri || functionsConfig.google.redirect_uri;
-          console.log(`🔍 [GoogleConfig] Found credentials in functions.config().google`);
+  if (!configsSnapshot.empty) {
+    const configDoc = configsSnapshot.docs[0];
+    const data = configDoc.data();
+    
+    if (data.credentials?.clientId && data.credentials?.clientSecret) {
+      console.log(`✅ [GoogleConfig] Found config in integrationConfigs for org: ${organizationId}`);
+      
+      // Decrypt client secret if encrypted
+      let clientSecret = data.credentials.clientSecret;
+      if (clientSecret.includes(':')) {
+        try {
+          clientSecret = decryptToken(clientSecret);
+        } catch (error) {
+          console.warn('⚠️ [GoogleConfig] Failed to decrypt client secret, using as-is');
         }
-      } catch (error: any) {
-        console.log(`⚠️ [GoogleConfig] functions.config() not available:`, error?.message || error);
       }
-    }
-
-    // NOTE: redirectUri should come from the client request, not env/config
-    // This is a fallback only - the actual redirect URI is provided by the client
-    envRedirectUri = envRedirectUri || 'https://backbone-logic.web.app/integration-settings';
-
-    if (envClientId && envClientSecret) {
-      console.log(`⚠️ [GoogleConfig] Using environment/functions.config variables (legacy mode) for org: ${organizationId}`);
+      
       return {
-        clientId: envClientId,
-        clientSecret: envClientSecret,
-        redirectUri: envRedirectUri,
+        clientId: data.credentials.clientId,
+        clientSecret: clientSecret,
+        redirectUri: data.settings?.redirectUri || 'https://backbone-logic.web.app/integration-settings',
         scopes: [
           'https://www.googleapis.com/auth/drive.readonly',
           'https://www.googleapis.com/auth/drive.file',
           'https://www.googleapis.com/auth/documents',
           'https://www.googleapis.com/auth/userinfo.email',
           'https://www.googleapis.com/auth/userinfo.profile',
-          // Google Calendar and Meet scopes
           'https://www.googleapis.com/auth/calendar',
           'https://www.googleapis.com/auth/calendar.events',
           'https://www.googleapis.com/auth/meetings.space.created',
           'https://www.googleapis.com/auth/meetings.space.readonly'
-        ],
+        ]
       };
     }
-
-    console.warn(`⚠️ [GoogleConfig] No config found for org: ${organizationId}`);
-    throw new HttpsError(
-      'failed-precondition',
-      'Google Drive integration not configured. Please configure in Integration Settings.'
-    );
   }
 
-  const config = configDoc.data()!;
+  // Fallback to environment variables for backward compatibility
+  let envClientId = process.env.GOOGLE_CLIENT_ID;
+  let envClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  let envRedirectUri = process.env.GOOGLE_REDIRECT_URI;
 
-  if (!config.isConfigured) {
-    console.warn(`⚠️ [GoogleConfig] Config exists but not marked as configured for org: ${organizationId}`);
-    throw new HttpsError(
-      'failed-precondition',
-      'Google Drive integration not fully configured. Please complete setup in Integration Settings.'
-    );
-  }
-
-  // Decrypt client secret if it looks encrypted (contains :)
-  let clientSecret = config.clientSecret;
-  if (config.clientSecret && config.clientSecret.includes(':')) {
+  // 🔥 CRITICAL FIX: Also check functions.config() for Firebase Functions v1 compatibility
+  // This is where the credentials are actually stored in the current deployment
+  if (!envClientId || !envClientSecret) {
     try {
-      clientSecret = decryptToken(config.clientSecret);
-      console.log(`✅ [GoogleConfig] Decrypted client secret for org: ${organizationId}`);
-    } catch (error) {
-      console.warn(`⚠️ [GoogleConfig] Failed to decrypt client secret (falling back to plaintext):`, error);
-      clientSecret = config.clientSecret;
+      // Access v1 functions.config() - imported at top level
+      const functionsConfig = functions.config();
+      if (functionsConfig && functionsConfig.google) {
+        envClientId = envClientId || functionsConfig.google.client_id;
+        envClientSecret = envClientSecret || functionsConfig.google.client_secret;
+        envRedirectUri = envRedirectUri || functionsConfig.google.redirect_uri;
+        console.log(`🔍 [GoogleConfig] Found credentials in functions.config().google`);
+      }
+    } catch (error: any) {
+      console.log(`⚠️ [GoogleConfig] functions.config() not available:`, error?.message || error);
     }
-  } else {
-    console.log(`ℹ️ [GoogleConfig] Using plaintext client secret for org: ${organizationId}`);
   }
 
-  console.log(`✅ [GoogleConfig] Config loaded for org: ${organizationId}`);
+  // NOTE: redirectUri should come from the client request, not env/config
+  // This is a fallback only - the actual redirect URI is provided by the client
+  envRedirectUri = envRedirectUri || 'https://backbone-logic.web.app/integration-settings';
 
-  return {
-    clientId: config.clientId,
-    clientSecret: clientSecret,
-    redirectUri: config.redirectUri || 'https://backbone-logic.web.app/integration-settings',
-    scopes: config.scopes || [
-      'https://www.googleapis.com/auth/drive.readonly',
-      'https://www.googleapis.com/auth/drive.file',
-      'https://www.googleapis.com/auth/documents',
-      'https://www.googleapis.com/auth/userinfo.email',
-      'https://www.googleapis.com/auth/userinfo.profile',
-      // Google Calendar and Meet scopes
-      'https://www.googleapis.com/auth/calendar',
-      'https://www.googleapis.com/auth/calendar.events',
-      'https://www.googleapis.com/auth/meetings.space.created',
-      'https://www.googleapis.com/auth/meetings.space.readonly'
-    ],
-  };
+  if (envClientId && envClientSecret) {
+    console.log(`⚠️ [GoogleConfig] Using environment/functions.config variables (legacy mode) for org: ${organizationId}`);
+    return {
+      clientId: envClientId,
+      clientSecret: envClientSecret,
+      redirectUri: envRedirectUri,
+      scopes: [
+        'https://www.googleapis.com/auth/drive.readonly',
+        'https://www.googleapis.com/auth/drive.file',
+        'https://www.googleapis.com/auth/documents',
+        'https://www.googleapis.com/auth/userinfo.email',
+        'https://www.googleapis.com/auth/userinfo.profile',
+        // Google Calendar and Meet scopes
+        'https://www.googleapis.com/auth/calendar',
+        'https://www.googleapis.com/auth/calendar.events',
+        'https://www.googleapis.com/auth/meetings.space.created',
+        'https://www.googleapis.com/auth/meetings.space.readonly'
+      ],
+    };
+  }
+
+  console.warn(`⚠️ [GoogleConfig] No config found for org: ${organizationId}`);
+  throw new HttpsError(
+    'failed-precondition',
+    'Google Drive integration not configured. Please configure in Integration Settings.'
+  );
 }
 
 /**

@@ -10,6 +10,8 @@ import { providerRegistry } from './ProviderRegistry';
 import { FeatureAccessService } from './FeatureAccessService';
 import { encryptionKey } from './encryption';
 import { db } from '../../shared/utils';
+import * as admin from 'firebase-admin';
+import { OAuthProvider } from './types';
 
 /**
  * Callable function - initiate OAuth for ANY registered provider
@@ -321,6 +323,124 @@ export const refreshOAuthToken = onCall(
 );
 
 /**
+ * Callable function - update account info for Box/Dropbox connections
+ * Fetches account info from provider API and updates Firestore
+ */
+export const updateOAuthAccountInfo = onCall(
+  {
+    region: 'us-central1',
+    cors: true,
+    secrets: [encryptionKey],
+  },
+  async (request) => {
+    const { provider, organizationId } = request.data;
+    
+    // Validate
+    if (!providerRegistry.hasProvider(provider)) {
+      throw new HttpsError('invalid-argument', `Unknown provider: ${provider}`);
+    }
+    
+    if (!request.auth || request.auth.token.organizationId !== organizationId) {
+      throw new HttpsError('permission-denied', 'Not authorized');
+    }
+    
+    // Only support Box and Dropbox for now
+    if (provider !== 'box' && provider !== 'dropbox') {
+      throw new HttpsError('invalid-argument', `Account info update only supported for box and dropbox`);
+    }
+    
+    try {
+      // Get connection from Firestore
+      const connectionDoc = await db
+        .collection('organizations')
+        .doc(organizationId)
+        .collection('cloudIntegrations')
+        .doc(provider)
+        .get();
+      
+      if (!connectionDoc.exists) {
+        throw new HttpsError('not-found', 'Connection not found');
+      }
+      
+      const connectionData = connectionDoc.data()!;
+      
+      // Decrypt access token
+      const { decryptToken } = await import('./encryption');
+      const accessToken = decryptToken(connectionData.accessToken);
+      
+      let accountEmail = '';
+      let accountName = '';
+      let accountId = '';
+      
+      if (provider === 'box') {
+        // Use Box REST API to get current user info
+        // This is more reliable than the Box SDK which has initialization issues
+        const response = await fetch('https://api.box.com/2.0/users/me', {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error(`❌ [updateOAuthAccountInfo] Box API error: ${response.status} ${response.statusText}`, errorText);
+          throw new Error(`Box API error: ${response.status} ${response.statusText}`);
+        }
+        
+        const user = await response.json() as any;
+        
+        accountEmail = user.login || user.email || '';
+        accountName = user.name || '';
+        accountId = user.id || '';
+      } else if (provider === 'dropbox') {
+        // Use Dropbox API to get current account
+        const response = await fetch('https://api.dropboxapi.com/2/users/get_current_account', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`
+          }
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to get Dropbox account info');
+        }
+        
+        const data = await response.json();
+        accountEmail = (data as any).email || '';
+        accountName = (data as any).name?.display_name || (data as any).name?.given_name || '';
+        accountId = (data as any).account_id || '';
+      }
+      
+      // Update connection document with account info
+      await connectionDoc.ref.update({
+        accountEmail,
+        accountName,
+        accountId: accountId || connectionData.accountId || '',
+        lastRefreshedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+      
+      console.log(`✅ [updateOAuthAccountInfo] Updated ${provider} account info:`, {
+        accountEmail,
+        accountName,
+        accountId
+      });
+      
+      return {
+        success: true,
+        accountEmail,
+        accountName,
+        accountId
+      };
+    } catch (error: any) {
+      console.error(`❌ [updateOAuthAccountInfo] Failed to update ${provider} account info:`, error);
+      throw new HttpsError('internal', error.message || 'Failed to update account info');
+    }
+  }
+);
+
+/**
  * Callable function - revoke connection for ANY registered provider
  */
 export const revokeOAuthConnection = onCall(
@@ -351,6 +471,73 @@ export const revokeOAuthConnection = onCall(
     await oauthService.revokeConnection(organizationId, provider);
     
     return { success: true };
+  }
+);
+
+/**
+ * Callable function - disconnect integration (alias for revokeOAuthConnection)
+ * This is a simpler interface that matches what some services expect
+ */
+export const disconnectIntegration = onCall(
+  {
+    region: 'us-central1',
+    cors: true,
+    secrets: [encryptionKey],
+  },
+  async (request) => {
+    const { provider } = request.data;
+    
+    // Get organizationId from auth token or request data
+    const organizationId = request.auth?.token?.organizationId || request.data?.organizationId;
+    
+    if (!organizationId) {
+      throw new HttpsError('invalid-argument', 'Organization ID is required');
+    }
+    
+    // Validate provider exists
+    if (!providerRegistry.hasProvider(provider)) {
+      throw new HttpsError('invalid-argument', `Unknown provider: ${provider}`);
+    }
+    
+    // Validate user is authenticated and belongs to organization
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'User must be authenticated');
+    }
+    
+    if (request.auth.token.organizationId !== organizationId) {
+      throw new HttpsError('permission-denied', 'Not authorized for this organization');
+    }
+    
+    // Check if user is admin (for organization-level disconnections)
+    const userRole = request.auth.token.role?.toLowerCase();
+    if (userRole !== 'admin' && userRole !== 'owner') {
+      throw new HttpsError('permission-denied', 'Admin role required to disconnect integrations');
+    }
+    
+    // Check if connection exists before trying to revoke
+    // (Client-side deletion may have already removed it)
+    const connectionRef = db
+      .collection('organizations')
+      .doc(organizationId)
+      .collection('cloudIntegrations')
+      .doc(provider);
+    
+    const connectionDoc = await connectionRef.get();
+    
+    // If connection doesn't exist, it was already deleted client-side - that's fine
+    if (!connectionDoc.exists) {
+      console.log(`[disconnectIntegration] Connection already removed for ${provider} in org ${organizationId}`);
+      return { success: true, message: 'Connection already removed' };
+    }
+    
+    // Connection exists, revoke it
+    try {
+      await oauthService.revokeConnection(organizationId, provider);
+      return { success: true };
+    } catch (error: any) {
+      console.error(`[disconnectIntegration] Error revoking connection:`, error);
+      throw error instanceof HttpsError ? error : new HttpsError('internal', error.message || 'Failed to disconnect integration');
+    }
   }
 );
 

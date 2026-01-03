@@ -158,38 +158,301 @@ export async function refreshBoxAccessToken(userId: string, organizationId: stri
                 .get();
         }
 
+        // If no cloudIntegrations document found, check boxConnections collection
+        let connectionId: string | undefined;
         if (!integrationDoc.exists) {
-            console.error(`[BoxTokenRefresh] Integration not found for org ${organizationId}`);
+            console.log(`[BoxTokenRefresh] No cloudIntegrations document found, checking boxConnections...`);
+            
+            // Query boxConnections for organization-level connection
+            const boxConnectionsQuery = await admin.firestore()
+                .collection('organizations')
+                .doc(organizationId)
+                .collection('boxConnections')
+                .where('organizationId', '==', organizationId)
+                .where('connectionType', '==', 'organization')
+                .limit(1)
+                .get();
+
+            if (!boxConnectionsQuery.empty) {
+                const connectionDoc = boxConnectionsQuery.docs[0];
+                const connData = connectionDoc.data();
+                connectionId = connectionDoc.id;
+                
+                console.log(`[BoxTokenRefresh] Found Box connection in boxConnections, creating cloudIntegrations document...`);
+                
+                // Create cloudIntegrations document from boxConnections data
+                const unifiedIntegrationRef = admin.firestore()
+                    .collection('organizations')
+                    .doc(organizationId)
+                    .collection('cloudIntegrations')
+                    .doc('box');
+
+                // Decrypt tokens from boxConnections format
+                let accessToken: string | undefined;
+                let refreshToken: string | undefined;
+                
+                if (connData?.accessToken) {
+                    try {
+                        accessToken = decryptLegacyToken(connData.accessToken);
+                    } catch (e) {
+                        console.warn(`[BoxTokenRefresh] Failed to decrypt accessToken from boxConnections:`, e);
+                        accessToken = connData.accessToken;
+                    }
+                }
+                
+                if (connData?.refreshToken) {
+                    try {
+                        refreshToken = decryptLegacyToken(connData.refreshToken);
+                    } catch (e) {
+                        console.warn(`[BoxTokenRefresh] Failed to decrypt refreshToken from boxConnections:`, e);
+                        refreshToken = connData.refreshToken;
+                    }
+                }
+
+                if (accessToken || refreshToken) {
+                    const migratedTokens = {
+                        accessToken: accessToken || '',
+                        refreshToken: refreshToken || '',
+                        expiresAt: connData?.tokenExpiresAt?.toDate?.() || null
+                    };
+
+                    // Encrypt with new format
+                    const unifiedEncryptedTokens = encryptTokens(migratedTokens);
+
+                    // Create unified document
+                    const unifiedDoc = {
+                        userId: connData.userId || 'system',
+                        organizationId: organizationId,
+                        provider: 'box',
+                        accountEmail: connData.accountEmail || connData.email || '',
+                        accountName: connData.accountName || connData.name || 'Box User',
+                        accountId: connData.accountId || '',
+                        connectionId: connectionId,
+                        encryptedTokens: unifiedEncryptedTokens,
+                        isActive: true,
+                        connectionMethod: 'oauth',
+                        connectedAt: connData.connectedAt || admin.firestore.FieldValue.serverTimestamp(),
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                        expiresAt: connData?.tokenExpiresAt || null
+                    };
+
+                    await unifiedIntegrationRef.set(unifiedDoc, { merge: true });
+                    console.log(`[BoxTokenRefresh] Successfully created cloudIntegrations/box from boxConnections`);
+                    
+                    // Re-fetch the document we just created
+                    integrationDoc = await unifiedIntegrationRef.get();
+                }
+            }
+        }
+
+        if (!integrationDoc.exists) {
+            console.error(`[BoxTokenRefresh] Integration not found for org ${organizationId} in cloudIntegrations or boxConnections`);
             throw new Error('Box integration not found. Please have an admin connect the Box account.');
         }
 
         const integrationData = integrationDoc.data();
+        console.log(`[BoxTokenRefresh] Integration document found, checking for tokens...`, {
+            hasEncryptedTokens: !!integrationData?.encryptedTokens,
+            hasAccessToken: !!integrationData?.accessToken,
+            hasRefreshToken: !!integrationData?.refreshToken,
+            accessTokenLength: integrationData?.accessToken?.length || 0,
+            refreshTokenLength: integrationData?.refreshToken?.length || 0
+        });
+        
         let encryptedTokens = integrationData?.encryptedTokens;
 
-        // MIGRATION: If encryptedTokens missing but connectionId exists, migrate from boxConnections
-        if (!encryptedTokens && integrationData?.connectionId) {
-            console.log(`[BoxTokenRefresh] encryptedTokens missing, attempting migration using connectionId: ${integrationData.connectionId}`);
-            try {
-                const connectionDoc = await admin.firestore()
-                    .collection('organizations')
-                    .doc(organizationId)
-                    .collection('boxConnections')
-                    .doc(integrationData.connectionId)
-                    .get();
+        // PRIORITY 1: Check for direct accessToken/refreshToken fields (unified OAuth or legacy format)
+        // This handles both unified OAuth encrypted format AND legacy colon-hex format
+        if (integrationData?.accessToken || integrationData?.refreshToken) {
+            console.log(`[BoxTokenRefresh] Found accessToken/refreshToken fields, attempting to decrypt...`);
+            
+            let accessToken: string | undefined;
+            let refreshToken: string | undefined;
+            
+            // Try to decrypt accessToken
+            if (integrationData.accessToken) {
+                // First try unified OAuth decryption (for new format)
+                try {
+                    const { decryptToken } = await import('../integrations/unified-oauth/encryption');
+                    accessToken = decryptToken(integrationData.accessToken);
+                    console.log(`[BoxTokenRefresh] Successfully decrypted accessToken using unified OAuth format`);
+                } catch (unifiedError: any) {
+                    // Fall back to legacy colon-hex format
+                    console.log(`[BoxTokenRefresh] Unified OAuth decryption failed, trying legacy format...`, unifiedError.message);
+                    try {
+                        if (integrationData.accessToken.includes(':')) {
+                            accessToken = decryptLegacyToken(integrationData.accessToken);
+                            console.log(`[BoxTokenRefresh] Successfully decrypted accessToken using legacy colon-hex format`);
+                        } else {
+                            // Might be plaintext (shouldn't happen but handle it)
+                            accessToken = integrationData.accessToken;
+                            console.log(`[BoxTokenRefresh] Using accessToken as-is (appears to be plaintext)`);
+                        }
+                    } catch (legacyError: any) {
+                        console.error(`[BoxTokenRefresh] Failed to decrypt accessToken (both formats failed):`, legacyError.message);
+                        // Don't throw here - continue to try refreshToken
+                    }
+                }
+            }
+            
+            // Try to decrypt refreshToken
+            if (integrationData.refreshToken) {
+                // First try unified OAuth decryption (for new format)
+                try {
+                    const { decryptToken } = await import('../integrations/unified-oauth/encryption');
+                    refreshToken = decryptToken(integrationData.refreshToken);
+                    console.log(`[BoxTokenRefresh] Successfully decrypted refreshToken using unified OAuth format`);
+                } catch (unifiedError: any) {
+                    // Fall back to legacy colon-hex format
+                    console.log(`[BoxTokenRefresh] Unified OAuth decryption failed for refreshToken, trying legacy format...`, unifiedError.message);
+                    try {
+                        if (integrationData.refreshToken.includes(':')) {
+                            refreshToken = decryptLegacyToken(integrationData.refreshToken);
+                            console.log(`[BoxTokenRefresh] Successfully decrypted refreshToken using legacy colon-hex format`);
+                        } else {
+                            refreshToken = integrationData.refreshToken;
+                            console.log(`[BoxTokenRefresh] Using refreshToken as-is (appears to be plaintext)`);
+                        }
+                    } catch (legacyError: any) {
+                        console.warn(`[BoxTokenRefresh] Failed to decrypt refreshToken (both formats failed):`, legacyError.message);
+                        // Refresh token is optional for some operations
+                    }
+                }
+            }
+            
+            // If we successfully decrypted at least the accessToken, use it
+            if (accessToken) {
+                console.log(`[BoxTokenRefresh] Successfully decrypted tokens, creating token object...`);
+                const unifiedTokens = {
+                    accessToken,
+                    refreshToken,
+                    expiresAt: integrationData?.tokenExpiresAt?.toDate?.() || 
+                              integrationData?.expiresAt?.toDate?.() || 
+                              null
+                };
+                
+                // Check if token is expired
+                const expiresAt = unifiedTokens.expiresAt instanceof Date
+                    ? unifiedTokens.expiresAt
+                    : typeof unifiedTokens.expiresAt === 'string'
+                        ? new Date(unifiedTokens.expiresAt)
+                        : unifiedTokens.expiresAt?.toDate?.();
+                
+                const needsRefresh = expiresAt && expiresAt < new Date(Date.now() + 60000);
+                
+                if (!needsRefresh && unifiedTokens.accessToken) {
+                    // Token is still valid, return it
+                    console.log(`[BoxTokenRefresh] Using valid token (not expired)`);
+                    return unifiedTokens;
+                } else if (!unifiedTokens.expiresAt && unifiedTokens.accessToken) {
+                    // No expiry info, assume it's valid for now
+                    console.log(`[BoxTokenRefresh] Using token (no expiry info, assuming valid)`);
+                    return unifiedTokens;
+                } else if (needsRefresh && unifiedTokens.refreshToken) {
+                    // Token expired, need to refresh - convert to encryptedTokens format for refresh logic
+                    console.log(`[BoxTokenRefresh] Token expired, will refresh using refreshToken...`);
+                    encryptedTokens = encryptTokens(unifiedTokens);
+                } else {
+                    // No refresh token or expired, but we have accessToken - try using it anyway
+                    console.warn(`[BoxTokenRefresh] Token may be expired but no refresh token, using accessToken anyway`);
+                    return unifiedTokens;
+                }
+            } else {
+                console.warn(`[BoxTokenRefresh] Failed to decrypt accessToken, will check for encryptedTokens or try migration...`);
+            }
+        }
 
-                if (connectionDoc.exists) {
-                    const connData = connectionDoc.data();
-                    if (connData?.accessToken) {
-                        console.log(`[BoxTokenRefresh] Found tokens in boxConnections, migrating to cloudIntegrations...`);
+        // MIGRATION: If encryptedTokens missing, try to migrate from legacy format
+        if (!encryptedTokens) {
+            console.log(`[BoxTokenRefresh] encryptedTokens missing, attempting migration from legacy format...`);
+            
+            // Try migration from boxConnections first (if connectionId exists)
+            if (integrationData?.connectionId) {
+                try {
+                    const connectionDoc = await admin.firestore()
+                        .collection('organizations')
+                        .doc(organizationId)
+                        .collection('boxConnections')
+                        .doc(integrationData.connectionId)
+                        .get();
 
-                        // Decrypt legacy format
-                        const accessToken = decryptLegacyToken(connData.accessToken);
-                        const refreshToken = connData.refreshToken ? decryptLegacyToken(connData.refreshToken) : undefined;
+                    if (connectionDoc.exists) {
+                        const connData = connectionDoc.data();
+                        if (connData?.accessToken) {
+                            console.log(`[BoxTokenRefresh] Found tokens in boxConnections, migrating to cloudIntegrations...`);
 
+                            // Decrypt legacy format
+                            const accessToken = decryptLegacyToken(connData.accessToken);
+                            const refreshToken = connData.refreshToken ? decryptLegacyToken(connData.refreshToken) : undefined;
+
+                            const migratedTokens = {
+                                accessToken,
+                                refreshToken,
+                                expiresAt: connData.tokenExpiresAt?.toDate?.() || null
+                            };
+
+                            // Encrypt with new format
+                            encryptedTokens = encryptTokens(migratedTokens);
+
+                            // Save to unified doc for next time
+                            await integrationDoc.ref.update({
+                                encryptedTokens,
+                                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                            });
+                            console.log(`[BoxTokenRefresh] Successfully migrated tokens from boxConnections to cloudIntegrations/box`);
+                        }
+                    }
+                } catch (migrationError) {
+                    console.warn(`[BoxTokenRefresh] Migration from boxConnections failed:`, migrationError);
+                }
+            }
+
+            // If still no encryptedTokens, try migrating from legacy accessToken/refreshToken fields in cloudIntegrations
+            if (!encryptedTokens && (integrationData?.accessToken || integrationData?.refreshToken)) {
+                try {
+                    console.log(`[BoxTokenRefresh] Found legacy accessToken/refreshToken fields, migrating to encryptedTokens format...`);
+                    
+                    let accessToken: string | undefined;
+                    let refreshToken: string | undefined;
+                    
+                    // Decrypt legacy format if present
+                    if (integrationData.accessToken) {
+                        try {
+                            // Try legacy colon-hex format first
+                            if (integrationData.accessToken.includes(':')) {
+                                accessToken = decryptLegacyToken(integrationData.accessToken);
+                            } else {
+                                // Might already be plaintext (shouldn't happen but handle it)
+                                accessToken = integrationData.accessToken;
+                            }
+                        } catch (decryptError) {
+                            console.warn(`[BoxTokenRefresh] Failed to decrypt accessToken, using as-is:`, decryptError);
+                            accessToken = integrationData.accessToken;
+                        }
+                    }
+                    
+                    if (integrationData.refreshToken) {
+                        try {
+                            // Try legacy colon-hex format first
+                            if (integrationData.refreshToken.includes(':')) {
+                                refreshToken = decryptLegacyToken(integrationData.refreshToken);
+                            } else {
+                                // Might already be plaintext (shouldn't happen but handle it)
+                                refreshToken = integrationData.refreshToken;
+                            }
+                        } catch (decryptError) {
+                            console.warn(`[BoxTokenRefresh] Failed to decrypt refreshToken, using as-is:`, decryptError);
+                            refreshToken = integrationData.refreshToken;
+                        }
+                    }
+
+                    if (accessToken || refreshToken) {
                         const migratedTokens = {
-                            accessToken,
-                            refreshToken,
-                            expiresAt: connData.tokenExpiresAt?.toDate?.() || null
+                            accessToken: accessToken || '',
+                            refreshToken: refreshToken || '',
+                            expiresAt: integrationData?.tokenExpiresAt?.toDate?.() || 
+                                      integrationData?.expiresAt?.toDate?.() || 
+                                      null
                         };
 
                         // Encrypt with new format
@@ -200,11 +463,11 @@ export async function refreshBoxAccessToken(userId: string, organizationId: stri
                             encryptedTokens,
                             updatedAt: admin.firestore.FieldValue.serverTimestamp()
                         });
-                        console.log(`[BoxTokenRefresh] Successfully migrated tokens to cloudIntegrations/box`);
+                        console.log(`[BoxTokenRefresh] Successfully migrated legacy tokens to encryptedTokens format`);
                     }
+                } catch (migrationError) {
+                    console.warn(`[BoxTokenRefresh] Migration from legacy fields failed:`, migrationError);
                 }
-            } catch (migrationError) {
-                console.warn(`[BoxTokenRefresh] Migration failed:`, migrationError);
             }
         }
 
@@ -423,7 +686,22 @@ export const getBoxAccessToken = onCall(
 
         } catch (error: any) {
             console.error('Failed to get Box access token:', error);
-            throw error instanceof HttpsError ? error : new HttpsError('internal', error.message || 'Failed to get access token');
+            
+            // Preserve the original error message if it's user-friendly
+            const errorMessage = error.message || 'Failed to get access token';
+            
+            // If it's already an HttpsError, preserve it
+            if (error instanceof HttpsError) {
+                throw error;
+            }
+            
+            // For integration not found errors, use a more specific error code
+            if (errorMessage.includes('not found') || errorMessage.includes('No tokens found')) {
+                throw new HttpsError('not-found', errorMessage);
+            }
+            
+            // For other errors, use internal but preserve the message
+            throw new HttpsError('internal', errorMessage);
         }
     }
 );
@@ -955,3 +1233,85 @@ export const boxStream = functions.https.onRequest(async (req, res) => {
         }
     }
 });
+
+/**
+ * Download Box file (proxy to avoid CORS issues)
+ * Returns file content as base64-encoded string
+ */
+export const downloadBoxFile = onCall(
+    {
+        region: 'us-central1',
+        cors: true,
+        secrets: [encryptionKey],
+    },
+    async (request) => {
+        try {
+            if (!request.auth) {
+                throw new HttpsError('unauthenticated', 'Authentication required');
+            }
+
+            const { fileId, organizationId: providedOrgId } = request.data as { fileId: string; organizationId?: string };
+            const userId = request.auth.uid;
+            const organizationId = providedOrgId || request.auth.token.organizationId || 'default';
+
+            if (!fileId) {
+                throw new HttpsError('invalid-argument', 'File ID is required');
+            }
+
+            console.log(`📥 [BoxFiles] Downloading file ${fileId} for org: ${organizationId}`);
+
+            // Get Box SDK and access token using the same logic as refreshBoxAccessToken
+            const boxSDK = await getBoxSDK(organizationId);
+            
+            // Use the existing refreshBoxAccessToken function to get a valid token
+            // This handles all the migration logic and token refresh automatically
+            const tokens = await refreshBoxAccessToken(userId, organizationId);
+            
+            if (!tokens || !tokens.accessToken) {
+                throw new HttpsError('failed-precondition', 'Box connection not found. Please connect Box in Integration Settings.');
+            }
+
+            // Get Box client with the refreshed access token
+            const client = boxSDK.getBasicClient(tokens.accessToken);
+
+            // Download file
+            const fileStream = await client.files.getReadStream(fileId);
+            
+            // Get file info for metadata
+            const fileInfo = await client.files.get(fileId);
+            const fileName = fileInfo.name;
+            const mimeType = fileInfo.type || 'application/octet-stream';
+
+            // Convert stream to buffer
+            const chunks: Buffer[] = [];
+            for await (const chunk of fileStream) {
+                chunks.push(chunk);
+            }
+            const buffer = Buffer.concat(chunks);
+
+            // Convert to base64 for transmission
+            const content = buffer.toString('base64');
+
+            console.log(`✅ [BoxFiles] File downloaded successfully: ${fileName} (${buffer.length} bytes)`);
+
+            return {
+                success: true,
+                content,
+                fileName,
+                mimeType
+            };
+
+        } catch (error: any) {
+            console.error('❌ [BoxFiles] Error downloading file:', error);
+            
+            if (error instanceof HttpsError) {
+                throw error;
+            }
+
+            throw new HttpsError(
+                'internal',
+                error.message || 'Failed to download Box file'
+            );
+        }
+    }
+);

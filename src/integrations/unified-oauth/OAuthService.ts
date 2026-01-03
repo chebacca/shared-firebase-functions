@@ -90,18 +90,48 @@ export class UnifiedOAuthService {
     });
     
     // Verify state - use get() with retry logic for eventual consistency
+    // Retry up to 3 times with increasing delays to handle Firestore eventual consistency
     let stateDoc = await db.collection('oauthStates').doc(state).get();
+    let retryCount = 0;
+    const maxRetries = 3;
     
-    // If not found, wait a bit and retry (Firestore eventual consistency)
-    if (!stateDoc.exists) {
-      console.warn(`⚠️ [OAuthService] State not found immediately, retrying...`);
-      await new Promise(resolve => setTimeout(resolve, 500)); // Wait 500ms
+    while (!stateDoc.exists && retryCount < maxRetries) {
+      const delay = (retryCount + 1) * 500; // 500ms, 1000ms, 1500ms
+      console.warn(`⚠️ [OAuthService] State not found immediately, retrying in ${delay}ms (attempt ${retryCount + 1}/${maxRetries})...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
       stateDoc = await db.collection('oauthStates').doc(state).get();
+      retryCount++;
     }
     
     if (!stateDoc.exists) {
-      // State doesn't exist - might be expired or invalid
-      console.error(`❌ [OAuthService] State document not found: ${state.substring(0, 8)}...`);
+      // State doesn't exist - might be expired, invalid, or deleted
+      console.error(`❌ [OAuthService] State document not found after ${maxRetries} retries: ${state.substring(0, 8)}...`);
+      
+      // Check if state might have been deleted due to expiration
+      // Try to get any recent states for this organization to help debug
+      try {
+        const recentStates = await db.collection('oauthStates')
+          .where('state', '==', state)
+          .limit(1)
+          .get();
+        
+        if (!recentStates.empty) {
+          const recentState = recentStates.docs[0].data();
+          const expiresAt = recentState.expiresAt?.toMillis();
+          const now = Date.now();
+          if (expiresAt && now > expiresAt) {
+            console.warn(`⚠️ [OAuthService] State was found but expired`, {
+              expiresAt: new Date(expiresAt).toISOString(),
+              now: new Date(now).toISOString(),
+              ageMinutes: (now - expiresAt) / 60000
+            });
+            throw new Error('OAuth state expired - state was created more than 1 hour ago');
+          }
+        }
+      } catch (queryError) {
+        console.warn(`⚠️ [OAuthService] Could not query for expired state:`, queryError);
+      }
+      
       throw new Error('Invalid or expired state - state document not found');
     }
     

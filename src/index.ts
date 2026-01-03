@@ -43,6 +43,11 @@ export {
   clipShowProUpdateClaims
 } from './clipShowPro/clipShowProUpdateClaims';
 
+// Export IWM claims management
+export {
+  iwmUpdateClaims
+} from './iwm/iwmUpdateClaims';
+
 // Export license email function
 export {
   sendLicenseEmail
@@ -148,8 +153,10 @@ export {
   handleOAuthCallback,
   refreshOAuthToken,
   revokeOAuthConnection,
+  disconnectIntegration,
   listAvailableProviders,
-  verifyIntegrationAccess
+  verifyIntegrationAccess,
+  updateOAuthAccountInfo
 } from './integrations/unified-oauth/functions';
 
 // Export Scheduled OAuth Functions
@@ -390,6 +397,12 @@ export {
   batchIndexCollection,
   getIndexingStatus
 } from './ml/functions';
+
+// Export migration functions
+export {
+  migrateBoxTokens,
+  migrateDropboxTokens
+} from './migrations/migrateLegacyTokens';
 
 // NOTE: Other functions commented out due to TypeScript errors
 

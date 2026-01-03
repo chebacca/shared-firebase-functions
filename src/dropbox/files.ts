@@ -86,30 +86,97 @@ export async function refreshDropboxAccessToken(userId: string, organizationId: 
         const integrationData = integrationDoc.data();
         let encryptedTokens = integrationData?.encryptedTokens;
 
-        // MIGRATION: If encryptedTokens missing but connectionId exists, migrate from dropboxConnections
-        if (!encryptedTokens && integrationData?.connectionId) {
-            console.log(`[DropboxTokenRefresh] encryptedTokens missing, attempting migration using connectionId: ${integrationData.connectionId}`);
-            try {
-                const connectionDoc = await admin.firestore()
-                    .collection('organizations')
-                    .doc(organizationId)
-                    .collection('dropboxConnections')
-                    .doc(integrationData.connectionId)
-                    .get();
+        // MIGRATION: If encryptedTokens missing, try to migrate from legacy format
+        if (!encryptedTokens) {
+            console.log(`[DropboxTokenRefresh] encryptedTokens missing, attempting migration from legacy format...`);
+            
+            // Try migration from dropboxConnections first (if connectionId exists)
+            if (integrationData?.connectionId) {
+                try {
+                    const connectionDoc = await admin.firestore()
+                        .collection('organizations')
+                        .doc(organizationId)
+                        .collection('dropboxConnections')
+                        .doc(integrationData.connectionId)
+                        .get();
 
-                if (connectionDoc.exists) {
-                    const connData = connectionDoc.data();
-                    if (connData?.accessToken) {
-                        console.log(`[DropboxTokenRefresh] Found tokens in dropboxConnections, migrating to cloudIntegrations...`);
+                    if (connectionDoc.exists) {
+                        const connData = connectionDoc.data();
+                        if (connData?.accessToken) {
+                            console.log(`[DropboxTokenRefresh] Found tokens in dropboxConnections, migrating to cloudIntegrations...`);
 
-                        // Decrypt legacy format
-                        const accessToken = decryptLegacyToken(connData.accessToken);
-                        const refreshToken = connData.refreshToken ? decryptLegacyToken(connData.refreshToken) : undefined;
+                            // Decrypt legacy format
+                            const accessToken = decryptLegacyToken(connData.accessToken);
+                            const refreshToken = connData.refreshToken ? decryptLegacyToken(connData.refreshToken) : undefined;
 
+                            const migratedTokens = {
+                                accessToken,
+                                refreshToken,
+                                expiresAt: connData.tokenExpiresAt?.toDate?.() || null
+                            };
+
+                            // Encrypt with new format
+                            encryptedTokens = encryptTokens(migratedTokens);
+
+                            // Save to unified doc for next time
+                            await integrationDoc.ref.update({
+                                encryptedTokens,
+                                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                            });
+                            console.log(`[DropboxTokenRefresh] Successfully migrated tokens from dropboxConnections to cloudIntegrations/dropbox`);
+                        }
+                    }
+                } catch (migrationError) {
+                    console.warn(`[DropboxTokenRefresh] Migration from dropboxConnections failed:`, migrationError);
+                }
+            }
+
+            // If still no encryptedTokens, try migrating from legacy accessToken/refreshToken fields in cloudIntegrations
+            if (!encryptedTokens && (integrationData?.accessToken || integrationData?.refreshToken)) {
+                try {
+                    console.log(`[DropboxTokenRefresh] Found legacy accessToken/refreshToken fields, migrating to encryptedTokens format...`);
+                    
+                    let accessToken: string | undefined;
+                    let refreshToken: string | undefined;
+                    
+                    // Decrypt legacy format if present
+                    if (integrationData.accessToken) {
+                        try {
+                            // Try legacy colon-hex format first
+                            if (integrationData.accessToken.includes(':')) {
+                                accessToken = decryptLegacyToken(integrationData.accessToken);
+                            } else {
+                                // Might already be plaintext (shouldn't happen but handle it)
+                                accessToken = integrationData.accessToken;
+                            }
+                        } catch (decryptError) {
+                            console.warn(`[DropboxTokenRefresh] Failed to decrypt accessToken, using as-is:`, decryptError);
+                            accessToken = integrationData.accessToken;
+                        }
+                    }
+                    
+                    if (integrationData.refreshToken) {
+                        try {
+                            // Try legacy colon-hex format first
+                            if (integrationData.refreshToken.includes(':')) {
+                                refreshToken = decryptLegacyToken(integrationData.refreshToken);
+                            } else {
+                                // Might already be plaintext (shouldn't happen but handle it)
+                                refreshToken = integrationData.refreshToken;
+                            }
+                        } catch (decryptError) {
+                            console.warn(`[DropboxTokenRefresh] Failed to decrypt refreshToken, using as-is:`, decryptError);
+                            refreshToken = integrationData.refreshToken;
+                        }
+                    }
+
+                    if (accessToken || refreshToken) {
                         const migratedTokens = {
-                            accessToken,
-                            refreshToken,
-                            expiresAt: connData.tokenExpiresAt?.toDate?.() || null
+                            accessToken: accessToken || '',
+                            refreshToken: refreshToken || '',
+                            expiresAt: integrationData?.tokenExpiresAt?.toDate?.() || 
+                                      integrationData?.expiresAt?.toDate?.() || 
+                                      null
                         };
 
                         // Encrypt with new format
@@ -120,11 +187,11 @@ export async function refreshDropboxAccessToken(userId: string, organizationId: 
                             encryptedTokens,
                             updatedAt: admin.firestore.FieldValue.serverTimestamp()
                         });
-                        console.log(`[DropboxTokenRefresh] Successfully migrated tokens to cloudIntegrations/dropbox`);
+                        console.log(`[DropboxTokenRefresh] Successfully migrated legacy tokens to encryptedTokens format`);
                     }
+                } catch (migrationError) {
+                    console.warn(`[DropboxTokenRefresh] Migration from legacy fields failed:`, migrationError);
                 }
-            } catch (migrationError) {
-                console.warn(`[DropboxTokenRefresh] Migration failed:`, migrationError);
             }
         }
 

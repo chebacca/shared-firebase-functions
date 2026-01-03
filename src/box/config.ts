@@ -58,19 +58,66 @@ function decryptToken(encryptedData: string): string {
 
 /**
  * Get Box configuration from Firestore
+ * Single source of truth: integrationConfigs (with fallback to integrationSettings for backward compatibility)
  */
 export async function getBoxConfig(organizationId: string) {
   console.log(`🔍 [BoxConfig] Fetching config for org: ${organizationId}`);
   
-  const configDoc = await db
+  // Priority 1: Try integrationConfigs (single source of truth)
+  const configsRef = db
     .collection('organizations')
     .doc(organizationId)
-    .collection('integrationSettings')
-    .doc('box')
-    .get();
+    .collection('integrationConfigs');
+  
+  const boxConfigsQuery = await configsRef.where('type', '==', 'box').limit(1).get();
+  
+  let config: any = null;
+  let source = 'none';
+  
+  if (!boxConfigsQuery.empty) {
+    const configDoc = boxConfigsQuery.docs[0];
+    const configData = configDoc.data();
     
-  if (!configDoc.exists) {
-    // Fallback to environment variables for backward compatibility
+    if (configData?.credentials?.clientId && configData?.credentials?.clientSecret) {
+      config = {
+        clientId: configData.credentials.clientId,
+        clientSecret: configData.credentials.clientSecret,
+        redirectUri: (configData.settings as any)?.redirectUri,
+        scope: (configData.settings as any)?.scope || 'root_readwrite',
+        isConfigured: true
+      };
+      source = 'integrationConfigs';
+      console.log(`✅ [BoxConfig] Found config in integrationConfigs for org: ${organizationId}`);
+    }
+  }
+  
+  // Priority 2: Fallback to integrationSettings (backward compatibility during migration)
+  if (!config) {
+    const settingsDoc = await db
+      .collection('organizations')
+      .doc(organizationId)
+      .collection('integrationSettings')
+      .doc('box')
+      .get();
+      
+    if (settingsDoc.exists) {
+      const settingsData = settingsDoc.data()!;
+      if (settingsData.clientId && settingsData.clientSecret) {
+        config = {
+          clientId: settingsData.clientId,
+          clientSecret: settingsData.clientSecret,
+          redirectUri: settingsData.redirectUri,
+          scope: settingsData.scope || 'root_readwrite',
+          isConfigured: settingsData.isConfigured || true
+        };
+        source = 'integrationSettings';
+        console.log(`⚠️ [BoxConfig] Found config in integrationSettings (legacy) for org: ${organizationId}`);
+      }
+    }
+  }
+  
+  // Priority 3: Fallback to environment variables
+  if (!config) {
     const envClientId = process.env.BOX_CLIENT_ID;
     const envClientSecret = process.env.BOX_CLIENT_SECRET;
     const envRedirectUri = process.env.BOX_REDIRECT_URI || 'https://clipshowpro.web.app/auth/box/callback.html';
@@ -90,16 +137,6 @@ export async function getBoxConfig(organizationId: string) {
     throw new HttpsError(
       'failed-precondition', 
       'Box integration not configured. Please configure in Integration Settings.'
-    );
-  }
-
-  const config = configDoc.data()!;
-  
-  if (!config.isConfigured) {
-    console.warn(`⚠️ [BoxConfig] Config exists but not marked as configured for org: ${organizationId}`);
-    throw new HttpsError(
-      'failed-precondition', 
-      'Box integration not fully configured. Please complete setup in Integration Settings.'
     );
   }
   
@@ -144,7 +181,7 @@ export async function getBoxConfig(organizationId: string) {
     );
   }
   
-  console.log(`✅ [BoxConfig] Config loaded for org: ${organizationId}`);
+  console.log(`✅ [BoxConfig] Config loaded for org: ${organizationId} from ${source}`);
   
   return {
     clientId: trimmedClientId,

@@ -168,21 +168,24 @@ export class GoogleProvider implements OAuthProvider {
    * Get provider configuration
    */
   async getConfig(organizationId: string): Promise<ProviderConfig> {
-    // Option 1: Get from Firestore (per-organization config)
-    // Check integrationSettings first (current location)
+    // Option 1: Get from Firestore integrationConfigs (single source of truth)
     if (organizationId) {
-      const settingsDoc = await db
+      // Check for google_docs or google_drive type configs
+      const configsSnapshot = await db
         .collection('organizations')
         .doc(organizationId)
-        .collection('integrationSettings')
-        .doc('google')
+        .collection('integrationConfigs')
+        .where('type', 'in', ['google_docs', 'google_drive'])
+        .limit(1)
         .get();
       
-      if (settingsDoc.exists) {
-        const data = settingsDoc.data()!;
-        if (data.isConfigured && data.clientId && data.clientSecret) {
+      if (!configsSnapshot.empty) {
+        const configDoc = configsSnapshot.docs[0];
+        const data = configDoc.data()!;
+        
+        if (data.credentials?.clientId && data.credentials?.clientSecret) {
           // Decrypt client secret if encrypted
-          let clientSecret = data.clientSecret;
+          let clientSecret = data.credentials.clientSecret;
           if (clientSecret.includes(':')) {
             try {
               const { decryptToken } = await import('../encryption');
@@ -193,31 +196,24 @@ export class GoogleProvider implements OAuthProvider {
           }
           
           return {
-            clientId: data.clientId,
+            clientId: data.credentials.clientId,
             clientSecret: clientSecret,
             additionalParams: {
-              redirectUri: data.redirectUri || 'https://us-central1-backbone-logic.cloudfunctions.net/handleOAuthCallback',
-              scopes: data.scopes
+              redirectUri: data.settings?.redirectUri || 'https://us-central1-backbone-logic.cloudfunctions.net/handleOAuthCallback',
+              scopes: [
+                'https://www.googleapis.com/auth/drive.readonly',
+                'https://www.googleapis.com/auth/drive.file',
+                'https://www.googleapis.com/auth/documents',
+                'https://www.googleapis.com/auth/userinfo.email',
+                'https://www.googleapis.com/auth/userinfo.profile',
+                'https://www.googleapis.com/auth/calendar',
+                'https://www.googleapis.com/auth/calendar.events',
+                'https://www.googleapis.com/auth/meetings.space.created',
+                'https://www.googleapis.com/auth/meetings.space.readonly'
+              ]
             }
           };
         }
-      }
-      
-      // Also check integrationConfigs (alternative location)
-      const configDoc = await db
-        .collection('organizations')
-        .doc(organizationId)
-        .collection('integrationConfigs')
-        .doc('google-config')
-        .get();
-      
-      if (configDoc.exists) {
-        const data = configDoc.data()!;
-        return {
-          clientId: data.clientId,
-          clientSecret: data.clientSecret,
-          additionalParams: data.additionalParams
-        };
       }
     }
     

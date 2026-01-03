@@ -246,9 +246,54 @@ export class BoxProvider implements OAuthProvider {
   async getConfig(organizationId: string): Promise<ProviderConfig> {
     console.log(`🔍 [BoxProvider] getConfig START - organizationId: "${organizationId}", type: ${typeof organizationId}, length: ${organizationId?.length}`);
     // Option 1: Get from Firestore (per-organization config)
-    // Check integrationSettings first (current location)
+    // Priority 1: Check integrationConfigs (single source of truth)
     if (organizationId && organizationId.trim()) {
       console.log(`🔍 [BoxProvider] organizationId is valid, checking Firestore...`);
+      
+      const configsRef = db
+        .collection('organizations')
+        .doc(organizationId)
+        .collection('integrationConfigs');
+      
+      const boxConfigsQuery = await configsRef.where('type', '==', 'box').limit(1).get();
+      
+      if (!boxConfigsQuery.empty) {
+        const configDoc = boxConfigsQuery.docs[0];
+        const configData = configDoc.data();
+        
+        if (configData?.credentials?.clientId && configData?.credentials?.clientSecret) {
+          // Decrypt client secret if encrypted
+          let clientSecret = configData.credentials.clientSecret;
+          if (clientSecret.includes(':')) {
+            try {
+              const { decryptToken } = await import('../encryption');
+              clientSecret = decryptToken(clientSecret);
+            } catch (error) {
+              console.warn('Failed to decrypt client secret, using as-is');
+            }
+          }
+          
+          // CRITICAL: Box only supports ONE scope. Ignore config.scope if it has multiple scopes.
+          let scope = (configData.settings as any)?.scope || 'root_readwrite';
+          if (scope && typeof scope === 'string' && scope.includes(' ')) {
+            // Multiple scopes detected - Box doesn't support this, use only root_readwrite
+            console.warn(`⚠️ [BoxProvider] Config has multiple scopes: "${scope}", using root_readwrite`);
+            scope = 'root_readwrite';
+          }
+          
+          console.log(`✅ [BoxProvider] Found config in integrationConfigs for org: ${organizationId}`);
+          return {
+            clientId: configData.credentials.clientId.trim(),
+            clientSecret: clientSecret.trim(),
+            additionalParams: {
+              redirectUri: (configData.settings as any)?.redirectUri || 'https://us-central1-backbone-logic.cloudfunctions.net/handleOAuthCallback',
+              scope: scope // Single scope only
+            }
+          };
+        }
+      }
+      
+      // Priority 2: Fallback to integrationSettings (backward compatibility during migration)
       const settingsDoc = await db
         .collection('organizations')
         .doc(organizationId)
@@ -305,6 +350,7 @@ export class BoxProvider implements OAuthProvider {
             scope = 'root_readwrite';
           }
           
+          console.log(`⚠️ [BoxProvider] Found config in integrationSettings (legacy) for org: ${organizationId}`);
           return {
             clientId: data.clientId.trim(),
             clientSecret: clientSecret.trim(),
@@ -314,23 +360,6 @@ export class BoxProvider implements OAuthProvider {
             }
           };
         }
-      }
-      
-      // Also check integrationConfigs (alternative location)
-      const configDoc = await db
-        .collection('organizations')
-        .doc(organizationId)
-        .collection('integrationConfigs')
-        .doc('box-config')
-        .get();
-      
-      if (configDoc.exists) {
-        const data = configDoc.data()!;
-        return {
-          clientId: data.clientId,
-          clientSecret: data.clientSecret,
-          additionalParams: data.additionalParams
-        };
       }
     }
     

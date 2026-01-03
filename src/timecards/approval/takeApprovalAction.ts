@@ -46,9 +46,15 @@ export const takeApprovalAction = onCall(
         throw new Error('User must belong to an organization');
       }
 
-      // Get the timecard entry
-      const entryRef = db.collection('timecard_entries').doc(approvalId);
-      const entryDoc = await entryRef.get();
+      // Get the timecard entry - try both collections for compatibility
+      let entryRef = db.collection('timecards').doc(approvalId);
+      let entryDoc = await entryRef.get();
+
+      // Fallback to timecard_entries if not found in timecards
+      if (!entryDoc.exists) {
+        entryRef = db.collection('timecard_entries').doc(approvalId);
+        entryDoc = await entryRef.get();
+      }
 
       if (!entryDoc.exists) {
         throw new Error('Timecard entry not found');
@@ -64,8 +70,12 @@ export const takeApprovalAction = onCall(
         throw new Error('Access denied: Timecard belongs to different organization');
       }
 
-      // Verify status is SUBMITTED
-      if (entryData.status !== 'SUBMITTED') {
+      // Verify status is in a pending/submitted state (allow multiple status values)
+      const pendingStatuses = ['SUBMITTED', 'PENDING', 'PENDING_APPROVAL', 'submitted', 'pending', 'pending_approval'];
+      const currentStatus = (entryData.status || '').toUpperCase();
+      const isPending = pendingStatuses.some(status => currentStatus === status.toUpperCase());
+      
+      if (!isPending) {
         throw new Error(`Timecard is already ${entryData.status}, cannot ${action}`);
       }
 
