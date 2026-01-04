@@ -404,5 +404,16 @@ export {
   migrateDropboxTokens
 } from './migrations/migrateLegacyTokens';
 
+// Export project resources functions
+export {
+  assignContactToProject,
+  unassignContactFromProject,
+  getProjectContacts,
+  checkoutInventoryToProject,
+  returnInventoryFromProject,
+  getProjectInventory,
+  getInventoryAvailability
+} from './projectResources';
+
 // NOTE: Other functions commented out due to TypeScript errors
 
