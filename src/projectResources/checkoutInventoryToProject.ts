@@ -87,14 +87,31 @@ export const checkoutInventoryToProject = onCall(
       let assignedUserEmail = null;
       if (assignedToUserId) {
         try {
-          const assignedUserDoc = await db.collection('users').doc(assignedToUserId).get();
-          if (assignedUserDoc.exists) {
-            const assignedUserData = assignedUserDoc.data();
-            assignedUserName = assignedUserData?.displayName || assignedUserData?.name || null;
-            assignedUserEmail = assignedUserData?.email || null;
+          // First try teamMembers collection (this is what the frontend passes)
+          const teamMemberDoc = await db.collection('teamMembers').doc(assignedToUserId).get();
+          if (teamMemberDoc.exists) {
+            const teamMemberData = teamMemberDoc.data();
+            // Construct full name from firstName and lastName, or use name field
+            const firstName = teamMemberData?.firstName || '';
+            const lastName = teamMemberData?.lastName || '';
+            assignedUserName = teamMemberData?.name || `${firstName} ${lastName}`.trim() || null;
+            assignedUserEmail = teamMemberData?.email || null;
+            console.log(`✅ [PROJECT INVENTORY] Found assigned user in teamMembers: ${assignedUserName}`);
+          } else {
+            // Fall back to users collection if not found in teamMembers
+            console.log(`⚠️ [PROJECT INVENTORY] User ${assignedToUserId} not found in teamMembers, trying users collection`);
+            const assignedUserDoc = await db.collection('users').doc(assignedToUserId).get();
+            if (assignedUserDoc.exists) {
+              const assignedUserData = assignedUserDoc.data();
+              assignedUserName = assignedUserData?.displayName || assignedUserData?.name || null;
+              assignedUserEmail = assignedUserData?.email || null;
+              console.log(`✅ [PROJECT INVENTORY] Found assigned user in users: ${assignedUserName}`);
+            } else {
+              console.warn(`⚠️ [PROJECT INVENTORY] User ${assignedToUserId} not found in either teamMembers or users collection`);
+            }
           }
         } catch (userError) {
-          console.warn('Could not fetch assigned user details:', userError);
+          console.warn('❌ [PROJECT INVENTORY] Could not fetch assigned user details:', userError);
         }
       }
 
