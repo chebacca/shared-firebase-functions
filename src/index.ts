@@ -415,5 +415,10 @@ export {
   getInventoryAvailability
 } from './projectResources';
 
+// Export Security functions
+export {
+  createGuardWithAuth
+} from './security/createGuardWithAuth';
+
 // NOTE: Other functions commented out due to TypeScript errors
 
