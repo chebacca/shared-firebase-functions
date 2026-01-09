@@ -12,232 +12,16 @@ import * as crypto from 'crypto';
 import { WebClient } from '@slack/web-api';
 import { Timestamp, FieldValue } from 'firebase-admin/firestore';
 import { encryptionKey, getEncryptionKey } from './secrets';
+import { decryptToken } from '../integrations/unified-oauth/encryption';
 
-/**
- * Decrypt token helper
- */
-function decryptToken(encryptedData: string): string {
-  try {
-    // Validate token format (should be iv:authTag:encrypted)
-    if (!encryptedData || typeof encryptedData !== 'string') {
-      throw new Error('Invalid token format: token is missing or not a string');
-    }
 
-    const parts = encryptedData.split(':');
-    if (parts.length !== 3) {
-      console.error('❌ [SlackAPI] Invalid token format. Expected "iv:authTag:encrypted", got:', {
-        partsCount: parts.length,
-        hasIv: !!parts[0],
-        hasAuthTag: !!parts[1],
-        hasEncrypted: !!parts[2],
-        tokenPreview: encryptedData.substring(0, 50) + '...',
-      });
-      throw new Error(`Invalid token format. Expected 3 parts separated by ':', got ${parts.length} parts.`);
-    }
-
-    const [ivHex, authTagHex, encrypted] = parts;
-
-    if (!ivHex || !authTagHex || !encrypted) {
-      throw new Error('Invalid token format: missing required components (IV, auth tag, or encrypted data)');
-    }
-
-    const iv = Buffer.from(ivHex, 'hex');
-    const authTag = Buffer.from(authTagHex, 'hex');
-    
-    // Validate buffer sizes
-    if (iv.length !== 16) {
-      throw new Error(`Invalid IV length. Expected 16 bytes, got ${iv.length}`);
-    }
-    if (authTag.length !== 16) {
-      throw new Error(`Invalid auth tag length. Expected 16 bytes, got ${authTag.length}`);
-    }
-
-    const algorithm = 'aes-256-gcm';
-    // Get the encryption key from Firebase Secrets Manager
-    let encryptionKeyValue: string;
-    try {
-      encryptionKeyValue = getEncryptionKey();
-    } catch (keyError) {
-      console.error('❌ [SlackAPI] Failed to get encryption key:', keyError);
-      throw new Error('Encryption key not available. Ensure ENCRYPTION_KEY secret is properly configured.');
-    }
-
-    // Validate encryption key
-    if (!encryptionKeyValue || typeof encryptionKeyValue !== 'string') {
-      console.error('❌ [SlackAPI] Encryption key is invalid:', {
-        type: typeof encryptionKeyValue,
-        isNull: encryptionKeyValue === null,
-        isUndefined: encryptionKeyValue === undefined,
-        isEmpty: encryptionKeyValue === '',
-      });
-      throw new Error('Encryption key is not a valid string. Ensure ENCRYPTION_KEY secret is properly configured.');
-    }
-
-    if (encryptionKeyValue.length < 32) {
-      console.error('❌ [SlackAPI] Encryption key is too short:', {
-        length: encryptionKeyValue.length,
-        minLength: 32,
-      });
-      throw new Error('Encryption key is too short or invalid. ENCRYPTION_KEY must be at least 32 characters.');
-    }
-
-    // Ensure the key is exactly 32 bytes for AES-256-GCM
-    // Use SHA-256 hash to derive a consistent 32-byte key from the secret
-    // This handles cases where the secret might be a string of any length
-    let keyBuffer: Buffer;
-    try {
-      keyBuffer = crypto.createHash('sha256').update(encryptionKeyValue, 'utf8').digest();
-    } catch (hashError: any) {
-      console.error('❌ [SlackAPI] Failed to derive key from encryption key:', hashError);
-      throw new Error('Failed to derive encryption key. Encryption key may be corrupted.');
-    }
-    
-    if (!keyBuffer || keyBuffer.length !== 32) {
-      console.error('❌ [SlackAPI] Key derivation failed. Expected 32 bytes, got:', {
-        keyBufferLength: keyBuffer?.length || 0,
-        keyBufferType: typeof keyBuffer,
-        expectedLength: 32,
-      });
-      throw new Error('Failed to derive encryption key. Key must be derivable to 32 bytes.');
-    }
-    
-    // Check for default/insecure key
-    if (keyBuffer.toString('hex') === crypto.createHash('sha256').update('00000000000000000000000000000000', 'utf8').digest().toString('hex')) {
-      console.error('❌ [SlackAPI] ENCRYPTION_KEY is not configured! Using default key is insecure.');
-      throw new Error('Encryption key not configured. Please set ENCRYPTION_KEY secret.');
-    }
-    
-    // Try decrypting with the new method (SHA-256 derived key)
-    try {
-      if (!iv || iv.length !== 16) {
-        throw new Error(`Invalid IV length. Expected 16 bytes, got ${iv?.length || 0}`);
-      }
-      if (!authTag || authTag.length !== 16) {
-        throw new Error(`Invalid auth tag length. Expected 16 bytes, got ${authTag?.length || 0}`);
-      }
-      if (!keyBuffer || keyBuffer.length !== 32) {
-        throw new Error(`Invalid key length. Expected 32 bytes, got ${keyBuffer?.length || 0}`);
-      }
-
-      const decipher = crypto.createDecipheriv(algorithm, keyBuffer, iv);
-      decipher.setAuthTag(authTag);
-      
-      let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-      decrypted += decipher.final('utf8');
-      
-      if (!decrypted || decrypted.length === 0) {
-        throw new Error('Decrypted token is empty');
-      }
-      
-      return decrypted;
-    } catch (decryptError: any) {
-      // Check for authentication tag verification failure
-      const errorMessage = decryptError.message || String(decryptError);
-      const isAuthTagError = errorMessage.includes('Unsupported state') || 
-                             errorMessage.includes('unable to authenticate data') ||
-                             errorMessage.includes('auth tag') ||
-                             decryptError.code === 'ERR_CRYPTO_INVALID_TAG';
-      
-      if (isAuthTagError) {
-        console.error('❌ [SlackAPI] Authentication tag verification failed:', {
-          errorMessage,
-          errorCode: decryptError.code,
-          tokenLength: encryptedData?.length || 0,
-          tokenFormat: encryptedData ? (encryptedData.includes(':') ? 'has-colons' : 'no-colons') : 'null',
-        });
-        throw new Error('Token authentication failed. The Slack connection token may be corrupted or encrypted with a different key. Please re-connect your Slack workspace.');
-      }
-      
-      // Check if it's a "Invalid key length" error specifically
-      if (errorMessage.includes('Invalid key length')) {
-        console.error('❌ [SlackAPI] Invalid key length error:', {
-          keyBufferLength: keyBuffer?.length || 0,
-          keyBufferType: typeof keyBuffer,
-          ivLength: iv?.length || 0,
-          authTagLength: authTag?.length || 0,
-          encryptionKeyValueLength: encryptionKeyValue?.length || 0,
-        });
-        throw new Error('Invalid key length. ENCRYPTION_KEY secret may be misconfigured. Please verify the secret is set correctly.');
-      }
-
-      // If decryption fails, try backward compatibility with old method (direct Buffer conversion)
-      // This allows decrypting tokens that were encrypted before the fix
-      console.warn('⚠️ [SlackAPI] New key derivation failed, trying backward compatibility mode:', decryptError.message);
-      
-      try {
-        const oldKey = Buffer.from(encryptionKeyValue, 'utf8');
-        // Pad or truncate to exactly 32 bytes
-        const paddedKey = oldKey.length >= 32 
-          ? oldKey.slice(0, 32) 
-          : Buffer.concat([oldKey, Buffer.alloc(32 - oldKey.length, 0)]);
-        
-        if (paddedKey.length !== 32) {
-          throw new Error(`Backward compatibility key padding failed. Expected 32 bytes, got ${paddedKey.length}`);
-        }
-
-        const oldDecipher = crypto.createDecipheriv(algorithm, paddedKey, iv);
-        oldDecipher.setAuthTag(authTag);
-        
-        let decrypted = oldDecipher.update(encrypted, 'hex', 'utf8');
-        decrypted += oldDecipher.final('utf8');
-        
-        if (!decrypted || decrypted.length === 0) {
-          throw new Error('Decrypted token is empty');
-        }
-        
-        console.log('✅ [SlackAPI] Successfully decrypted using backward compatibility mode');
-        return decrypted;
-      } catch (oldDecryptError: any) {
-        // If both methods fail, throw the original error
-        console.error('❌ [SlackAPI] Both decryption methods failed:', {
-          newMethod: decryptError.message,
-          oldMethod: oldDecryptError.message,
-          newMethodStack: decryptError.stack,
-          oldMethodStack: oldDecryptError.stack,
-        });
-        
-        // Check for authentication tag error in old method too
-        const oldErrorMessage = oldDecryptError.message || String(oldDecryptError);
-        const isOldAuthTagError = oldErrorMessage.includes('Unsupported state') || 
-                                   oldErrorMessage.includes('unable to authenticate data') ||
-                                   oldErrorMessage.includes('auth tag') ||
-                                   oldDecryptError.code === 'ERR_CRYPTO_INVALID_TAG';
-        
-        const newErrorMessage = decryptError.message || String(decryptError);
-        const isNewAuthTagError = newErrorMessage.includes('Unsupported state') || 
-                                   newErrorMessage.includes('unable to authenticate data') ||
-                                   newErrorMessage.includes('auth tag') ||
-                                   decryptError.code === 'ERR_CRYPTO_INVALID_TAG';
-        
-        if (isOldAuthTagError || isNewAuthTagError) {
-          throw new Error('Token authentication failed. The Slack connection token may be corrupted or encrypted with a different key. Please re-connect your Slack workspace.');
-        }
-        
-        // Provide better error message for "Invalid key length"
-        if (decryptError.message && decryptError.message.includes('Invalid key length')) {
-          throw new Error('Invalid key length. ENCRYPTION_KEY secret may be misconfigured. Please verify the secret is set correctly and redeploy functions.');
-        }
-        
-        throw decryptError; // Throw the original error from new method
-      }
-    }
-  } catch (error) {
-    console.error('❌ [SlackAPI] Failed to decrypt token:', {
-      error: error instanceof Error ? error.message : String(error),
-      errorType: error instanceof Error ? error.constructor.name : typeof error,
-      tokenLength: encryptedData?.length || 0,
-      tokenFormat: encryptedData ? (encryptedData.includes(':') ? 'has-colons' : 'no-colons') : 'null',
-    });
-    throw error instanceof Error ? error : new Error('Failed to decrypt access token. Configuration error.');
-  }
-}
 
 /**
  * Get Slack Web Client for a connection
  */
 export async function getSlackClient(connectionId: string, organizationId: string): Promise<WebClient> {
   console.log(`🔍 [SlackAPI] Getting Slack client for connection: ${connectionId}, org: ${organizationId}`);
-  
+
   const connectionDoc = await db
     .collection('organizations')
     .doc(organizationId)
@@ -258,8 +42,8 @@ export async function getSlackClient(connectionId: string, organizationId: strin
   }
 
   if (!connectionData.accessToken) {
-    console.error('❌ [SlackAPI] Connection missing access token:', { 
-      connectionId, 
+    console.error('❌ [SlackAPI] Connection missing access token:', {
+      connectionId,
       organizationId,
       hasAccessToken: !!connectionData.accessToken,
       connectionDataKeys: Object.keys(connectionData),
@@ -268,13 +52,13 @@ export async function getSlackClient(connectionId: string, organizationId: strin
   }
 
   // Log token format for debugging (without exposing the actual token)
-  const tokenPreview = typeof connectionData.accessToken === 'string' 
-    ? `${connectionData.accessToken.substring(0, 20)}...` 
+  const tokenPreview = typeof connectionData.accessToken === 'string'
+    ? `${connectionData.accessToken.substring(0, 20)}...`
     : 'not-a-string';
-  const tokenParts = typeof connectionData.accessToken === 'string' 
-    ? connectionData.accessToken.split(':').length 
+  const tokenParts = typeof connectionData.accessToken === 'string'
+    ? connectionData.accessToken.split(':').length
     : 0;
-  
+
   console.log(`🔍 [SlackAPI] Token format check:`, {
     tokenType: typeof connectionData.accessToken,
     tokenLength: typeof connectionData.accessToken === 'string' ? connectionData.accessToken.length : 0,
@@ -285,7 +69,7 @@ export async function getSlackClient(connectionId: string, organizationId: strin
 
   try {
     const accessToken = decryptToken(connectionData.accessToken);
-    
+
     if (!accessToken || accessToken.trim().length === 0) {
       console.error('❌ [SlackAPI] Decrypted token is empty:', { connectionId, organizationId });
       throw new Error('Decrypted token is empty');
@@ -312,12 +96,12 @@ export async function getSlackClient(connectionId: string, organizationId: strin
       hasAccessToken: !!connectionData.accessToken,
       accessTokenType: typeof connectionData.accessToken,
     };
-    
+
     console.error('❌ [SlackAPI] Failed to get Slack client:', errorDetails);
-    
+
     // Provide more specific error messages based on the error type
-    if (errorMessage.includes('Token authentication failed') || 
-        errorMessage.includes('corrupted or encrypted with a different key')) {
+    if (errorMessage.includes('Token authentication failed') ||
+      errorMessage.includes('corrupted or encrypted with a different key')) {
       throw new HttpsError('failed-precondition', 'Slack connection token is invalid or corrupted. The token may have been encrypted with a different encryption key. Please disconnect and re-connect your Slack workspace to refresh the connection.');
     } else if (errorMessage.includes('Invalid key length')) {
       throw new HttpsError('failed-precondition', 'Slack integration encryption key is misconfigured. ENCRYPTION_KEY secret may be invalid or not set. Please verify the secret is configured correctly and redeploy functions.');
@@ -354,7 +138,7 @@ export const slackGetWorkspaceInfo = onCall(
       }
 
       const client = await getSlackClient(connectionId, organizationId);
-      
+
       const result = await client.team.info();
 
       if (!result.ok) {
@@ -383,25 +167,13 @@ export const slackGetWorkspaceInfo = onCall(
 export const slackListChannels = onCall(
   {
     region: 'us-central1',
-    cors: [
-      'http://localhost:4002',
-      'http://localhost:4003',
-      'http://localhost:4006',
-      'http://localhost:3000',
-      'http://localhost:3001',
-      'http://localhost:4010',
-      'http://localhost:5173',
-      'https://backbone-client.web.app',
-      'https://backbone-logic.web.app',
-      'https://backbone-callsheet-standalone.web.app',
-      'https://clipshowpro.web.app'
-    ],
+    cors: true, // Allow all origins for development, production origins handled by Firebase
     secrets: [encryptionKey],
   },
   async (request) => {
     let connectionId: string | undefined;
     let organizationId: string | undefined;
-    
+
     try {
       // Verify authentication
       if (!request.auth) {
@@ -413,7 +185,7 @@ export const slackListChannels = onCall(
         organizationId: string;
         types?: string; // Comma-separated: public_channel,private_channel,im,mpim
       };
-      
+
       connectionId = data.connectionId;
       organizationId = data.organizationId;
       const { types } = data;
@@ -423,9 +195,9 @@ export const slackListChannels = onCall(
       }
 
       const client = await getSlackClient(connectionId, organizationId);
-      
+
       const channelTypes = types || 'public_channel,private_channel,im'; // Include DMs by default
-      
+
       // Get channels
       const channelsResult = await client.conversations.list({
         types: channelTypes,
@@ -439,7 +211,7 @@ export const slackListChannels = onCall(
 
       // Start with channels from first call
       let allChannels = [...channelsResult.channels];
-      
+
       // Only fetch IM channels separately if they weren't already included in the first call
       // Check if 'im' is NOT in the channelTypes to avoid duplicate fetching
       if (!channelTypes.includes('im')) {
@@ -459,7 +231,7 @@ export const slackListChannels = onCall(
       // Store channel info in Firestore for quick access
       // Firestore batch limit is 500 operations, so we need to split into chunks
       const BATCH_SIZE = 500;
-      
+
       // Filter out channels without IDs before processing
       const validChannels = allChannels.filter(channel => {
         if (!channel.id) {
@@ -474,7 +246,7 @@ export const slackListChannels = onCall(
           const batch = db.batch();
           const chunk = validChannels.slice(i, i + BATCH_SIZE);
           let batchOperationCount = 0;
-          
+
           for (const channel of chunk) {
             const channelRef = db
               .collection('organizations')
@@ -507,7 +279,7 @@ export const slackListChannels = onCall(
             }
 
             batch.set(channelRef, channelData, { merge: true });
-            
+
             batchOperationCount++;
           }
 
@@ -536,17 +308,17 @@ export const slackListChannels = onCall(
 
     } catch (error) {
       console.error('❌ [SlackAPI] Error listing channels:', error);
-      
+
       // Provide more specific error messages
       if (error instanceof HttpsError) {
         // Re-throw HttpsErrors as-is (they already have proper error codes and messages)
         throw error;
       }
-      
+
       // Check if error is from getSlackClient or decryptToken
       const errorMessage = error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : undefined;
-      
+
       // Log the full error for debugging
       console.error('Error details:', {
         errorMessage,
@@ -555,10 +327,10 @@ export const slackListChannels = onCall(
         organizationId,
         errorType: error instanceof Error ? error.constructor.name : typeof error,
       });
-      
+
       // Provide more specific error messages based on error content
-      if (errorMessage.includes('Token authentication failed') || 
-          errorMessage.includes('corrupted or encrypted with a different key')) {
+      if (errorMessage.includes('Token authentication failed') ||
+        errorMessage.includes('corrupted or encrypted with a different key')) {
         throw new HttpsError('failed-precondition', 'Slack connection token is invalid or corrupted. Please disconnect and re-connect your Slack workspace to refresh the connection.');
       } else if (errorMessage.includes('Connection not found')) {
         throw new HttpsError('not-found', 'Slack connection not found. Please reconnect your Slack workspace.');
@@ -698,7 +470,7 @@ export const slackGetChannelHistory = onCall(
         if (!result.ok) {
           const errorCode = result.error || 'unknown_error';
           const errorMsg = result.response_metadata?.messages?.[0] || result.error || 'Unknown Slack API error';
-          
+
           // Handle specific Slack error codes
           if (errorCode === 'not_in_channel' || errorCode === 'channel_not_found') {
             // Log as warning for expected "not_in_channel" errors
@@ -790,16 +562,16 @@ export const slackGetChannelHistory = onCall(
         const conversationMessages = result.messages.filter((msg: any) => {
           // Include messages without a subtype (regular user messages)
           if (!msg.subtype) return true;
-          
+
           // Include bot messages and messages with text content
           if (msg.subtype === 'bot_message' && msg.text) return true;
-          
+
           // Include thread replies
           if (msg.subtype === 'thread_broadcast') return true;
-          
+
           // Exclude system messages
           if (systemMessageSubtypes.includes(msg.subtype)) return false;
-          
+
           // Include other subtypes if they have meaningful text content
           return msg.text && msg.text.trim().length > 0;
         });
@@ -822,14 +594,14 @@ export const slackGetChannelHistory = onCall(
         // Handle WebClient errors (e.g., network errors, rate limits, Slack API errors)
         const errorMessage = apiError?.message || String(apiError);
         const errorCode = apiError?.code || apiError?.data?.error || 'unknown_error';
-        
+
         // Extract error from Slack SDK error response if available
         // Slack SDK wraps errors like: "An API error occurred: not_in_channel (slack_webapi_platform_error)"
-        const slackErrorCode = apiError?.data?.error || 
-                               apiError?.data?.error_code ||
-                               (errorMessage.match(/not_in_channel|channel_not_found|not_authed|invalid_auth|token_revoked/i)?.[0]?.toLowerCase()) ||
-                               (errorMessage.match(/\((\w+)\)/)?.[1]); // Extract error code from parentheses
-        
+        const slackErrorCode = apiError?.data?.error ||
+          apiError?.data?.error_code ||
+          (errorMessage.match(/not_in_channel|channel_not_found|not_authed|invalid_auth|token_revoked/i)?.[0]?.toLowerCase()) ||
+          (errorMessage.match(/\((\w+)\)/)?.[1]); // Extract error code from parentheses
+
         console.error('❌ [SlackAPI] Error calling conversations.history:', {
           errorMessage,
           errorCode,
@@ -845,19 +617,19 @@ export const slackGetChannelHistory = onCall(
 
         // Handle specific Slack error codes from SDK exceptions
         // Check both the extracted code and the error message for common patterns
-        const hasNotInChannel = slackErrorCode === 'not_in_channel' || 
-                                errorMessage.includes('not_in_channel') ||
-                                errorMessage.includes('not in channel');
-        const hasChannelNotFound = slackErrorCode === 'channel_not_found' || 
-                                   errorMessage.includes('channel_not_found') ||
-                                   errorMessage.includes('channel not found');
-        const hasAuthError = slackErrorCode === 'not_authed' || 
-                            slackErrorCode === 'invalid_auth' ||
-                            errorMessage.includes('not_authed') || 
-                            errorMessage.includes('invalid_auth');
-        const hasTokenRevoked = slackErrorCode === 'token_revoked' || 
-                               errorMessage.includes('token_revoked');
-        
+        const hasNotInChannel = slackErrorCode === 'not_in_channel' ||
+          errorMessage.includes('not_in_channel') ||
+          errorMessage.includes('not in channel');
+        const hasChannelNotFound = slackErrorCode === 'channel_not_found' ||
+          errorMessage.includes('channel_not_found') ||
+          errorMessage.includes('channel not found');
+        const hasAuthError = slackErrorCode === 'not_authed' ||
+          slackErrorCode === 'invalid_auth' ||
+          errorMessage.includes('not_authed') ||
+          errorMessage.includes('invalid_auth');
+        const hasTokenRevoked = slackErrorCode === 'token_revoked' ||
+          errorMessage.includes('token_revoked');
+
         if (hasNotInChannel) {
           throw new HttpsError(
             'failed-precondition',
@@ -993,8 +765,8 @@ export const slackAddReaction = onCall(
       const client = await getSlackClient(connectionId, organizationId);
 
       // Slack API expects emoji name without colons (e.g., "+1" not ":+1:")
-      const emojiName = name.startsWith(':') && name.endsWith(':') 
-        ? name.slice(1, -1) 
+      const emojiName = name.startsWith(':') && name.endsWith(':')
+        ? name.slice(1, -1)
         : name;
 
       console.log(`[SlackAPI] Adding reaction: ${emojiName} to channel ${channelId}, timestamp ${timestamp}`);
@@ -1160,7 +932,7 @@ export const slackGetUsers = onCall(
       }
 
       const client = await getSlackClient(connectionId, organizationId);
-      
+
       const result = await client.users.list({
         limit: 1000,
       });
@@ -1590,8 +1362,8 @@ export const slackRemoveReaction = onCall(
       const client = await getSlackClient(connectionId, organizationId);
 
       // Slack API expects emoji name without colons (e.g., "+1" not ":+1:")
-      const emojiName = name.startsWith(':') && name.endsWith(':') 
-        ? name.slice(1, -1) 
+      const emojiName = name.startsWith(':') && name.endsWith(':')
+        ? name.slice(1, -1)
         : name;
 
       console.log(`[SlackAPI] Removing reaction: ${emojiName} from channel ${channelId}, timestamp ${timestamp}`);
@@ -1648,7 +1420,7 @@ export const slackSetTyping = onCall(
       // However, typing indicators are typically handled via RTM or Events API
       // For now, we'll skip this as it's not a standard API endpoint
       // The typing indicator should be handled via webhooks instead
-      
+
       return {
         success: true,
       };
@@ -1835,7 +1607,7 @@ export const slackScheduleMessage = onCall(
       }
 
       const db = admin.firestore();
-      
+
       // Store scheduled message in Firestore
       const scheduledMessageRef = db
         .collection('organizations')
@@ -1899,7 +1671,7 @@ export const slackSetReminder = onCall(
       }
 
       const db = admin.firestore();
-      
+
       // Store reminder in Firestore
       const reminderRef = db
         .collection('organizations')

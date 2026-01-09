@@ -20,178 +20,8 @@ import * as crypto from 'crypto';
 import { getSlackConfig } from './config';
 import { Timestamp } from 'firebase-admin/firestore';
 import { encryptionKey, getEncryptionKey } from './secrets';
+import { encryptToken, decryptToken } from '../integrations/unified-oauth/encryption';
 
-/**
- * Encrypt sensitive token data
- */
-function encryptToken(text: string): string {
-  const algorithm = 'aes-256-gcm';
-  
-  // Get and validate encryption key
-  let encryptionKeyValue: string;
-  try {
-    encryptionKeyValue = getEncryptionKey();
-  } catch (keyError) {
-    console.error('❌ [SlackOAuth] Failed to get encryption key:', keyError);
-    throw new Error('Encryption key not available. Ensure ENCRYPTION_KEY secret is properly configured.');
-  }
-
-  if (!encryptionKeyValue || typeof encryptionKeyValue !== 'string' || encryptionKeyValue.length < 32) {
-    console.error('❌ [SlackOAuth] Encryption key is invalid:', {
-      type: typeof encryptionKeyValue,
-      length: encryptionKeyValue?.length || 0,
-      minLength: 32,
-    });
-    throw new Error('Encryption key is invalid. ENCRYPTION_KEY must be at least 32 characters.');
-  }
-
-  // Ensure the key is exactly 32 bytes for AES-256-GCM
-  // Use SHA-256 hash to derive a consistent 32-byte key from the secret
-  let key: Buffer;
-  try {
-    key = crypto.createHash('sha256').update(encryptionKeyValue, 'utf8').digest();
-  } catch (hashError: any) {
-    console.error('❌ [SlackOAuth] Failed to derive key:', hashError);
-    throw new Error('Failed to derive encryption key. Encryption key may be corrupted.');
-  }
-
-  if (!key || key.length !== 32) {
-    throw new Error(`Invalid key length. Expected 32 bytes, got ${key?.length || 0}`);
-  }
-
-  const iv = crypto.randomBytes(16);
-  
-  try {
-    const cipher = crypto.createCipheriv(algorithm, key, iv);
-    let encrypted = cipher.update(text, 'utf8', 'hex');
-    encrypted += cipher.final('hex');
-    
-    const authTag = cipher.getAuthTag();
-    
-    // Return: iv:authTag:encrypted
-    return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
-  } catch (cipherError: any) {
-    if (cipherError.message && cipherError.message.includes('Invalid key length')) {
-      console.error('❌ [SlackOAuth] Invalid key length error during encryption:', {
-        keyLength: key?.length || 0,
-        encryptionKeyValueLength: encryptionKeyValue?.length || 0,
-      });
-      throw new Error('Invalid key length. ENCRYPTION_KEY secret may be misconfigured.');
-    }
-    throw cipherError;
-  }
-}
-
-/**
- * Decrypt sensitive token data
- */
-function decryptToken(encryptedData: string): string {
-  try {
-    if (!encryptedData || typeof encryptedData !== 'string') {
-      throw new Error('Invalid token format: token is missing or not a string');
-    }
-
-    const parts = encryptedData.split(':');
-    if (parts.length !== 3) {
-      throw new Error(`Invalid token format. Expected 3 parts separated by ':', got ${parts.length} parts.`);
-    }
-
-    const [ivHex, authTagHex, encrypted] = parts;
-    if (!ivHex || !authTagHex || !encrypted) {
-      throw new Error('Invalid token format: missing required components (IV, auth tag, or encrypted data)');
-    }
-
-    const iv = Buffer.from(ivHex, 'hex');
-    const authTag = Buffer.from(authTagHex, 'hex');
-    
-    if (iv.length !== 16) {
-      throw new Error(`Invalid IV length. Expected 16 bytes, got ${iv.length}`);
-    }
-    if (authTag.length !== 16) {
-      throw new Error(`Invalid auth tag length. Expected 16 bytes, got ${authTag.length}`);
-    }
-    
-    const algorithm = 'aes-256-gcm';
-    
-    // Get and validate encryption key
-    let encryptionKeyValue: string;
-    try {
-      encryptionKeyValue = getEncryptionKey();
-    } catch (keyError) {
-      console.error('❌ [SlackOAuth] Failed to get encryption key:', keyError);
-      throw new Error('Encryption key not available. Ensure ENCRYPTION_KEY secret is properly configured.');
-    }
-
-    if (!encryptionKeyValue || typeof encryptionKeyValue !== 'string' || encryptionKeyValue.length < 32) {
-      console.error('❌ [SlackOAuth] Encryption key is invalid:', {
-        type: typeof encryptionKeyValue,
-        length: encryptionKeyValue?.length || 0,
-        minLength: 32,
-      });
-      throw new Error('Encryption key is invalid. ENCRYPTION_KEY must be at least 32 characters.');
-    }
-
-    // Ensure the key is exactly 32 bytes for AES-256-GCM
-    // Use SHA-256 hash to derive a consistent 32-byte key from the secret
-    let key: Buffer;
-    try {
-      key = crypto.createHash('sha256').update(encryptionKeyValue, 'utf8').digest();
-    } catch (hashError: any) {
-      console.error('❌ [SlackOAuth] Failed to derive key:', hashError);
-      throw new Error('Failed to derive encryption key. Encryption key may be corrupted.');
-    }
-
-    if (!key || key.length !== 32) {
-      throw new Error(`Invalid key length. Expected 32 bytes, got ${key?.length || 0}`);
-    }
-    
-    try {
-      const decipher = crypto.createDecipheriv(algorithm, key, iv);
-      decipher.setAuthTag(authTag);
-      
-      let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-      decrypted += decipher.final('utf8');
-      
-      if (!decrypted || decrypted.length === 0) {
-        throw new Error('Decrypted token is empty');
-      }
-      
-      return decrypted;
-    } catch (decryptError: any) {
-      // Check for authentication tag verification failure
-      const errorMessage = decryptError.message || String(decryptError);
-      const isAuthTagError = errorMessage.includes('Unsupported state') || 
-                             errorMessage.includes('unable to authenticate data') ||
-                             errorMessage.includes('auth tag') ||
-                             decryptError.code === 'ERR_CRYPTO_INVALID_TAG';
-      
-      if (isAuthTagError) {
-        console.error('❌ [SlackOAuth] Authentication tag verification failed:', {
-          errorMessage,
-          errorCode: decryptError.code,
-        });
-        throw new Error('Token authentication failed. The Slack connection token may be corrupted or encrypted with a different key. Please re-connect your Slack workspace.');
-      }
-      
-      if (decryptError.message && decryptError.message.includes('Invalid key length')) {
-        console.error('❌ [SlackOAuth] Invalid key length error during decryption:', {
-          keyLength: key?.length || 0,
-          ivLength: iv?.length || 0,
-          authTagLength: authTag?.length || 0,
-          encryptionKeyValueLength: encryptionKeyValue?.length || 0,
-        });
-        throw new Error('Invalid key length. ENCRYPTION_KEY secret may be misconfigured. Please verify the secret is set correctly.');
-      }
-      throw decryptError;
-    }
-  } catch (error) {
-    console.error('❌ [SlackOAuth] Failed to decrypt token:', {
-      error: error instanceof Error ? error.message : String(error),
-      errorType: error instanceof Error ? error.constructor.name : typeof error,
-    });
-    throw error instanceof Error ? error : new Error('Failed to decrypt access token. Configuration error.');
-  }
-}
 
 /**
  * Initiate Slack OAuth flow
@@ -348,7 +178,7 @@ export const slackOAuthRefresh = onCall(
 
       // Update connection with new tokens
       const encryptedAccessToken = encryptToken(tokenData.access_token);
-      
+
       await connectionRef.update({
         accessToken: encryptedAccessToken,
         lastSyncedAt: new Date(),
@@ -405,15 +235,15 @@ export const slackRevokeAccess = onCall(
       // Try to decrypt access token - if it fails, we'll still mark as inactive
       let accessToken: string | null = null;
       let tokenDecryptionFailed = false;
-      
+
       try {
         accessToken = decryptToken(connectionData.accessToken);
       } catch (decryptError: any) {
         const errorMessage = decryptError.message || String(decryptError);
         const isTokenCorrupted = errorMessage.includes('Token authentication failed') ||
-                                 errorMessage.includes('corrupted or encrypted with a different key') ||
-                                 errorMessage.includes('Invalid token format');
-        
+          errorMessage.includes('corrupted or encrypted with a different key') ||
+          errorMessage.includes('Invalid token format');
+
         if (isTokenCorrupted) {
           console.warn('⚠️ [SlackOAuth] Cannot decrypt token for revocation - token is corrupted. Marking connection as inactive anyway.');
           tokenDecryptionFailed = true;
@@ -432,7 +262,7 @@ export const slackRevokeAccess = onCall(
               'Authorization': `Bearer ${accessToken}`,
             },
           });
-          
+
           const revokeData = await revokeResponse.json() as { ok?: boolean; error?: string };
           if (!revokeData.ok) {
             console.warn('⚠️ [SlackOAuth] Slack API returned error during revocation:', revokeData.error);
@@ -454,7 +284,7 @@ export const slackRevokeAccess = onCall(
       return {
         success: true,
         tokenWasCorrupted: tokenDecryptionFailed,
-        message: tokenDecryptionFailed 
+        message: tokenDecryptionFailed
           ? 'Connection disconnected. The token was corrupted and could not be revoked with Slack, but the connection has been marked as inactive.'
           : 'Connection successfully revoked and disconnected.',
       };
@@ -482,7 +312,7 @@ export const slackOAuthCallback = onRequest(
 
       // Get redirect URL from state for error redirects
       let errorRedirectUrl = 'https://backbone-client.web.app/messages?slack_error=authorization_failed&tab=slack';
-      
+
       // Handle OAuth error from Slack
       if (error) {
         console.error('❌ [SlackOAuth] OAuth error from Slack:', error);
@@ -547,12 +377,12 @@ export const slackOAuthCallback = onRequest(
 
       const stateData = stateDoc.docs[0].data();
       console.log(`🔗 [SlackOAuth] Retrieved state data, redirectUrl: ${stateData.redirectUrl || 'not found'}`);
-      
+
       // If redirectUrl is missing from old state document, try to infer from referer or use default
       if (!stateData.redirectUrl) {
         const referer = req.headers.referer || req.headers.origin || '';
         console.log(`⚠️ [SlackOAuth] redirectUrl missing from state, referer: ${referer}`);
-        
+
         // Try to extract origin from referer
         if (referer) {
           try {
@@ -563,7 +393,7 @@ export const slackOAuthCallback = onRequest(
             console.warn('⚠️ [SlackOAuth] Could not parse referer URL:', e);
           }
         }
-        
+
         // Final fallback - use backbone-client as default since both apps can use any org
         // The client should always provide redirectUrl, so this should rarely be needed
         if (!stateData.redirectUrl) {
@@ -574,7 +404,7 @@ export const slackOAuthCallback = onRequest(
           console.log(`⚠️ [SlackOAuth] This should not happen - redirectUrl should be provided by client`);
         }
       }
-      
+
       // Exchange code for token (call internal function logic)
       const redirectUrl = await completeOAuthCallback(
         code as string,
@@ -711,7 +541,7 @@ async function completeOAuthCallback(code: string, state: string, stateData: any
     try {
       const { WebClient } = await import('@slack/web-api');
       const slackClient = new WebClient(access_token);
-      
+
       // Get channels from Slack
       const channelsResult = await slackClient.conversations.list({
         types: 'public_channel,private_channel',
@@ -722,7 +552,7 @@ async function completeOAuthCallback(code: string, state: string, stateData: any
       if (channelsResult.ok && channelsResult.channels) {
         // Store channels in Firestore
         const batch = db.batch();
-        
+
         for (const channel of channelsResult.channels) {
           const channelRef = db
             .collection('organizations')

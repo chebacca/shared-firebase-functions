@@ -19,7 +19,7 @@ const CORS_ORIGINS = [
   'https://clipshowpro.web.app'
 ];
 
-import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
 import * as functions from 'firebase-functions'; // Import v1 for config() access
 import { db, getUserOrganizationId, validateOrganizationAccess, isAdminUser } from '../shared/utils';
 import { getGoogleConfig } from '../google/config';
@@ -47,9 +47,58 @@ function getFunctionsConfig(): any {
  * Decrypt token (reuse from google/oauth pattern)
  */
 function decryptToken(encryptedData: string): string {
-  const [ivHex, authTagHex, encrypted] = encryptedData.split(':');
-  const iv = Buffer.from(ivHex, 'hex');
-  const authTag = Buffer.from(authTagHex, 'hex');
+  // Validate input
+  if (!encryptedData || typeof encryptedData !== 'string') {
+    throw new Error('Invalid encrypted data: must be a non-empty string');
+  }
+
+  // Check if data has the correct format (iv:authTag:encrypted)
+  if (!encryptedData.includes(':')) {
+    throw new Error(`Invalid encrypted data format: expected 'iv:authTag:encrypted', got data without ':' delimiter`);
+  }
+
+  const parts = encryptedData.split(':');
+  if (parts.length !== 3) {
+    throw new Error(`Invalid encrypted data format: expected 3 parts separated by ':', got ${parts.length} parts`);
+  }
+
+  const [ivHex, authTagHex, encrypted] = parts;
+  
+  // Validate each part exists and is not empty
+  if (!ivHex || typeof ivHex !== 'string' || ivHex.trim() === '') {
+    throw new Error('Invalid encrypted data format: IV is missing or empty');
+  }
+  if (!authTagHex || typeof authTagHex !== 'string' || authTagHex.trim() === '') {
+    throw new Error('Invalid encrypted data format: auth tag is missing or empty');
+  }
+  if (!encrypted || typeof encrypted !== 'string' || encrypted.trim() === '') {
+    throw new Error('Invalid encrypted data format: encrypted data is missing or empty');
+  }
+
+  // Validate hex format before creating buffers
+  if (!/^[0-9a-fA-F]+$/.test(ivHex)) {
+    throw new Error('Invalid encrypted data format: IV is not valid hex');
+  }
+  if (!/^[0-9a-fA-F]+$/.test(authTagHex)) {
+    throw new Error('Invalid encrypted data format: auth tag is not valid hex');
+  }
+
+  let iv: Buffer;
+  let authTag: Buffer;
+  try {
+    iv = Buffer.from(ivHex, 'hex');
+    authTag = Buffer.from(authTagHex, 'hex');
+  } catch (bufferError: any) {
+    throw new Error(`Failed to create buffer from hex data: ${bufferError.message}`);
+  }
+
+  // Validate buffer lengths
+  if (iv.length !== 16) {
+    throw new Error(`Invalid IV length: expected 16 bytes, got ${iv.length}`);
+  }
+  if (authTag.length !== 16) {
+    throw new Error(`Invalid auth tag length: expected 16 bytes, got ${authTag.length}`);
+  }
 
   const algorithm = 'aes-256-gcm';
   
@@ -398,7 +447,17 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
         const settingsData = integrationSettingsDoc.data()!;
         if (settingsData.clientId === connection.clientId && settingsData.isConfigured) {
           console.log(`✅ [GoogleMeet] Found matching credentials in integrationSettings/google`);
-          const decryptedSecret = decryptToken(settingsData.clientSecret);
+          let decryptedSecret: string;
+          if (settingsData.clientSecret && typeof settingsData.clientSecret === 'string' && settingsData.clientSecret.includes(':')) {
+            try {
+              decryptedSecret = decryptToken(settingsData.clientSecret);
+            } catch (error: any) {
+              console.error('❌ [GoogleMeet] Failed to decrypt client secret:', error.message);
+              decryptedSecret = settingsData.clientSecret; // Use as plaintext if decryption fails
+            }
+          } else {
+            decryptedSecret = settingsData.clientSecret || '';
+          }
           config = {
             clientId: settingsData.clientId,
             clientSecret: decryptedSecret,
@@ -496,15 +555,35 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
   }
 
   // Decrypt tokens when stored in googleConnections (colon-delimited) or use plaintext from cloudIntegrations fallback
-  let accessToken =
-    typeof connection.accessToken === 'string' && connection.accessToken.includes(':')
-      ? decryptToken(connection.accessToken)
-      : connection.accessToken;
+  let accessToken: string | null = null;
+  if (connection.accessToken) {
+    if (typeof connection.accessToken === 'string' && connection.accessToken.includes(':')) {
+      try {
+        accessToken = decryptToken(connection.accessToken);
+      } catch (error: any) {
+        console.error('❌ [GoogleMeet] Failed to decrypt access token:', error.message);
+        // If decryption fails, try using as plaintext (might be unencrypted)
+        accessToken = connection.accessToken;
+      }
+    } else {
+      accessToken = connection.accessToken;
+    }
+  }
 
-  let refreshToken =
-    connection.refreshToken && typeof connection.refreshToken === 'string' && connection.refreshToken.includes(':')
-      ? decryptToken(connection.refreshToken)
-      : connection.refreshToken || null;
+  let refreshToken: string | null = null;
+  if (connection.refreshToken) {
+    if (typeof connection.refreshToken === 'string' && connection.refreshToken.includes(':')) {
+      try {
+        refreshToken = decryptToken(connection.refreshToken);
+      } catch (error: any) {
+        console.error('❌ [GoogleMeet] Failed to decrypt refresh token:', error.message);
+        // If decryption fails, try using as plaintext (might be unencrypted)
+        refreshToken = connection.refreshToken;
+      }
+    } else {
+      refreshToken = connection.refreshToken;
+    }
+  }
 
   // Validate we have at least an access token OR a refresh token
   // If we only have a refresh token, we'll refresh it to get a new access token
@@ -862,6 +941,16 @@ export const scheduleMeetMeeting = onCall(
       });
 
       // Create calendar event with Google Meet conference
+      // Generate a unique request ID for the conference
+      let requestId: string;
+      try {
+        requestId = crypto.randomBytes(16).toString('hex');
+      } catch (cryptoError: any) {
+        console.error('❌ [GoogleMeet] Error generating request ID:', cryptoError);
+        // Fallback to timestamp-based ID if crypto fails
+        requestId = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+      }
+
       const event = {
         summary: title,
         description: description || '',
@@ -875,7 +964,7 @@ export const scheduleMeetMeeting = onCall(
         },
         conferenceData: {
           createRequest: {
-            requestId: crypto.randomBytes(16).toString('hex'),
+            requestId: requestId,
             conferenceSolutionKey: {
               type: 'hangoutsMeet',
             },
@@ -1187,3 +1276,289 @@ export const getMeetMeetingDetails = onCall(
   }
 );
 
+/**
+ * CORS helper function for HTTP functions
+ */
+function setCorsHeaders(res: any, origin?: string): void {
+  // Always allow localhost origins
+  if (origin && origin.includes('localhost')) {
+    res.set('Access-Control-Allow-Origin', origin);
+  } else if (origin && CORS_ORIGINS.includes(origin)) {
+    res.set('Access-Control-Allow-Origin', origin);
+  } else {
+    res.set('Access-Control-Allow-Origin', '*');
+  }
+
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.set('Access-Control-Allow-Credentials', 'true');
+}
+
+/**
+ * HTTP version of scheduleMeetMeeting with explicit CORS handling
+ * This is a fallback for when the callable function has CORS issues
+ */
+export const scheduleMeetMeetingHttp = onRequest(
+  {
+    region: 'us-central1',
+    secrets: [encryptionKey],
+  },
+  async (req, res) => {
+    // Set CORS headers first
+    setCorsHeaders(res, req.headers.origin);
+
+    // Handle preflight requests
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+
+    // Only allow POST requests
+    if (req.method !== 'POST') {
+      res.status(405).json({ success: false, error: 'Method not allowed' });
+      return;
+    }
+
+    try {
+      // Verify authentication
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        res.status(401).json({
+          success: false,
+          error: 'Unauthorized: Missing or invalid authorization header',
+        });
+        return;
+      }
+
+      const token = authHeader.split('Bearer ')[1];
+      if (!token) {
+        res.status(401).json({
+          success: false,
+          error: 'Unauthorized: Missing token',
+        });
+        return;
+      }
+
+      // Verify the token and get user info
+      let decodedToken;
+      try {
+        decodedToken = await admin.auth().verifyIdToken(token);
+      } catch (authError: any) {
+        console.error('❌ [scheduleMeetMeetingHttp] Auth verification failed:', authError);
+        res.status(401).json({
+          success: false,
+          error: 'Unauthorized: Invalid token',
+        });
+        return;
+      }
+
+      const { organizationId, title, startTime, endTime, participants, description } = req.body as {
+        organizationId: string;
+        title: string;
+        startTime: string;
+        endTime?: string;
+        participants?: string[];
+        description?: string;
+      };
+
+      if (!organizationId || !title || !startTime) {
+        res.status(400).json({
+          success: false,
+          error: 'Organization ID, title, and start time are required',
+        });
+        return;
+      }
+
+      const userId = decodedToken.uid;
+      const userEmail = decodedToken.email || '';
+
+      // Verify user belongs to the organization
+      const userOrganizationId = await getUserOrganizationId(userId, userEmail);
+      if (!userOrganizationId) {
+        res.status(403).json({
+          success: false,
+          error: 'User is not associated with any organization',
+        });
+        return;
+      }
+
+      // Verify user belongs to the requested organization
+      if (userOrganizationId !== organizationId) {
+        // Check if user is a member of the organization via teamMembers collection
+        const teamMemberQuery = await db
+          .collection('teamMembers')
+          .where('userId', '==', userId)
+          .where('organizationId', '==', organizationId)
+          .limit(1)
+          .get();
+
+        if (teamMemberQuery.empty) {
+          // Also check users collection for the organization
+          const userDoc = await db.collection('users').doc(userId).get();
+          const userData = userDoc.data();
+
+          if (userData?.organizationId !== organizationId) {
+            res.status(403).json({
+              success: false,
+              error: 'User does not have access to this organization',
+            });
+            return;
+          }
+        }
+      }
+
+      // Get authenticated client (will throw if connection not found or invalid)
+      const oauth2Client = await getAuthenticatedGoogleClient(organizationId);
+      
+      // Validate OAuth2 client was created successfully
+      if (!oauth2Client) {
+        res.status(500).json({
+          success: false,
+          error: 'Failed to create OAuth2 client',
+        });
+        return;
+      }
+      
+      const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+
+      // Calculate end time if not provided (default 1 hour)
+      const endTimeValue = endTime || new Date(new Date(startTime).getTime() + 60 * 60 * 1000).toISOString();
+
+      // Validate and filter participants - only include valid email addresses
+      const validParticipants = (participants || [])
+        .filter((email): email is string => {
+          // Ensure email is a non-empty string
+          if (!email || typeof email !== 'string') {
+            console.warn(`⚠️ [GoogleMeet] Invalid participant email (skipping):`, email);
+            return false;
+          }
+          // Basic email validation
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          const isValid = emailRegex.test(email.trim());
+          if (!isValid) {
+            console.warn(`⚠️ [GoogleMeet] Invalid email format (skipping):`, email);
+          }
+          return isValid;
+        })
+        .map(email => email.trim());
+
+      console.log(`📧 [GoogleMeet HTTP] Participant validation:`, {
+        originalCount: participants?.length || 0,
+        validCount: validParticipants.length,
+        validEmails: validParticipants,
+      });
+
+      // Generate a unique request ID for the conference
+      let requestId: string;
+      try {
+        requestId = crypto.randomBytes(16).toString('hex');
+      } catch (cryptoError: any) {
+        console.error('❌ [GoogleMeet HTTP] Error generating request ID:', cryptoError);
+        // Fallback to timestamp-based ID if crypto fails
+        requestId = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+      }
+
+      // Create calendar event with Google Meet conference
+      const event = {
+        summary: title,
+        description: description || '',
+        start: {
+          dateTime: startTime,
+          timeZone: 'UTC',
+        },
+        end: {
+          dateTime: endTimeValue,
+          timeZone: 'UTC',
+        },
+        conferenceData: {
+          createRequest: {
+            requestId: requestId,
+            conferenceSolutionKey: {
+              type: 'hangoutsMeet',
+            },
+          },
+        },
+        attendees: validParticipants.map(email => ({ email })),
+      };
+
+      // Validate event object before sending to Google Calendar API
+      if (!event.summary || !event.start?.dateTime || !event.end?.dateTime) {
+        console.error('❌ [GoogleMeet HTTP] Invalid event object:', {
+          hasSummary: !!event.summary,
+          hasStart: !!event.start?.dateTime,
+          hasEnd: !!event.end?.dateTime,
+          event: JSON.stringify(event, null, 2),
+        });
+        res.status(400).json({
+          success: false,
+          error: 'Invalid event data: missing required fields',
+        });
+        return;
+      }
+
+      console.log(`📅 [GoogleMeet HTTP] Creating calendar event:`, {
+        title: event.summary,
+        start: event.start.dateTime,
+        end: event.end.dateTime,
+        attendeeCount: event.attendees?.length || 0,
+        hasConferenceData: !!event.conferenceData,
+      });
+
+      const createdEvent = await calendar.events.insert({
+        calendarId: 'primary',
+        conferenceDataVersion: 1,
+        requestBody: event,
+      });
+
+      const meetingData = createdEvent.data;
+      const meetLink = meetingData.conferenceData?.entryPoints?.[0]?.uri || meetingData.hangoutLink;
+
+      if (!meetLink) {
+        res.status(500).json({
+          success: false,
+          error: 'Failed to create meeting link',
+        });
+        return;
+      }
+
+      // Save meeting to Firestore
+      const meetingRef = await db
+        .collection('organizations')
+        .doc(organizationId)
+        .collection('videoMeetings')
+        .add({
+          provider: 'google-meet',
+          title: meetingData.summary || title,
+          meetingUrl: meetLink,
+          joinUrl: meetLink,
+          startTime: Timestamp.fromDate(new Date(startTime)),
+          endTime: Timestamp.fromDate(new Date(endTimeValue)),
+          participants: participants || [],
+          calendarEventId: meetingData.id,
+          createdBy: userId,
+          createdAt: Timestamp.now(),
+          status: 'scheduled',
+          organizationId: organizationId,
+        });
+
+      res.status(200).json({
+        success: true,
+        meeting: {
+          id: meetingRef.id,
+          title: meetingData.summary,
+          meetingUrl: meetLink,
+          joinUrl: meetLink,
+          calendarEventId: meetingData.id,
+          startTime: meetingData.start?.dateTime,
+          endTime: meetingData.end?.dateTime,
+        },
+      });
+    } catch (error: any) {
+      console.error('❌ [GoogleMeet HTTP] Error scheduling meeting:', error);
+      res.status(500).json({
+        success: false,
+        error: `Failed to schedule Google Meet: ${error.message || 'Unknown error'}`,
+      });
+    }
+  }
+);

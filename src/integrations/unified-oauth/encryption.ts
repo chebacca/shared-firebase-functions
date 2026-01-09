@@ -31,7 +31,7 @@ export function getEncryptionKey(): string {
  */
 export function encryptToken(text: string): string {
   const algorithm = 'aes-256-gcm';
-  
+
   // Get and validate encryption key
   let encryptionKeyValue: string;
   try {
@@ -64,14 +64,16 @@ export function encryptToken(text: string): string {
   }
 
   const iv = crypto.randomBytes(16);
-  
+
   try {
     const cipher = crypto.createCipheriv(algorithm, key, iv);
     let encrypted = cipher.update(text, 'utf8', 'hex');
     encrypted += cipher.final('hex');
-    
+
     const authTag = cipher.getAuthTag();
-    
+
+    console.log(`🔐 [OAuthEncryption] Encryption successful. Key hash: ${key.toString('hex').substring(0, 6)}`);
+
     // Return: iv:authTag:encrypted
     return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
   } catch (cipherError: any) {
@@ -107,7 +109,7 @@ export function decryptToken(encryptedData: string): string {
 
     const iv = Buffer.from(ivHex, 'hex');
     const authTag = Buffer.from(authTagHex, 'hex');
-    
+
     if (iv.length !== 16) {
       throw new Error(`Invalid IV length. Expected 16 bytes, got ${iv.length}`);
     }
@@ -159,6 +161,7 @@ export function decryptToken(encryptedData: string): string {
         throw new Error('Decrypted token is empty');
       }
 
+      console.log(`✅ [OAuthEncryption] Decryption successful. Key hash: ${key.toString('hex').substring(0, 6)}`);
       return decrypted;
     } catch (decryptError: any) {
       // Check for authentication tag verification failure
@@ -169,11 +172,13 @@ export function decryptToken(encryptedData: string): string {
         decryptError.code === 'ERR_CRYPTO_INVALID_TAG';
 
       if (isAuthTagError) {
+        const keyHash = key.toString('hex').substring(0, 6);
         console.error('❌ [OAuthEncryption] Authentication tag verification failed:', {
           errorMessage,
           errorCode: decryptError.code,
+          keyHash
         });
-        throw new Error('Token authentication failed. The connection token may be corrupted or encrypted with a different key. Please re-connect your account.');
+        throw new Error(`Token authentication failed (KeyHash: ${keyHash}). The connection token may be corrupted or encrypted with a different key. Please re-connect your account.`);
       }
 
       if (decryptError.message && decryptError.message.includes('Invalid key length')) {

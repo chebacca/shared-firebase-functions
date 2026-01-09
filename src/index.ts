@@ -127,6 +127,9 @@ export * from './webex';
 export * from './videoConferencing';
 export * from './location';
 
+// Export Production Workflow System functions
+export * from './workflow';
+
 // Export App Role Definition Service
 export { appRoleDefinitionService, AppRoleDefinitionService } from './roles/AppRoleDefinitionService';
 
@@ -158,6 +161,9 @@ export {
   verifyIntegrationAccess,
   updateOAuthAccountInfo
 } from './integrations/unified-oauth/functions';
+
+// Export OAuth token save function
+export { saveOAuthTokens } from './integrations/unified-oauth/saveOAuthTokens';
 
 // Export Scheduled OAuth Functions
 export {

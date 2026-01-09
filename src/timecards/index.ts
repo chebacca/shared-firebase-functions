@@ -39,3 +39,9 @@ export { bulkApproveTimecards } from './bulkApproveTimecards';
 // Export clock in/out functions
 export { clockIn } from './clockIn';
 export { clockOut } from './clockOut';
+
+// Export labor functions
+export { getLaborRules, getLaborRulesHttp } from './labor/getLaborRules';
+
+// Export user functions
+export { getExtendedUsers, getExtendedUsersHttp } from './users/getExtendedUsers';

@@ -196,17 +196,20 @@ export class GoogleProvider implements OAuthProvider {
             clientSecret: clientSecret,
             additionalParams: {
               redirectUri: settingsData.redirectUri || 'https://us-central1-backbone-logic.cloudfunctions.net/handleOAuthCallback',
-              scopes: settingsData.scopes || [
-                'https://www.googleapis.com/auth/drive.readonly',
-                'https://www.googleapis.com/auth/drive.file',
-                'https://www.googleapis.com/auth/documents',
-                'https://www.googleapis.com/auth/userinfo.email',
-                'https://www.googleapis.com/auth/userinfo.profile',
-                'https://www.googleapis.com/auth/calendar',
-                'https://www.googleapis.com/auth/calendar.events',
-                'https://www.googleapis.com/auth/meetings.space.created',
-                'https://www.googleapis.com/auth/meetings.space.readonly'
-              ]
+              // 🔥 Use requiredScopes (includes calendar/meet) or fallback to full list
+              scopes: settingsData.scopes || this.requiredScopes.length > 0 
+                ? this.requiredScopes 
+                : [
+                    'https://www.googleapis.com/auth/drive.readonly',
+                    'https://www.googleapis.com/auth/drive.file',
+                    'https://www.googleapis.com/auth/documents',
+                    'https://www.googleapis.com/auth/userinfo.email',
+                    'https://www.googleapis.com/auth/userinfo.profile',
+                    'https://www.googleapis.com/auth/calendar',
+                    'https://www.googleapis.com/auth/calendar.events',
+                    'https://www.googleapis.com/auth/meetings.space.created',
+                    'https://www.googleapis.com/auth/meetings.space.readonly'
+                  ]
             }
           };
         }
@@ -243,17 +246,20 @@ export class GoogleProvider implements OAuthProvider {
             clientSecret: clientSecret,
             additionalParams: {
               redirectUri: data.settings?.redirectUri || 'https://us-central1-backbone-logic.cloudfunctions.net/handleOAuthCallback',
-              scopes: [
-                'https://www.googleapis.com/auth/drive.readonly',
-                'https://www.googleapis.com/auth/drive.file',
-                'https://www.googleapis.com/auth/documents',
-                'https://www.googleapis.com/auth/userinfo.email',
-                'https://www.googleapis.com/auth/userinfo.profile',
-                'https://www.googleapis.com/auth/calendar',
-                'https://www.googleapis.com/auth/calendar.events',
-                'https://www.googleapis.com/auth/meetings.space.created',
-                'https://www.googleapis.com/auth/meetings.space.readonly'
-              ]
+              // 🔥 Use requiredScopes (includes calendar/meet) - ensures all features are available
+              scopes: this.requiredScopes.length > 0 
+                ? this.requiredScopes 
+                : [
+                    'https://www.googleapis.com/auth/drive.readonly',
+                    'https://www.googleapis.com/auth/drive.file',
+                    'https://www.googleapis.com/auth/documents',
+                    'https://www.googleapis.com/auth/userinfo.email',
+                    'https://www.googleapis.com/auth/userinfo.profile',
+                    'https://www.googleapis.com/auth/calendar',
+                    'https://www.googleapis.com/auth/calendar.events',
+                    'https://www.googleapis.com/auth/meetings.space.created',
+                    'https://www.googleapis.com/auth/meetings.space.readonly'
+                  ]
             }
           };
         }
@@ -289,7 +295,9 @@ export class GoogleProvider implements OAuthProvider {
       clientId: finalClientId,
       clientSecret: finalClientSecret,
       additionalParams: {
-        redirectUri: 'https://us-central1-backbone-logic.cloudfunctions.net/handleOAuthCallback'
+        redirectUri: 'https://us-central1-backbone-logic.cloudfunctions.net/handleOAuthCallback',
+        // 🔥 Include requiredScopes for environment variable config path
+        scopes: this.requiredScopes
       }
     };
   }

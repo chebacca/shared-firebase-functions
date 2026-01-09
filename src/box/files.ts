@@ -803,6 +803,14 @@ export const getBoxAccessToken = onCall(
                 throw new HttpsError('not-found', errorMessage);
             }
             
+            // For decryption errors, use failed-precondition (indicates user action needed)
+            if (errorMessage.includes('Failed to decrypt') || 
+                errorMessage.includes('decrypt') ||
+                errorMessage.includes('corrupted') ||
+                errorMessage.includes('encrypted with a different key')) {
+                throw new HttpsError('failed-precondition', errorMessage);
+            }
+            
             // For other errors, use internal but preserve the message
             throw new HttpsError('internal', errorMessage);
         }

@@ -206,12 +206,14 @@ export const saveWebexConfig = onCall(
 export const getWebexConfigStatus = onCall(
   { 
     region: 'us-central1',
+    invoker: 'public',  // Required for CORS preflight requests
     cors: true,
     secrets: [encryptionKey],
   },
   async (request) => {
     const { auth, data } = request;
 
+    // Verify authentication (even though invoker is public, we still require auth for the actual request)
     if (!auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
     }

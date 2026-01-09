@@ -304,21 +304,63 @@ export const refreshOAuthToken = onCall(
     secrets: [encryptionKey],
   },
   async (request) => {
-    const { provider, organizationId } = request.data;
-    
-    // Validate
-    if (!providerRegistry.hasProvider(provider)) {
-      throw new HttpsError('invalid-argument', `Unknown provider: ${provider}`);
+    try {
+      const { provider, organizationId } = request.data;
+      
+      // Validate input
+      if (!provider || !organizationId) {
+        throw new HttpsError('invalid-argument', 'Missing required parameters: provider and organizationId');
+      }
+      
+      // Validate provider exists
+      if (!providerRegistry.hasProvider(provider)) {
+        throw new HttpsError('invalid-argument', `Unknown provider: ${provider}`);
+      }
+      
+      // Validate authentication
+      if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'User must be authenticated');
+      }
+      
+      if (!request.auth.token.organizationId || request.auth.token.organizationId !== organizationId) {
+        throw new HttpsError('permission-denied', 'Not authorized for this organization');
+      }
+      
+      // Refresh connection
+      await oauthService.refreshConnection(organizationId, provider);
+      
+      return { success: true };
+    } catch (error: any) {
+      // If it's already an HttpsError, re-throw it
+      if (error instanceof HttpsError) {
+        throw error;
+      }
+      
+      // Log the error for debugging
+      console.error(`[refreshOAuthToken] Error refreshing token for ${request.data?.provider}:`, error);
+      
+      // Convert common errors to appropriate HttpsErrors
+      const errorMessage = error?.message || 'Unknown error occurred';
+      
+      if (errorMessage.includes('Connection not found') || errorMessage.includes('not found')) {
+        throw new HttpsError('not-found', 'OAuth connection not found. Please reconnect the integration.');
+      }
+      
+      if (errorMessage.includes('No refresh token') || errorMessage.includes('refresh token')) {
+        throw new HttpsError('failed-precondition', 'No refresh token available. Please reconnect the integration.');
+      }
+      
+      if (errorMessage.includes('Invalid provider')) {
+        throw new HttpsError('invalid-argument', `Invalid provider configuration: ${request.data?.provider}`);
+      }
+      
+      if (errorMessage.includes('invalid_grant') || errorMessage.includes('Token has been expired or revoked')) {
+        throw new HttpsError('failed-precondition', 'Refresh token is invalid or expired. Please reconnect the integration.');
+      }
+      
+      // For any other error, return a generic internal error
+      throw new HttpsError('internal', `Failed to refresh OAuth token: ${errorMessage}`);
     }
-    
-    if (!request.auth || request.auth.token.organizationId !== organizationId) {
-      throw new HttpsError('permission-denied', 'Not authorized');
-    }
-    
-    // Refresh
-    await oauthService.refreshConnection(organizationId, provider);
-    
-    return { success: true };
   }
 );
 
@@ -504,18 +546,52 @@ export const disconnectIntegration = onCall(
       throw new HttpsError('unauthenticated', 'User must be authenticated');
     }
     
-    if (request.auth.token.organizationId !== organizationId) {
+    // Allow users to disconnect if they belong to the organization
+    // Organization-level integrations can be disconnected by any org member
+    const userOrgId = request.auth.token.organizationId;
+    if (userOrgId !== organizationId) {
       throw new HttpsError('permission-denied', 'Not authorized for this organization');
     }
     
-    // Check if user is admin (for organization-level disconnections)
-    const userRole = request.auth.token.role?.toLowerCase();
-    if (userRole !== 'admin' && userRole !== 'owner') {
-      throw new HttpsError('permission-denied', 'Admin role required to disconnect integrations');
+    // ✅ FIXED: Allow any organization member to disconnect (not just admins)
+    // Organization-level integrations are shared, so any member can disconnect
+    
+    // Slack uses a different structure (slackConnections subcollection)
+    if (provider === 'slack') {
+      const { connectionId } = request.data;
+      
+      if (!connectionId) {
+        // No specific connection ID - client already deleted it, that's fine
+        console.log(`[disconnectIntegration] Slack connection already removed client-side for org ${organizationId}`);
+        return { success: true, message: 'Connection already removed' };
+      }
+      
+      // Check if the specific Slack connection exists
+      const slackConnectionRef = db
+        .collection('organizations')
+        .doc(organizationId)
+        .collection('slackConnections')
+        .doc(connectionId);
+      
+      const slackConnectionDoc = await slackConnectionRef.get();
+      
+      if (!slackConnectionDoc.exists) {
+        console.log(`[disconnectIntegration] Slack connection ${connectionId} already removed for org ${organizationId}`);
+        return { success: true, message: 'Connection already removed' };
+      }
+      
+      // Connection exists - delete it (Slack doesn't use OAuth revoke like other providers)
+      try {
+        await slackConnectionRef.delete();
+        console.log(`[disconnectIntegration] Slack connection ${connectionId} deleted for org ${organizationId}`);
+        return { success: true };
+      } catch (error: any) {
+        console.error(`[disconnectIntegration] Error deleting Slack connection:`, error);
+        throw error instanceof HttpsError ? error : new HttpsError('internal', error.message || 'Failed to disconnect Slack integration');
+      }
     }
     
-    // Check if connection exists before trying to revoke
-    // (Client-side deletion may have already removed it)
+    // For other providers, use cloudIntegrations collection
     const connectionRef = db
       .collection('organizations')
       .doc(organizationId)

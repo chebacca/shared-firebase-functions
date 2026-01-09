@@ -13,6 +13,12 @@ declare global {
         role: string;
         hierarchy?: number;
         projectAssignments?: Record<string, any>;
+        // Enhanced auth properties (from claims)
+        tier?: string;
+        customRoleId?: string;
+        roleName?: string;
+        permissions?: any;
+        [key: string]: any; // Allow additional properties from claims
       };
     }
   }

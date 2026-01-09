@@ -3,10 +3,10 @@
  * This secret is defined here and imported by all Slack functions that need encryption
  */
 
-import { defineSecret } from 'firebase-functions/params';
+import { encryptionKey as unifiedKey } from '../integrations/unified-oauth/encryption';
 
-// Define the encryption key secret once, use it everywhere
-export const encryptionKey = defineSecret('ENCRYPTION_KEY');
+// Re-export the unified encryption key secret to ensure the same instance is used everywhere
+export const encryptionKey = unifiedKey;
 
 /**
  * Get the encryption key value
@@ -16,7 +16,8 @@ export const encryptionKey = defineSecret('ENCRYPTION_KEY');
 export function getEncryptionKey(): string {
   try {
     const key = encryptionKey.value();
-    if (!key || key === '00000000000000000000000000000000') {
+    // Use the same validation logic as encryption.ts roughly
+    if (!key || typeof key !== 'string' || key.length < 32) {
       throw new Error('Encryption key not configured. Please set ENCRYPTION_KEY secret.');
     }
     return key;

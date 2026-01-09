@@ -517,15 +517,20 @@ export const setCorsHeaders = (req: any, res: any): void => {
 
   const origin = req.headers.origin;
 
-  // Always allow the origin that made the request in development mode
-  if (process.env.NODE_ENV === 'development' || process.env.FUNCTIONS_EMULATOR === 'true') {
+  // Priority 1: Always allow localhost origins (for development/testing) - check this FIRST
+  if (origin && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
+    res.set('Access-Control-Allow-Origin', origin);
+  }
+  // Priority 2: Always allow the origin that made the request in development mode
+  else if (process.env.NODE_ENV === 'development' || process.env.FUNCTIONS_EMULATOR === 'true') {
     res.set('Access-Control-Allow-Origin', origin || '*');
-  } else if (origin && (allowedOrigins.includes(origin) || origin === 'null')) {
+  }
+  // Priority 3: Check if origin is in allowed list
+  else if (origin && (allowedOrigins.includes(origin) || origin === 'null')) {
     res.set('Access-Control-Allow-Origin', origin);
-  } else if (origin && origin.includes('localhost')) {
-    // Always allow localhost origins (for development/testing)
-    res.set('Access-Control-Allow-Origin', origin);
-  } else {
+  }
+  // Priority 4: Fallback to default production origin
+  else {
     // In production, be more restrictive but still allow the request to proceed
     res.set('Access-Control-Allow-Origin', 'https://backbone-client.web.app');
   }

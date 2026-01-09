@@ -10,6 +10,7 @@ import * as functions from 'firebase-functions';
 import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
 import { encryptTokens, decryptTokens, generateSecureState, verifyState, hashForLogging } from './encryption';
+import { encryptToken, decryptToken } from './unified-oauth/encryption';
 import { createSuccessResponse, createErrorResponse, db, getUserOrganizationId } from '../shared/utils';
 import { getGoogleConfig as getGoogleConfigFromFirestore } from '../google/config';
 import { encryptionKey } from '../google/secrets';
@@ -606,19 +607,27 @@ export const handleGoogleOAuthCallbackHttp = onRequest(
         name: userInfo.name
       });
 
-      // Store tokens in Firestore (encrypted) - same location as callable version
-      const encryptedTokens = encryptTokens({
-        access_token: tokens.access_token!,
-        refresh_token: tokens.refresh_token!,
-        expiry_date: tokens.expiry_date
-      });
+      // Store tokens in Firestore (encrypted) - UNIFIED OAUTH FORMAT
+      // Store tokens as separate encrypted fields (accessToken, refreshToken) to match unified OAuth system
+      // This ensures compatibility with refreshOAuthToken function
+      const encryptedAccessToken = encryptToken(tokens.access_token!);
+      const encryptedRefreshToken = tokens.refresh_token ? encryptToken(tokens.refresh_token) : undefined;
 
-      const integrationDoc = {
+      const integrationDoc: any = {
         provider: 'google',
         accountEmail: userInfo.email,
         accountName: userInfo.name,
-        tokens: encryptedTokens,
+        accountId: userInfo.id,
+        // UNIFIED OAUTH FORMAT: Store tokens as separate encrypted fields
+        accessToken: encryptedAccessToken,
+        tokenExpiresAt: tokens.expiry_date ? admin.firestore.Timestamp.fromDate(new Date(tokens.expiry_date)) : null,
         isActive: true, // Explicitly mark as active (required for client-side listener)
+        connectedAt: admin.firestore.FieldValue.serverTimestamp(),
+        connectedBy: userId,
+        lastRefreshedAt: admin.firestore.FieldValue.serverTimestamp(),
+        organizationId,
+        userId,
+        // Legacy fields for backward compatibility
         clientId: usedClientId, // Store the client ID used to create these tokens (critical for token refresh)
         scopes: SCOPES, // Store the OAuth scopes that were granted (required for calendar permissions check)
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -626,14 +635,33 @@ export const handleGoogleOAuthCallbackHttp = onRequest(
         expiresAt: tokens.expiry_date ? admin.firestore.Timestamp.fromDate(new Date(tokens.expiry_date)) : null
       };
 
+      // Only add refreshToken if it exists
+      if (encryptedRefreshToken) {
+        integrationDoc.refreshToken = encryptedRefreshToken;
+      }
+
+      // Create standardized encryptedTokens field (for unified refresh functionality)
+      try {
+        const unifiedTokens = {
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token || '',
+          expiresAt: tokens.expiry_date || null
+        };
+        integrationDoc.encryptedTokens = encryptTokens(unifiedTokens);
+        console.log('[googleDrive] ✅ Created standardized encryptedTokens field');
+      } catch (encryptError) {
+        console.warn('[googleDrive] ⚠️ Failed to create encryptedTokens field:', encryptError);
+      }
+
       // Store in organization-scoped collection for team-wide access
       // Use org-level document ID (google) so all users in the org can share the same credentials
+      // CRITICAL: Use merge: true to avoid wiping existing refreshToken if not provided in this flow
       await admin.firestore()
         .collection('organizations')
         .doc(organizationId)
         .collection('cloudIntegrations')
         .doc('google')
-        .set(integrationDoc);
+        .set(integrationDoc, { merge: true });
 
       // Also create connection record for tracking team members' Drive connections
       await admin.firestore()
@@ -896,15 +924,17 @@ export const refreshGoogleAccessTokenCallable = onCall(
 
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
-      // Check for token-related errors (should return unauthenticated)
+      // Check for token-related errors (should return unauthenticated or failed-precondition)
       if (errorMessage.includes('Token has been expired or revoked') ||
         errorMessage.includes('invalid_grant') ||
         errorMessage.includes('refresh token is invalid') ||
         errorMessage.includes('refresh token is invalid or revoked') ||
-        errorMessage.includes('Google integration not found')) {
+        errorMessage.includes('Google integration not found') ||
+        errorMessage.includes('No refresh token available') ||
+        errorMessage.includes('No tokens found')) {
         throw new HttpsError(
-          'unauthenticated',
-          'Google token invalid or expired',
+          'failed-precondition',
+          'No refresh token available. Please reconnect the integration.',
           errorMessage
         );
       }
@@ -1002,6 +1032,20 @@ export async function refreshGoogleAccessToken(userId: string, organizationId: s
       };
     } else {
       throw new Error('No tokens found for Google integration');
+    }
+
+    // --- OPTIMIZATION: Check if token is still valid ---
+    const now = Date.now();
+    const expiryDate = tokens.expiry_date;
+    const buffer = 5 * 60 * 1000; // 5 minute buffer
+
+    if (tokens.access_token && expiryDate && (now < (expiryDate - buffer))) {
+      console.log(`[googleDrive] ✅ Access token is still valid (expires in ${Math.round((expiryDate - now) / 60000)}m), skipping refresh`);
+      return tokens;
+    }
+
+    if (tokens.access_token && !expiryDate) {
+      console.warn('[googleDrive] ⚠️ Access token exists but no expiry date found, proceeding with refresh for safety');
     }
 
     if (!tokens.refresh_token) {
@@ -1143,13 +1187,22 @@ Current config: clientId=${usedClientId ? 'set (' + usedClientId.substring(0, 20
     const newEncryptedTokens = encryptTokens(credentials);
 
     // Update Firestore with both encrypted and plain formats for compatibility
+    // CRITICAL: Only update refreshToken if a NEW one was provided by Google
+    // Most refresh calls do NOT return a new refresh token
     const updateData: any = {
-      encryptedTokens: newEncryptedTokens,
-      accessToken: credentials.access_token, // Also store plain for frontend access
-      refreshToken: credentials.refresh_token,
+      accessToken: credentials.access_token,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       expiresAt: credentials.expiry_date ? admin.firestore.Timestamp.fromDate(new Date(credentials.expiry_date)) : null
     };
+
+    if (credentials.refresh_token) {
+      updateData.refreshToken = credentials.refresh_token;
+    }
+
+    // Also update encryptedTokens field for unified compatibility
+    try {
+      updateData.encryptedTokens = encryptTokens(credentials);
+    } catch (err) { /* non-fatal */ }
 
     await integrationDoc.ref.update(updateData);
 
