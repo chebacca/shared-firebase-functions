@@ -9,7 +9,7 @@ import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { db } from '../shared/utils';
 
 export type LocationStatus = 'on_prem' | 'on_location' | 'wrapped' | 'another_location' | null;
-export type ActivityType = 'qr_checkin' | 'qr_checkout' | 'timecard_clockin' | 'timecard_clockout';
+export type ActivityType = 'qr_checkin' | 'qr_checkout' | 'timecard_clockin' | 'timecard_clockout' | 'manual_checkin' | 'manual_checkout';
 export type WrappedStatus = 'wrapped' | 'another_location' | null;
 
 export interface LocationActivity {
@@ -205,6 +205,22 @@ export async function updateLocationStatus(
         // wrappedStatus should be provided for clockout
         if (wrappedStatus === undefined) {
           throw new Error('wrappedStatus is required for timecard clockout');
+        }
+        newWrappedStatus = wrappedStatus;
+        break;
+      case 'manual_checkin':
+        isQrScannedIn = true;
+        lastQrScanTime = now as any;
+        // If re-checking in after wrapped, clear wrapped status
+        if (newWrappedStatus) {
+          newWrappedStatus = null;
+        }
+        break;
+      case 'manual_checkout':
+        isQrScannedIn = false;
+        // wrappedStatus should be provided for checkout
+        if (wrappedStatus === undefined) {
+          throw new Error('wrappedStatus is required for manual checkout');
         }
         newWrappedStatus = wrappedStatus;
         break;

@@ -58,7 +58,49 @@ function decryptToken(encryptedData: string): string {
 export async function getGoogleConfig(organizationId: string) {
   console.log(`🔍 [GoogleConfig] Fetching config for org: ${organizationId}`);
 
-  // Read from integrationConfigs (single source of truth)
+  // Priority 1: Check integrationSettings/google (used by licensing website)
+  const integrationSettingsDoc = await db
+    .collection('organizations')
+    .doc(organizationId)
+    .collection('integrationSettings')
+    .doc('google')
+    .get();
+
+  if (integrationSettingsDoc.exists) {
+    const settingsData = integrationSettingsDoc.data()!;
+    if (settingsData.isConfigured && settingsData.clientId && settingsData.clientSecret) {
+      console.log(`✅ [GoogleConfig] Found config in integrationSettings/google for org: ${organizationId}`);
+      
+      // Decrypt client secret if encrypted
+      let clientSecret = settingsData.clientSecret;
+      if (clientSecret.includes(':')) {
+        try {
+          clientSecret = decryptToken(clientSecret);
+        } catch (error) {
+          console.warn('⚠️ [GoogleConfig] Failed to decrypt client secret, using as-is');
+        }
+      }
+      
+      return {
+        clientId: settingsData.clientId,
+        clientSecret: clientSecret,
+        redirectUri: settingsData.redirectUri || 'https://backbone-logic.web.app/integration-settings',
+        scopes: settingsData.scopes || [
+          'https://www.googleapis.com/auth/drive.readonly',
+          'https://www.googleapis.com/auth/drive.file',
+          'https://www.googleapis.com/auth/documents',
+          'https://www.googleapis.com/auth/userinfo.email',
+          'https://www.googleapis.com/auth/userinfo.profile',
+          'https://www.googleapis.com/auth/calendar',
+          'https://www.googleapis.com/auth/calendar.events',
+          'https://www.googleapis.com/auth/meetings.space.created',
+          'https://www.googleapis.com/auth/meetings.space.readonly'
+        ]
+      };
+    }
+  }
+
+  // Priority 2: Read from integrationConfigs (alternative location)
   // Check for google_docs or google_drive type configs
   const configsSnapshot = await db
     .collection('organizations')

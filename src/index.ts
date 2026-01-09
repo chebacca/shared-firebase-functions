@@ -420,5 +420,16 @@ export {
   createGuardWithAuth
 } from './security/createGuardWithAuth';
 
+export {
+  createGuestProfileFromSecurityDesk,
+  createGuestProfileFromSecurityDeskHttp,
+  requestGuestApproval,
+  requestGuestApprovalHttp,
+  getProjectTeamMembersForContact,
+  getProjectTeamMembersForContactHttp,
+  manualCheckInOut,
+  manualCheckInOutHttp,
+} from './security';
+
 // NOTE: Other functions commented out due to TypeScript errors
 

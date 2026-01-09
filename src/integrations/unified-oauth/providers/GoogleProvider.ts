@@ -168,8 +168,51 @@ export class GoogleProvider implements OAuthProvider {
    * Get provider configuration
    */
   async getConfig(organizationId: string): Promise<ProviderConfig> {
-    // Option 1: Get from Firestore integrationConfigs (single source of truth)
     if (organizationId) {
+      // Priority 1: Check integrationSettings/google (used by licensing website)
+      const integrationSettingsDoc = await db
+        .collection('organizations')
+        .doc(organizationId)
+        .collection('integrationSettings')
+        .doc('google')
+        .get();
+
+      if (integrationSettingsDoc.exists) {
+        const settingsData = integrationSettingsDoc.data()!;
+        if (settingsData.isConfigured && settingsData.clientId && settingsData.clientSecret) {
+          // Decrypt client secret if encrypted
+          let clientSecret = settingsData.clientSecret;
+          if (clientSecret.includes(':')) {
+            try {
+              const { decryptToken } = await import('../encryption');
+              clientSecret = decryptToken(clientSecret);
+            } catch (error) {
+              console.warn('Failed to decrypt client secret, using as-is');
+            }
+          }
+          
+          return {
+            clientId: settingsData.clientId,
+            clientSecret: clientSecret,
+            additionalParams: {
+              redirectUri: settingsData.redirectUri || 'https://us-central1-backbone-logic.cloudfunctions.net/handleOAuthCallback',
+              scopes: settingsData.scopes || [
+                'https://www.googleapis.com/auth/drive.readonly',
+                'https://www.googleapis.com/auth/drive.file',
+                'https://www.googleapis.com/auth/documents',
+                'https://www.googleapis.com/auth/userinfo.email',
+                'https://www.googleapis.com/auth/userinfo.profile',
+                'https://www.googleapis.com/auth/calendar',
+                'https://www.googleapis.com/auth/calendar.events',
+                'https://www.googleapis.com/auth/meetings.space.created',
+                'https://www.googleapis.com/auth/meetings.space.readonly'
+              ]
+            }
+          };
+        }
+      }
+
+      // Priority 2: Get from Firestore integrationConfigs (alternative location)
       // Check for google_docs or google_drive type configs
       const configsSnapshot = await db
         .collection('organizations')

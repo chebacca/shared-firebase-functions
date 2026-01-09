@@ -6,3 +6,4 @@ export * from './getPublishedCallSheets';
 export * from './authenticateTeamMember';
 export * from './cleanupExpiredCallSheets';
 export * from './updateCallSheetAccessCode';
+export * from './syncDailyRecordToPublished';

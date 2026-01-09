@@ -383,7 +383,19 @@ export const slackGetWorkspaceInfo = onCall(
 export const slackListChannels = onCall(
   {
     region: 'us-central1',
-    cors: true,
+    cors: [
+      'http://localhost:4002',
+      'http://localhost:4003',
+      'http://localhost:4006',
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'http://localhost:4010',
+      'http://localhost:5173',
+      'https://backbone-client.web.app',
+      'https://backbone-logic.web.app',
+      'https://backbone-callsheet-standalone.web.app',
+      'https://clipshowpro.web.app'
+    ],
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -1121,7 +1133,19 @@ export const slackUploadFile = onCall(
 export const slackGetUsers = onCall(
   {
     region: 'us-central1',
-    cors: true,
+    cors: [
+      'http://localhost:4002',
+      'http://localhost:4003',
+      'http://localhost:4006',
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'http://localhost:4010',
+      'http://localhost:5173',
+      'https://backbone-client.web.app',
+      'https://backbone-logic.web.app',
+      'https://backbone-callsheet-standalone.web.app',
+      'https://clipshowpro.web.app'
+    ],
     secrets: [encryptionKey],
   },
   async (request) => {

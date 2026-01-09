@@ -499,6 +499,7 @@ export const setCorsHeaders = (req: any, res: any): void => {
     'https://backbone-callsheet-standalone.web.app',
     'https://dashboard-1c3a5.web.app',
     'https://clipshowpro.web.app', // Added Clip Show Pro origin
+    'https://backbone-mobile-companion.web.app', // Mobile Companion app
     'http://localhost:4000',
     'http://localhost:4001',
     'http://localhost:4002', // Licensing website

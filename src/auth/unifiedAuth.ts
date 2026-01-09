@@ -184,7 +184,7 @@ export const refreshAuthClaims = functions.https.onCall(async (data: any, contex
 // });
 
 // Note: For now, we export a background trigger as a fallback if blocking functions aren't enabled
-export const onUserLoginTrigger = (functions as any).auth.user().onCreate(async (user: any) => {
+export const onUserLoginTrigger = functions.auth.user().onCreate(async (user: any) => {
     console.log(`🆕 [UnifiedAuth] New user created: ${user.email}. Minting initial claims.`);
     const claims = await computeUserClaims({ uid: user.uid, email: user.email });
     await admin.auth().setCustomUserClaims(user.uid, claims);
@@ -220,7 +220,7 @@ export const syncUserClaimsOnLogin = functions.https.onCall(async (data: any, co
             // Ensure organizationId is always set if available
             organizationId: freshClaims.organizationId || currentClaims.organizationId,
             // Ensure allowedOrganizations includes the primary organizationId
-            allowedOrganizations: freshClaims.allowedOrganizations || 
+            allowedOrganizations: freshClaims.allowedOrganizations ||
                 (freshClaims.organizationId ? [freshClaims.organizationId] : currentClaims.allowedOrganizations || []),
             lastUpdated: Date.now()
         };
@@ -228,7 +228,7 @@ export const syncUserClaimsOnLogin = functions.https.onCall(async (data: any, co
         // Only update if claims have changed
         const currentClaimsStr = JSON.stringify(currentClaims);
         const mergedClaimsStr = JSON.stringify(mergedClaims);
-        
+
         if (currentClaimsStr !== mergedClaimsStr) {
             await admin.auth().setCustomUserClaims(uid, mergedClaims);
             console.log(`✅ [UnifiedAuth] Claims synced for ${email} (${uid})`);

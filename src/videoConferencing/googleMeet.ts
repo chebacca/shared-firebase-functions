@@ -52,7 +52,20 @@ function decryptToken(encryptedData: string): string {
   const authTag = Buffer.from(authTagHex, 'hex');
 
   const algorithm = 'aes-256-gcm';
-  const key = crypto.createHash('sha256').update(getEncryptionKey(), 'utf8').digest();
+  
+  // Get encryption key with validation
+  let encryptionKeyValue: string;
+  try {
+    encryptionKeyValue = getEncryptionKey();
+    if (!encryptionKeyValue || typeof encryptionKeyValue !== 'string') {
+      throw new Error('Encryption key is not available or invalid');
+    }
+  } catch (error: any) {
+    console.error('❌ [GoogleMeet] Failed to get encryption key:', error);
+    throw new Error(`Encryption key not available: ${error.message || 'Unknown error'}`);
+  }
+
+  const key = crypto.createHash('sha256').update(encryptionKeyValue, 'utf8').digest();
 
   const decipher = crypto.createDecipheriv(algorithm, key, iv);
   decipher.setAuthTag(authTag);
@@ -118,7 +131,21 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
     if (cloudIntegrationDoc.exists) {
       console.log(`✅ [GoogleMeet] Found cloudIntegrations/google document`);
       const cloudData = cloudIntegrationDoc.data() || {};
-      if (cloudData.isActive !== false) {
+      
+      // More lenient check: consider active if isActive is not explicitly false
+      // This handles cases where isActive is undefined, null, or true
+      const isActive = cloudData.isActive !== false;
+      
+      console.log(`🔍 [GoogleMeet] cloudIntegrations/google status:`, {
+        isActive: isActive,
+        isActiveValue: cloudData.isActive,
+        hasTokens: !!(cloudData.tokens || cloudData.encryptedTokens),
+        hasAccessToken: !!(cloudData.accessToken || cloudData.access_token),
+        hasRefreshToken: !!(cloudData.refreshToken || cloudData.refresh_token),
+        accountEmail: cloudData.accountEmail,
+      });
+      
+      if (isActive) {
         const encryptedTokens = (cloudData as any).tokens || (cloudData as any).encryptedTokens;
 
         let decrypted: any = null;
@@ -127,20 +154,23 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
             // Try to decrypt if it looks like encrypted data (base64 string)
             if (typeof encryptedTokens === 'string' && encryptedTokens.length > 50) {
               decrypted = decryptTokens(encryptedTokens);
+              console.log(`✅ [GoogleMeet] Successfully decrypted tokens from cloudIntegrations/google`);
             } else if (typeof encryptedTokens === 'object') {
               // Tokens might already be decrypted/plain object
               decrypted = encryptedTokens;
+              console.log(`✅ [GoogleMeet] Using tokens as plain object from cloudIntegrations/google`);
             }
           } catch (decryptError: any) {
             console.warn(`⚠️ [GoogleMeet] Failed to decrypt tokens: ${decryptError.message}`);
             // If decryption fails, try using tokens as-is (might be plain object)
             if (typeof encryptedTokens === 'object') {
               decrypted = encryptedTokens;
+              console.log(`✅ [GoogleMeet] Using tokens as-is after decryption failure`);
             }
           }
         }
 
-        // Also check for plain tokens in the document
+        // Also check for plain tokens in the document (common format from OAuth callback)
         if (!decrypted) {
           if ((cloudData as any).accessToken || (cloudData as any).access_token) {
             console.log(`✅ [GoogleMeet] Found plain tokens in cloudIntegrations/google`);
@@ -151,11 +181,27 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
           }
         }
 
-        if (decrypted?.access_token || decrypted?.accessToken) {
+        // If we still don't have tokens, check if we can use refresh token to get a new access token
+        // This handles cases where access token expired but refresh token exists
+        if (!decrypted && (cloudData as any).refreshToken || (cloudData as any).refresh_token) {
+          console.log(`⚠️ [GoogleMeet] No access token but refresh token exists - will attempt token refresh`);
+          // We'll create a connection with just the refresh token and let the OAuth client refresh it
+          connection = {
+            type: 'organization',
+            isActive: true,
+            accountEmail: cloudData.accountEmail,
+            accountName: cloudData.accountName,
+            accessToken: null, // Will be refreshed
+            refreshToken: (cloudData as any).refreshToken || (cloudData as any).refresh_token,
+            tokenExpiresAt: cloudData.expiresAt || cloudData.tokenExpiresAt,
+            clientId: cloudData.clientId,
+            scopes: cloudData.scopes || [],
+          };
+        } else if (decrypted?.access_token || decrypted?.accessToken) {
           console.log(`✅ [GoogleMeet] Successfully extracted tokens from cloudIntegrations/google`);
           connection = {
             type: 'organization',
-            isActive: cloudData.isActive !== false,
+            isActive: true,
             accountEmail: cloudData.accountEmail,
             accountName: cloudData.accountName,
             accessToken: decrypted.access_token || decrypted.accessToken,
@@ -183,9 +229,15 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
             hasTokens: !!encryptedTokens,
             tokensType: typeof encryptedTokens,
             hasAccessToken: !!(cloudData as any).accessToken || !!(cloudData as any).access_token,
+            hasRefreshToken: !!(cloudData as any).refreshToken || !!(cloudData as any).refresh_token,
+            documentKeys: Object.keys(cloudData),
           });
         }
+      } else {
+        console.warn(`⚠️ [GoogleMeet] cloudIntegrations/google exists but is marked as inactive (isActive: ${cloudData.isActive})`);
       }
+    } else {
+      console.log(`⚠️ [GoogleMeet] cloudIntegrations/google document does not exist for org: ${organizationId}`);
     }
 
     // Fallback 2: integrationConfigs (for google_meet, googleMeet, google_drive, google_docs)
@@ -454,10 +506,16 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
       ? decryptToken(connection.refreshToken)
       : connection.refreshToken || null;
 
-  // Validate we have at least an access token
-  if (!accessToken) {
-    console.error(`❌ [GoogleMeet] No access token found in connection data`);
-    throw new HttpsError('failed-precondition', 'No access token found in Google connection');
+  // Validate we have at least an access token OR a refresh token
+  // If we only have a refresh token, we'll refresh it to get a new access token
+  if (!accessToken && !refreshToken) {
+    console.error(`❌ [GoogleMeet] No access token or refresh token found in connection data`);
+    throw new HttpsError('failed-precondition', 'No access token or refresh token found in Google connection. Please reconnect your Google account in Integration Settings.');
+  }
+  
+  // If we only have a refresh token, we'll need to refresh it
+  if (!accessToken && refreshToken) {
+    console.log(`⚠️ [GoogleMeet] No access token but refresh token exists - will refresh token`);
   }
 
   // VALIDATION: Check for required scopes (Calendar permissions)
@@ -487,6 +545,39 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
   }
 
   console.log(`✅ [GoogleMeet] Using tokens - hasAccessToken: ${!!accessToken}, hasRefreshToken: ${!!refreshToken}`);
+
+  // Validate config before creating OAuth2 client
+  if (!config.clientId || typeof config.clientId !== 'string') {
+    console.error('❌ [GoogleMeet] Invalid clientId:', { 
+      hasClientId: !!config.clientId, 
+      type: typeof config.clientId,
+      clientId: config.clientId 
+    });
+    throw new HttpsError('failed-precondition', 'Google OAuth clientId is missing or invalid');
+  }
+  
+  if (!config.clientSecret || typeof config.clientSecret !== 'string') {
+    console.error('❌ [GoogleMeet] Invalid clientSecret:', { 
+      hasClientSecret: !!config.clientSecret, 
+      type: typeof config.clientSecret 
+    });
+    throw new HttpsError('failed-precondition', 'Google OAuth clientSecret is missing or invalid');
+  }
+  
+  if (!config.redirectUri || typeof config.redirectUri !== 'string') {
+    console.error('❌ [GoogleMeet] Invalid redirectUri:', { 
+      hasRedirectUri: !!config.redirectUri, 
+      type: typeof config.redirectUri,
+      redirectUri: config.redirectUri 
+    });
+    throw new HttpsError('failed-precondition', 'Google OAuth redirectUri is missing or invalid');
+  }
+
+  console.log(`✅ [GoogleMeet] OAuth2 config validated:`, {
+    clientIdPrefix: config.clientId.substring(0, 20) + '...',
+    hasClientSecret: !!config.clientSecret,
+    redirectUri: config.redirectUri
+  });
 
   // Create OAuth2 client
   const oauth2Client = new google.auth.OAuth2(
@@ -735,10 +826,40 @@ export const scheduleMeetMeeting = onCall(
 
       // Get authenticated client (will throw if connection not found or invalid)
       const oauth2Client = await getAuthenticatedGoogleClient(organizationId);
+      
+      // Validate OAuth2 client was created successfully
+      if (!oauth2Client) {
+        throw new HttpsError('internal', 'Failed to create OAuth2 client');
+      }
+      
       const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
 
       // Calculate end time if not provided (default 1 hour)
       const endTimeValue = endTime || new Date(new Date(startTime).getTime() + 60 * 60 * 1000).toISOString();
+
+      // Validate and filter participants - only include valid email addresses
+      const validParticipants = (participants || [])
+        .filter((email): email is string => {
+          // Ensure email is a non-empty string
+          if (!email || typeof email !== 'string') {
+            console.warn(`⚠️ [GoogleMeet] Invalid participant email (skipping):`, email);
+            return false;
+          }
+          // Basic email validation
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          const isValid = emailRegex.test(email.trim());
+          if (!isValid) {
+            console.warn(`⚠️ [GoogleMeet] Invalid email format (skipping):`, email);
+          }
+          return isValid;
+        })
+        .map(email => email.trim());
+
+      console.log(`📧 [GoogleMeet] Participant validation:`, {
+        originalCount: participants?.length || 0,
+        validCount: validParticipants.length,
+        validEmails: validParticipants,
+      });
 
       // Create calendar event with Google Meet conference
       const event = {
@@ -760,8 +881,27 @@ export const scheduleMeetMeeting = onCall(
             },
           },
         },
-        attendees: participants?.map(email => ({ email })) || [],
+        attendees: validParticipants.map(email => ({ email })),
       };
+
+      // Validate event object before sending to Google Calendar API
+      if (!event.summary || !event.start?.dateTime || !event.end?.dateTime) {
+        console.error('❌ [GoogleMeet] Invalid event object:', {
+          hasSummary: !!event.summary,
+          hasStart: !!event.start?.dateTime,
+          hasEnd: !!event.end?.dateTime,
+          event: JSON.stringify(event, null, 2),
+        });
+        throw new HttpsError('invalid-argument', 'Invalid event data: missing required fields');
+      }
+
+      console.log(`📅 [GoogleMeet] Creating calendar event:`, {
+        title: event.summary,
+        start: event.start.dateTime,
+        end: event.end.dateTime,
+        attendeeCount: event.attendees?.length || 0,
+        hasConferenceData: !!event.conferenceData,
+      });
 
       const createdEvent = await calendar.events.insert({
         calendarId: 'primary',
