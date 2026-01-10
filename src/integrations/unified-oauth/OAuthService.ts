@@ -68,10 +68,15 @@ export class UnifiedOAuthService {
     });
 
     // Get auth URL from provider
+    // For Dropbox, use the specific callback function; for others, use the unified handler
+    const redirectUri = providerName === 'dropbox' 
+      ? 'https://us-central1-backbone-logic.cloudfunctions.net/dropboxOAuthCallbackHttp'
+      : 'https://us-central1-backbone-logic.cloudfunctions.net/handleOAuthCallback';
+    
     const authUrl = await (provider as OAuthProvider).getAuthUrl({
       organizationId,
       userId,
-      redirectUri: 'https://us-central1-backbone-logic.cloudfunctions.net/handleOAuthCallback',
+      redirectUri,
       state
     });
 

@@ -62,12 +62,24 @@ function decryptToken(encryptedData: string): string {
 export async function getDropboxConfig(organizationId: string) {
   console.log(`🔍 [DropboxConfig] Fetching config for org: ${organizationId}`);
   
-  const configDoc = await db
+  // Try new location first (integrationSettings/dropbox)
+  let configDoc = await db
     .collection('organizations')
     .doc(organizationId)
     .collection('integrationSettings')
     .doc('dropbox')
     .get();
+  
+  // Fallback to integrationConfigs/dropbox-integration (unified system)
+  if (!configDoc.exists) {
+    console.log(`🔍 [DropboxConfig] Not found in integrationSettings, checking integrationConfigs...`);
+    configDoc = await db
+      .collection('organizations')
+      .doc(organizationId)
+      .collection('integrationConfigs')
+      .doc('dropbox-integration')
+      .get();
+  }
     
   if (!configDoc.exists) {
     // Fallback to environment variables for backward compatibility
@@ -93,7 +105,15 @@ export async function getDropboxConfig(organizationId: string) {
 
   const config = configDoc.data()!;
   
-  if (!config.isConfigured) {
+  // For integrationConfigs, credentials are stored in a nested object
+  const credentials = config.credentials || config;
+  const appKey = credentials.clientId || credentials.appKey;
+  const appSecret = credentials.clientSecret || credentials.appSecret;
+  
+  // Check if configured (for integrationSettings) or enabled (for integrationConfigs)
+  const isConfigured = config.isConfigured !== false && config.enabled !== false;
+  
+  if (!isConfigured) {
     console.warn(`⚠️ [DropboxConfig] Config exists but not marked as configured for org: ${organizationId}`);
     throw new HttpsError(
       'failed-precondition', 
@@ -102,38 +122,38 @@ export async function getDropboxConfig(organizationId: string) {
   }
   
   // Validate required fields
-  if (!config.appKey) {
+  if (!appKey) {
     throw new HttpsError(
       'failed-precondition',
-      'Dropbox appKey is missing from configuration. Please reconfigure Dropbox integration.'
+      'Dropbox appKey/clientId is missing from configuration. Please reconfigure Dropbox integration.'
     );
   }
   
-  if (!config.appSecret) {
+  if (!appSecret) {
     throw new HttpsError(
       'failed-precondition',
-      'Dropbox appSecret is missing from configuration. Please reconfigure Dropbox integration.'
+      'Dropbox appSecret/clientSecret is missing from configuration. Please reconfigure Dropbox integration.'
     );
   }
   
   // Decrypt app secret if it looks encrypted (contains :)
   // This matches Google Drive's pattern for handling encrypted vs plaintext secrets
-  let appSecret = config.appSecret;
-  if (config.appSecret && config.appSecret.includes(':')) {
+  let decryptedAppSecret = appSecret;
+  if (appSecret && appSecret.includes(':')) {
     try {
-      appSecret = decryptToken(config.appSecret);
+      decryptedAppSecret = decryptToken(appSecret);
       console.log(`✅ [DropboxConfig] Decrypted app secret for org: ${organizationId}`);
     } catch (error) {
       console.warn(`⚠️ [DropboxConfig] Failed to decrypt app secret (falling back to plaintext):`, error);
-      appSecret = config.appSecret;
+      decryptedAppSecret = appSecret;
     }
   } else {
     console.log(`ℹ️ [DropboxConfig] Using plaintext app secret for org: ${organizationId}`);
   }
   
   // CRITICAL: Trim whitespace from credentials (common issue from copy/paste or form inputs)
-  const trimmedAppKey = config.appKey?.trim();
-  const trimmedAppSecret = appSecret?.trim();
+  const trimmedAppKey = appKey?.trim();
+  const trimmedAppSecret = decryptedAppSecret?.trim();
   
   if (!trimmedAppKey || !trimmedAppSecret) {
     throw new HttpsError(

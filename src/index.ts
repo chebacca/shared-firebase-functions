@@ -219,7 +219,8 @@ export {
 // Export unified auth functions (refreshAuthClaims for all apps)
 export {
   refreshAuthClaims,
-  onUserLoginTrigger
+  onUserLoginTrigger,
+  exchangeHubToken
 } from './auth';
 
 // Export Web3 wallet management functions

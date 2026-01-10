@@ -252,6 +252,11 @@ export const dropboxOAuthInitiate = onCall(
       // Generate Dropbox OAuth URL
       // Use Firebase Function URL as redirect_uri for Dropbox
       const dropboxAuthBaseUrl = 'https://www.dropbox.com/oauth2/authorize';
+      
+      // Log the redirect URI being sent to Dropbox for debugging
+      console.log(`🔍 [DropboxOAuth] Using redirect_uri: ${oauthCallbackUrl}`);
+      console.log(`🔍 [DropboxOAuth] Make sure this EXACT URI is configured in Dropbox App Console`);
+      
       const authUrlParams = new URLSearchParams({
         client_id: config.appKey,
         redirect_uri: oauthCallbackUrl, // Firebase Function URL
@@ -262,6 +267,7 @@ export const dropboxOAuthInitiate = onCall(
       const authUrl = `${dropboxAuthBaseUrl}?${authUrlParams.toString()}`;
 
       console.log(`✅ [DropboxOAuth] Initiated OAuth flow for ${connectionType} connection in org ${organizationId}`);
+      console.log(`🔍 [DropboxOAuth] Authorization URL (first 200 chars): ${authUrl.substring(0, 200)}...`);
 
       return {
         url: authUrl,
@@ -633,17 +639,33 @@ export const dropboxOAuthCallbackHttp = onRequest(
       }
 
       // Verify state and complete OAuth flow
-      const stateDoc = await db.collection('dropboxOAuthStates')
-        .where('state', '==', state)
-        .limit(1)
-        .get();
+      // Check unified oauthStates collection first (new system), then dropboxOAuthStates (legacy)
+      let stateDoc = await db.collection('oauthStates').doc(state as string).get();
+      let stateData: any = null;
+      let isUnifiedOAuth = false;
 
-      if (stateDoc.empty) {
+      if (stateDoc.exists) {
+        stateData = stateDoc.data();
+        isUnifiedOAuth = true;
+        console.log(`🔗 [DropboxOAuth] Found state in unified oauthStates collection`);
+      } else {
+        // Fallback to legacy dropboxOAuthStates collection
+        const legacyStateQuery = await db.collection('dropboxOAuthStates')
+          .where('state', '==', state)
+          .limit(1)
+          .get();
+        
+        if (!legacyStateQuery.empty) {
+          stateData = legacyStateQuery.docs[0].data();
+          console.log(`🔗 [DropboxOAuth] Found state in legacy dropboxOAuthStates collection`);
+        }
+      }
+
+      if (!stateData) {
         // State expired or invalid - show error page instead of redirecting to production
         return sendDropboxErrorPage(res, 'OAuth session has expired. Please return to the application and try connecting again.');
       }
 
-      const stateData = stateDoc.docs[0].data();
       console.log(`🔗 [DropboxOAuth] Retrieved state data, redirectUrl: ${stateData.redirectUrl || 'not found'}`);
 
       // redirectUrl must be present in state - if not, this is a configuration error
@@ -653,10 +675,20 @@ export const dropboxOAuthCallbackHttp = onRequest(
       }
 
       // Exchange code for token (call internal function logic)
+      // For unified OAuth, we need to provide organizationId and userId from state
+      const callbackStateData = isUnifiedOAuth ? {
+        ...stateData,
+        organizationId: stateData.organizationId,
+        userId: stateData.userId,
+        connectionType: 'organization', // Default for unified OAuth
+        redirectUri: 'https://us-central1-backbone-logic.cloudfunctions.net/dropboxOAuthCallbackHttp',
+        redirectUrl: stateData.redirectUrl
+      } : stateData;
+
       const result = await completeOAuthCallbackLogic(
         code as string,
         state as string,
-        stateData
+        callbackStateData
       );
 
       const finalRedirectUrl = result.redirectUrl || stateData.redirectUrl.replace('dropbox_error=', 'dropbox_connected=true').replace(/dropbox_error=[^&]*/, 'dropbox_connected=true');
@@ -1004,6 +1036,11 @@ export const dropboxOAuthInitiateHttp = onRequest(
 
       // Generate Dropbox OAuth URL
       const dropboxAuthBaseUrl = 'https://www.dropbox.com/oauth2/authorize';
+      
+      // Log the redirect URI being sent to Dropbox for debugging
+      console.log(`🔍 [DropboxOAuth] Using redirect_uri: ${oauthCallbackUrl}`);
+      console.log(`🔍 [DropboxOAuth] Make sure this EXACT URI is configured in Dropbox App Console`);
+      
       const authUrlParams = new URLSearchParams({
         client_id: config.appKey,
         redirect_uri: oauthCallbackUrl,
@@ -1014,6 +1051,7 @@ export const dropboxOAuthInitiateHttp = onRequest(
       const authUrl = `${dropboxAuthBaseUrl}?${authUrlParams.toString()}`;
 
       console.log(`✅ [DropboxOAuth] Initiated OAuth flow (HTTP) successfully`);
+      console.log(`🔍 [DropboxOAuth] Authorization URL (first 200 chars): ${authUrl.substring(0, 200)}...`);
 
       res.status(200).json(createSuccessResponse({
         authUrl,

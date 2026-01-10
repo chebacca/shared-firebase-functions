@@ -7,6 +7,6 @@ echo "📦 Includes: videoConferencing, integrations, oauth, slack, google, etc.
 
 cd "$(dirname "$0")"
 
-firebase deploy --only functions:scheduleMeetMeeting,functions:createMeetMeeting,functions:getVideoConferencingProviders,functions:initiateOAuth,functions:handleOAuthCallback,functions:refreshOAuthToken,functions:revokeOAuthConnection,functions:listAvailableProviders
+firebase deploy --only functions:scheduleMeetMeeting,functions:createMeetMeeting,functions:getVideoConferencingProviders,functions:initiateOAuth,functions:handleOAuthCallback,functions:refreshOAuthToken,functions:revokeOAuthConnection,functions:listAvailableProviders,functions:exchangeHubToken
 
 echo "✅ Shared functions deployment complete!"
