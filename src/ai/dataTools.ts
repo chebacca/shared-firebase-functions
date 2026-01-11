@@ -181,5 +181,56 @@ export const dataToolDeclarations: FunctionDeclaration[] = [
             },
             required: ['collection', 'entityId']
         }
+    },
+    {
+        name: 'query_firestore',
+        description: 'Query any Firestore collection with powerful filters and sorting. Use this when a specialized tool is not available. Always returns data suitable for a table view.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                collectionPath: {
+                    type: SchemaType.STRING,
+                    description: 'The name of the collection to query (e.g., "projects", "tasks", "media_items", "timecards")'
+                },
+                filters: {
+                    type: SchemaType.ARRAY,
+                    description: 'List of filters to apply',
+                    items: {
+                        type: SchemaType.OBJECT,
+                        properties: {
+                            field: { type: SchemaType.STRING, description: 'Field to filter on' },
+                            operator: {
+                                type: SchemaType.STRING,
+                                format: 'enum',
+                                enum: ['==', '!=', '>', '>=', '<', '<=', 'array-contains', 'in', 'not-in', 'array-contains-any'],
+                                description: 'Comparison operator'
+                            },
+                            value: { type: SchemaType.STRING, description: 'Value to compare (passed as string, type-converted by tool)' }
+                        },
+                        required: ['field', 'operator', 'value']
+                    }
+                },
+                orderBy: {
+                    type: SchemaType.OBJECT,
+                    properties: {
+                        field: { type: SchemaType.STRING, description: 'Field to sort by' },
+                        direction: { type: SchemaType.STRING, format: 'enum', enum: ['asc', 'desc'], description: 'Sort direction' }
+                    }
+                },
+                limit: {
+                    type: SchemaType.NUMBER,
+                    description: 'Max number of results (default 20, max 100)'
+                }
+            },
+            required: ['collectionPath']
+        }
+    },
+    {
+        name: 'list_collections',
+        description: 'List all available high-level collections in the database. Use this to discover where data is stored.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {}
+        }
     }
 ];

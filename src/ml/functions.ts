@@ -22,7 +22,9 @@ const geminiApiKey = defineSecret('GEMINI_API_KEY');
 export const semanticSearch = onCall(
   {
     secrets: [geminiApiKey],
-    region: 'us-central1'
+    region: 'us-central1',
+    invoker: 'public',
+    cors: true
   },
   async (request) => {
     try {
@@ -67,10 +69,32 @@ export const semanticSearch = onCall(
  * Search across multiple collections
  * Tenant isolation: Uses authenticated user's organizationId, ignores request parameter
  */
+// CORS allowed origins for ML functions
+const ML_CORS_ORIGINS = [
+  'http://localhost:4001',
+  'http://localhost:4002',
+  'http://localhost:4003',
+  'http://localhost:4004',
+  'http://localhost:4005', // CNS
+  'http://localhost:4006',
+  'http://localhost:4007',
+  'http://localhost:4009',
+  'http://localhost:4010',
+  'http://localhost:4011',
+  'http://localhost:5173', // Bridge
+  'https://backbone-client.web.app',
+  'https://backbone-logic.web.app',
+  'https://backbone-callsheet-standalone.web.app',
+  'https://clipshowpro.web.app',
+  'https://dashboard-1c3a5.web.app',
+];
+
 export const searchAll = onCall(
   {
+    region: 'us-central1',
+    invoker: 'public', // Required for CORS preflight requests
+    cors: true, // Set to true to bypass whitelist issues in production
     secrets: [geminiApiKey],
-    region: 'us-central1'
   },
   async (request) => {
     try {
@@ -490,11 +514,11 @@ export const predictAvailability = onCall(
       // Resource could be in teamMembers, inventoryItems, or other collections
       const { getFirestore } = await import('firebase-admin/firestore');
       const db = getFirestore();
-      
+
       // Try teamMembers first
       let resourceDoc = await db.collection('teamMembers').doc(resourceId).get();
       let resourceCollection = 'teamMembers';
-      
+
       // If not found, try inventoryItems
       if (!resourceDoc.exists) {
         resourceDoc = await db.collection('inventoryItems').doc(resourceId).get();

@@ -508,10 +508,9 @@ export const setCorsHeaders = (req: any, res: any): void => {
     'http://localhost:4005', // CNS
     'http://localhost:4006', // Standalone Call Sheet App (dev port)
     'http://localhost:4007', // Standalone Call Sheet App
-    'http://localhost:4008',
     'http://localhost:4009',
     'http://localhost:4010',
-    'http://localhost:5173',
+    'http://localhost:5173', // Bridge
     'null'
   ];
 

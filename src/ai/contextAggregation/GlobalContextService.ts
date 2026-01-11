@@ -30,6 +30,10 @@ export interface GlobalContext {
   timestamp: string;
   userId?: string;
 
+  // NEW: State tracking for Architect/Planner Mode
+  activeMode?: string;
+  conversationHistory?: any[];
+
   // App-specific contexts (composed from existing services)
   dashboard: DashboardContext;
   licensing: LicensingContext;

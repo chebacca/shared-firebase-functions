@@ -305,9 +305,7 @@ export const getVideoConferencingProvidersHttp = onRequest(
           .doc(organizationId)
           .collection('cloudIntegrations')
           .doc('google')
-          .get();
-
-        if (cloudIntegrationDoc.exists) {
+          .get();        if (cloudIntegrationDoc.exists) {
           const data = cloudIntegrationDoc.data() || {};
           hasGoogleConnection = data.isActive !== false && !!((data as any).tokens || (data as any).encryptedTokens);
         }

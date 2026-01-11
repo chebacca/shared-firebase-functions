@@ -3,13 +3,34 @@
  * Call AI agent with a message
  */
 
-import { onCall } from 'firebase-functions/v2/https';
+import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { getAuth } from 'firebase-admin/auth';
 import { createSuccessResponse, createErrorResponse } from '../shared/utils';
 import { gatherGlobalContext, gatherMinimalContextForGraph } from '../ai/contextAggregation/GlobalContextService';
 import { createGeminiService, geminiApiKey } from '../ai/GeminiService';
 
 const auth = getAuth();
+
+// CORS allowed origins for AI Agent functions
+const CORS_ORIGINS = [
+  'http://localhost:4001',
+  'http://localhost:4002',
+  'http://localhost:4003',
+  'http://localhost:4004',
+  'http://localhost:4005', // CNS
+  'http://localhost:4006',
+  'http://localhost:4007',
+  'http://localhost:4009',
+  'http://localhost:4010',
+  'http://localhost:4011',
+  'http://localhost:5201', // Deliverables
+  'http://localhost:5173', // Bridge
+  'https://backbone-client.web.app',
+  'https://backbone-logic.web.app',
+  'https://backbone-callsheet-standalone.web.app',
+  'https://clipshowpro.web.app',
+  'https://dashboard-1c3a5.web.app',
+];
 
 /**
  * Quick Intent Detection
@@ -57,23 +78,32 @@ function detectQuickIntent(message: string): 'graph' | 'full' {
  */
 export const callAIAgent = onCall(
   {
-    cors: true,
+    region: 'us-central1',
+    invoker: 'public', // Required for CORS preflight requests
+    cors: true, // Set to true to bypass whitelist issues in production
     secrets: [geminiApiKey], // Add Gemini API key as required secret
   },
   async (request) => {
     try {
       console.log('🦄 UNICORN DEBUG: Real Gemini Service Active - Build Verified');
+      console.log('🔐 [AI AGENT] Auth check:', {
+        hasAuth: !!request.auth,
+        uid: request.auth?.uid,
+        email: request.auth?.token?.email,
+        hasToken: !!request.auth?.token
+      });
+
       const { agentId, message, context } = request.data;
       const uid = request.auth?.uid;
 
-
-
       if (!uid) {
-        throw new Error('User must be authenticated');
+        console.error('❌ [AI AGENT] No authenticated user found in request');
+        console.error('   request.auth:', request.auth);
+        throw new HttpsError('unauthenticated', 'User must be authenticated');
       }
 
       if (!agentId || !message) {
-        throw new Error('Agent ID and message are required');
+        throw new HttpsError('invalid-argument', 'Agent ID and message are required');
       }
 
       console.log(`🤖 [AI AGENT] Calling agent: ${agentId} for user: ${uid}`);
@@ -85,7 +115,7 @@ export const callAIAgent = onCall(
 
 
       if (!organizationId) {
-        throw new Error('User does not belong to an organization');
+        throw new HttpsError('failed-precondition', 'User does not belong to an organization');
       }
 
       // 2. Quick Intent Detection (Optimization)

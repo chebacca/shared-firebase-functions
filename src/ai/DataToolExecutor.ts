@@ -52,6 +52,12 @@ export class DataToolExecutor {
                 case 'find_similar_entities':
                     return this.findSimilarEntities(args, organizationId);
 
+                case 'query_firestore':
+                    return this.queryFirestore(args, organizationId);
+
+                case 'list_collections':
+                    return this.listCollections();
+
                 default:
                     return {
                         success: false,
@@ -339,5 +345,122 @@ export class DataToolExecutor {
         } catch (error: any) {
             return { success: false, error: error.message };
         }
+    }
+
+    private static async queryFirestore(args: any, organizationId: string): Promise<ToolExecutionResult> {
+        try {
+            const { collectionPath, filters, orderBy, limit: reqLimit } = args;
+            if (!collectionPath) throw new Error('collectionPath is required');
+
+            console.log(`🔍 [DataToolExecutor] Querying ${collectionPath} for org ${organizationId}`);
+
+            let query: any = db.collection(collectionPath);
+
+            // 1. Force organizationId filter for multitenancy
+            // Note: Some global collections might not have organizationId, but for security,
+            // we default to requiring it unless we know otherwise.
+            const exceptions = ['knowledge_base', 'users', 'global_settings'];
+            if (!exceptions.includes(collectionPath)) {
+                query = query.where('organizationId', 'in', [organizationId, 'global']);
+            }
+
+            // 2. Apply dynamic filters
+            if (filters && Array.isArray(filters)) {
+                filters.forEach(f => {
+                    let val: any = f.value;
+                    // Attempt to convert numeric strings to numbers
+                    if (!isNaN(val as any) && val.trim() !== '') {
+                        val = Number(val);
+                    }
+                    // Handle booleans
+                    if (val === 'true') val = true;
+                    if (val === 'false') val = false;
+
+                    query = query.where(f.field, f.operator, val);
+                });
+            }
+
+            // 3. Apply sorting
+            if (orderBy && orderBy.field) {
+                query = query.orderBy(orderBy.field, orderBy.direction || 'asc');
+            }
+
+            // 4. Apply limit
+            const finalLimit = Math.min(reqLimit || 20, 100);
+            query = query.limit(finalLimit);
+
+            const snapshot = await query.get();
+            const results = snapshot.docs.map((doc: any) => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            // 5. Generate column metadata for the table view
+            const columns = this.generateTableColumns(results);
+
+            return {
+                success: true,
+                data: {
+                    results,
+                    columns,
+                    title: `Query Results: ${collectionPath}`,
+                    count: results.length,
+                    collection: collectionPath
+                }
+            };
+        } catch (error: any) {
+            console.error(`❌ [DataToolExecutor] queryFirestore error:`, error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    private static async listCollections(): Promise<ToolExecutionResult> {
+        try {
+            // In a real environment, we might list actual collections,
+            // but for the AI, we provide a curated list of "Primary" collections.
+            const collections = [
+                'projects', 'tasks', 'media_items', 'timecards', 'users',
+                'teamMembers', 'knowledge_base', 'licenses', 'budgets',
+                'cuesheets', 'locations', 'inventory', 'conversations'
+            ];
+
+            return {
+                success: true,
+                data: { collections }
+            };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
+    }
+
+    private static generateTableColumns(data: any[]): any[] {
+        if (!data || data.length === 0) return [];
+
+        const first = data[0];
+        const columns: any[] = [];
+
+        // Pick top level fields that aren't too complex
+        Object.keys(first).forEach(key => {
+            if (key === 'organizationId') return; // Hide orgId
+
+            const val = first[key];
+            const type = typeof val;
+
+            if (type === 'object' && val !== null && !(val instanceof Date)) return; // Skip complex objects
+
+            let displayType: string = 'string';
+            if (type === 'number') displayType = 'number';
+            if (type === 'boolean') displayType = 'boolean';
+            if (val instanceof Date || (typeof val === 'string' && val.match(/^\d{4}-\d{2}-\d{2}/))) displayType = 'date';
+
+            columns.push({
+                id: key,
+                label: key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1'),
+                type: displayType
+            });
+        });
+
+        // Limit to 8 columns for readability
+        return columns.slice(0, 8);
     }
 }

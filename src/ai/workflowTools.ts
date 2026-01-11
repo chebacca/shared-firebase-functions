@@ -12,13 +12,13 @@ export const workflowFunctionDeclarations = [
     parameters: {
       type: 'object',
       properties: {
-        name: { 
-          type: 'string', 
-          description: 'Descriptive name for the workflow (e.g., "Post-Production Review Workflow")' 
+        name: {
+          type: 'string',
+          description: 'Descriptive name for the workflow (e.g., "Post-Production Review Workflow")'
         },
-        description: { 
-          type: 'string', 
-          description: 'Detailed description of what this workflow accomplishes' 
+        description: {
+          type: 'string',
+          description: 'Detailed description of what this workflow accomplishes'
         },
         targetPhase: {
           type: 'string',
@@ -29,15 +29,15 @@ export const workflowFunctionDeclarations = [
           type: 'string',
           description: 'Current session status (e.g., "READY_FOR_POST", "POST_PRODUCTION"). Used to validate workflow appropriateness and ensure phase alignment.'
         },
-        nodes: { 
+        nodes: {
           type: 'array',
           description: 'Array of workflow nodes. Each node must have: id, type, position {x, y}, data {label, taskType, assignedRole, etc.}. Node types and task types should align with targetPhase.',
           items: {
             type: 'object',
             properties: {
               id: { type: 'string' },
-              type: { 
-                type: 'string', 
+              type: {
+                type: 'string',
                 enum: ['task', 'approval', 'start', 'end', 'decision', 'agent'],
                 description: 'Node type: "task" for standard workflow tasks, "agent" for AI Agent nodes that can automate tasks, "approval" for review gates, "start"/"end" for workflow boundaries, "decision" for conditional branching'
               },
@@ -75,7 +75,7 @@ export const workflowFunctionDeclarations = [
     parameters: {
       type: 'object',
       properties: {
-        nodes: { 
+        nodes: {
           type: 'array',
           description: 'Array of workflow nodes to validate',
           items: {
@@ -130,7 +130,7 @@ export const workflowFunctionDeclarations = [
     parameters: {
       type: 'object',
       properties: {
-        nodes: { 
+        nodes: {
           type: 'array',
           items: {
             type: 'object',
@@ -148,7 +148,7 @@ export const workflowFunctionDeclarations = [
             }
           }
         },
-        edges: { 
+        edges: {
           type: 'array',
           items: {
             type: 'object',
@@ -275,7 +275,7 @@ export const workflowFunctionDeclarations = [
     parameters: {
       type: 'object',
       properties: {
-        nodes: { 
+        nodes: {
           type: 'array',
           items: {
             type: 'object',
@@ -293,7 +293,7 @@ export const workflowFunctionDeclarations = [
             }
           }
         },
-        edges: { 
+        edges: {
           type: 'array',
           items: {
             type: 'object',
@@ -363,6 +363,24 @@ export const workflowFunctionDeclarations = [
         }
       },
       required: ['phase']
+    }
+  },
+  {
+    name: 'get_session_workflows',
+    description: 'Retrieve active workflows for a specific session. Use this to find the workflow state when a user asks about a session\'s workflow.',
+    parameters: {
+      type: 'object',
+      properties: {
+        sessionId: {
+          type: 'string',
+          description: 'The ID of the session to retrieve workflows for. If the user provides a name, try to find the session ID first/context aware.'
+        },
+        sessionName: {
+          type: 'string',
+          description: 'The name of the session, if ID is unknown. Tool will attempt to resolve name.'
+        }
+      },
+      required: []
     }
   }
 ];
