@@ -4,7 +4,7 @@ import * as admin from 'firebase-admin';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
 
 // Shared business logic function
-async function disablePublishedCallSheetLogic(data: any, context?: any): Promise<any> {
+export async function disablePublishedCallSheetLogic(data: any, context?: any): Promise<any> {
   try {
     const { callSheetId, organizationId, userId } = data;
 
@@ -57,7 +57,7 @@ async function disablePublishedCallSheetLogic(data: any, context?: any): Promise
     const publishedCallSheetDoc = publishedCallSheetQuery.docs[0];
     const publishedCallSheetData = publishedCallSheetDoc.data();
     const publishedCallSheetDocId = publishedCallSheetDoc.id;
-    
+
     // Verify organization access (already filtered by query, but double-check)
     if (publishedCallSheetData?.organizationId !== organizationId) {
       return createErrorResponse('Published call sheet not in organization');
@@ -92,29 +92,29 @@ export const disablePublishedCallSheet = onRequest(
   },
   async (req: any, res: any) => {
     try {
-    // Set CORS headers
-    res.set('Access-Control-Allow-Origin', '*');
-    res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Application-Mode, X-Requested-With, Cache-Control, Pragma, Expires, x-request-started-at, X-Request-Started-At, request-started-at, X-Request-ID, x-auth-token, X-Client-Type, x-client-type, X-Client-Version, x-client-version');
-    res.set('Access-Control-Allow-Credentials', 'true');
-    
-    if (req.method === 'OPTIONS') {
-      res.status(204).send('');
-      return;
-    }
+      // Set CORS headers
+      res.set('Access-Control-Allow-Origin', '*');
+      res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+      res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Application-Mode, X-Requested-With, Cache-Control, Pragma, Expires, x-request-started-at, X-Request-Started-At, request-started-at, X-Request-ID, x-auth-token, X-Client-Type, x-client-type, X-Client-Version, x-client-version');
+      res.set('Access-Control-Allow-Credentials', 'true');
 
-    const result = await disablePublishedCallSheetLogic(req.body);
-    
-    if (result.success) {
-      res.status(200).json(result);
-    } else {
-      res.status(400).json(result);
-    }
+      if (req.method === 'OPTIONS') {
+        res.status(204).send('');
+        return;
+      }
 
-  } catch (error: any) {
-    console.error('❌ [DISABLE PUBLISHED CALL SHEET HTTP] Error:', error);
-    res.status(500).json(createErrorResponse('Failed to disable published call sheet', error instanceof Error ? error.message : String(error)));
-  }
+      const result = await disablePublishedCallSheetLogic(req.body);
+
+      if (result.success) {
+        res.status(200).json(result);
+      } else {
+        res.status(400).json(result);
+      }
+
+    } catch (error: any) {
+      console.error('❌ [DISABLE PUBLISHED CALL SHEET HTTP] Error:', error);
+      res.status(500).json(createErrorResponse('Failed to disable published call sheet', error instanceof Error ? error.message : String(error)));
+    }
   }
 );
 

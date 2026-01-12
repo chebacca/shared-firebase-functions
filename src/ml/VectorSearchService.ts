@@ -36,15 +36,25 @@ export class VectorSearchService {
 
   constructor(apiKey?: string) {
     this.db = getFirestore();
-    
-    // Initialize Gemini for embeddings if API key is available
-    if (apiKey) {
+
+    // Initialize Gemini for embeddings
+    // Use provided key OR fallback to secret
+    let key = apiKey;
+    if (!key) {
       try {
-        this.genAI = new GoogleGenerativeAI(apiKey);
+        key = geminiApiKey.value();
+      } catch (e) {
+        console.warn('[VectorSearchService] Could not access GEMINI_API_KEY secret. Embeddings may fail.');
+      }
+    }
+
+    if (key) {
+      try {
+        this.genAI = new GoogleGenerativeAI(key);
         // Use text-embedding-004 model for embeddings
         // Note: This may need to be adjusted based on actual Gemini embedding model
-        this.embeddingModel = this.genAI.getGenerativeModel({ 
-          model: 'text-embedding-004' 
+        this.embeddingModel = this.genAI.getGenerativeModel({
+          model: 'text-embedding-004'
         });
       } catch (error) {
         console.error('Failed to initialize Gemini for embeddings:', error);
@@ -138,7 +148,7 @@ export class VectorSearchService {
 
       // Calculate cosine similarity for each document
       const results: SearchResult[] = [];
-      
+
       for (const doc of snapshot.docs) {
         const data = doc.data();
         const docEmbedding = data.embedding as number[];
@@ -230,7 +240,7 @@ export class VectorSearchService {
       }
 
       const data = doc.data();
-      
+
       // Validate source document belongs to organization
       if (data?.organizationId !== organizationId) {
         throw new Error(`Document ${docId} does not belong to organization ${organizationId}`);

@@ -24,6 +24,9 @@ import { gatherPWSWorkflowContext, PWSWorkflowContext } from './PWSWorkflowConte
 import { gatherSessionContext, SessionContext } from './SessionContextService';
 import { gatherBudgetContext, BudgetContext } from './BudgetContextService';
 import { gatherInventoryContext, InventoryContext } from './InventoryContextService';
+import { getFirestore } from 'firebase-admin/firestore';
+
+const db = getFirestore();
 
 export interface GlobalContext {
   organizationId: string;
@@ -46,6 +49,71 @@ export interface GlobalContext {
   sessions: SessionContext; // Session context for workflow creation
   budgets: BudgetContext;
   inventory: InventoryContext;
+  
+  // Available shows and seasons for script creation planning
+  availableShows?: {
+    shows: Array<{
+      id: string;
+      name: string;
+      status: string;
+      seasons: Array<{
+        id: string;
+        seasonNumber: number;
+        name: string;
+        status: string;
+      }>;
+    }>;
+  };
+}
+
+/**
+ * Fetch available shows and seasons for an organization
+ */
+async function fetchAvailableShows(organizationId: string): Promise<{
+  shows: Array<{
+    id: string;
+    name: string;
+    status: string;
+    seasons: Array<{
+      id: string;
+      seasonNumber: number;
+      name: string;
+      status: string;
+    }>;
+  }>;
+}> {
+  try {
+    const showsSnap = await db
+      .collection('clipShowShows')
+      .where('organizationId', '==', organizationId)
+      .limit(20)
+      .get();
+    
+    const shows = await Promise.all(
+      showsSnap.docs.map(async (showDoc) => {
+        const showData = showDoc.data();
+        // Extract seasons from show data (seasons array is stored on the show document)
+        const seasons = (showData.seasons || []).map((season: any) => ({
+          id: season.id || `${showDoc.id}_season_${season.seasonNumber}`,
+          seasonNumber: season.seasonNumber || 0,
+          name: season.name || `Season ${season.seasonNumber || 0}`,
+          status: season.status || 'Active'
+        }));
+        
+        return {
+          id: showDoc.id,
+          name: showData.name || 'Unnamed Show',
+          status: showData.status || 'Active',
+          seasons: seasons
+        };
+      })
+    );
+    
+    return { shows };
+  } catch (error) {
+    console.error('❌ [GlobalContext] Error fetching available shows:', error);
+    return { shows: [] };
+  }
 }
 
 /**
@@ -163,6 +231,12 @@ export async function gatherGlobalContext(
     };
   }
 
+  // Fetch available shows and seasons for script creation planning
+  const availableShows = await fetchAvailableShows(organizationId).catch(error => {
+    console.error('❌ [GlobalContext] Error gathering available shows:', error);
+    return { shows: [] };
+  });
+
   const globalContext: GlobalContext = {
     organizationId,
     timestamp: now.toISOString(),
@@ -177,7 +251,8 @@ export async function gatherGlobalContext(
     pwsWorkflows: pwsWorkflowContext,
     sessions: sessionContext,
     budgets: budgetContext,
-    inventory: inventoryContext
+    inventory: inventoryContext,
+    availableShows
   };
 
   console.log(`✅ [GlobalContext] Context aggregation complete for org ${organizationId}`);

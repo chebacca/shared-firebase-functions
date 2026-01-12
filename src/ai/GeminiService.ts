@@ -94,6 +94,19 @@ export class GeminiService extends CoreGeminiService {
     // Import the prompt dynamically (or moved to import at top)
     const { ARCHITECT_SYSTEM_PROMPT } = require('./prompts/ArchitectPrompts');
 
+    // Build context information for the Architect
+    let contextInfo = '';
+    if (globalContext.availableShows && globalContext.availableShows.shows.length > 0) {
+      contextInfo = '\n\nAVAILABLE SHOWS AND SEASONS:\n';
+      globalContext.availableShows.shows.forEach((show) => {
+        contextInfo += `- ${show.name} (${show.seasons.length} seasons):\n`;
+        show.seasons.forEach((season) => {
+          contextInfo += `  - ${season.name} (ID: ${season.id})\n`;
+        });
+      });
+      contextInfo += '\nUse this data to generate multiple-choice options for show/season selection.\n';
+    }
+
     // Prepare history (limit to last few turns for specific plan context)
     const history = globalContext.conversationHistory || []; // Cast to any if needed to avoid type errors
     // Limit to prevent context overflow and focus on immediate planning
@@ -107,7 +120,7 @@ export class GeminiService extends CoreGeminiService {
       history: [
         {
           role: 'user',
-          parts: [{ text: "SYSTEM INSTRUCTION: " + ARCHITECT_SYSTEM_PROMPT }]
+          parts: [{ text: "SYSTEM INSTRUCTION: " + ARCHITECT_SYSTEM_PROMPT + contextInfo }]
         },
         {
           role: 'model',
@@ -127,29 +140,54 @@ export class GeminiService extends CoreGeminiService {
     }
 
     const responseText = result.response.text();
-    console.log('🏛️ [Gemini Service] Architect output:', responseText);
+    console.log('🏛️ [Gemini Service] Architect raw output:', responseText);
+    console.log('🏛️ [Gemini Service] Architect output length:', responseText.length);
 
-    return this.parseArchitectResponse(responseText);
+    const parsed = this.parseArchitectResponse(responseText);
+    console.log('🏛️ [Gemini Service] Architect parsed response:', JSON.stringify(parsed, null, 2));
+    return parsed;
   }
 
   private parseArchitectResponse(text: string): AgentResponse {
     try {
-      // Strip markdown blocks if present
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        throw new Error('No JSON found in Architect response');
+      // First, try to extract JSON from markdown code blocks (```json ... ```)
+      let jsonStr = '';
+      const codeBlockMatch = text.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+      if (codeBlockMatch) {
+        jsonStr = codeBlockMatch[1];
+      } else {
+        // If no code block, try to find JSON object directly
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+          throw new Error('No JSON found in Architect response');
+        }
+        jsonStr = jsonMatch[0];
       }
 
-      const jsonStr = jsonMatch[0];
+      // Clean up the JSON string (remove any trailing commas, etc.)
+      jsonStr = jsonStr.trim();
+      
       const parsed = JSON.parse(jsonStr);
+
+      // Determine context: Use architect's suggestion if provided, otherwise default to plan_mode
+      let contextMode = 'plan_mode';
+      if (parsed.suggestedContext && parsed.suggestedContext !== 'none') {
+        contextMode = parsed.suggestedContext;
+      } else if (parsed.isComplete) {
+        contextMode = 'none';
+      }
 
       return {
         response: parsed.response,
-        suggestedContext: parsed.isComplete ? 'none' : 'plan_mode' as any, // Keep in plan mode until done. Cast for type safety if needed.
+        suggestedContext: contextMode as any,
         contextData: {
           isPlan: true,
           markdown: parsed.planMarkdown,
-          isComplete: parsed.isComplete
+          isComplete: parsed.isComplete,
+          requiresApproval: parsed.requiresApproval || false,
+          actions: parsed.actions || [], // Extract execution actions
+          multipleChoiceQuestion: parsed.multipleChoiceQuestion || null, // Extract multiple choice question
+          ...parsed.contextData // Include any extra data (e.g. for user list)
         },
         followUpSuggestions: parsed.suggestedActions || [],
         reasoning: "Architect Planning Session"
@@ -157,12 +195,21 @@ export class GeminiService extends CoreGeminiService {
 
     } catch (error) {
       console.error('❌ [Gemini Service] Failed to parse Architect JSON:', error);
+      console.error('❌ [Gemini Service] Raw response text:', text.substring(0, 500));
+      // Even on parse error, mark as Architect response so frontend knows to treat it as planning
       return {
         response: text, // Fallback to raw text
         suggestedContext: 'plan_mode' as any, // Keep trying
-        contextData: {},
+        contextData: {
+          isPlan: true, // Mark as plan so frontend recognizes it
+          markdown: '', // Empty plan
+          isComplete: false,
+          requiresApproval: false,
+          actions: [],
+          multipleChoiceQuestion: null
+        },
         followUpSuggestions: [],
-        reasoning: "Failed to parse JSON"
+        reasoning: "Failed to parse JSON - but still in Architect mode"
       } as any;
     }
   }
@@ -180,6 +227,39 @@ export class GeminiService extends CoreGeminiService {
       console.log('🧠 [Gemini Service] Starting response generation...');
       console.log('📝 [Gemini Service] User message:', message);
       console.log('🎯 [Gemini Service] Current mode:', currentMode);
+      console.log('🎯 [Gemini Service] globalContext.activeMode:', (globalContext as any).activeMode);
+
+      // CRITICAL: Architect/Plan Mode Check - MUST happen FIRST before any other processing
+      const activeModeValue = (globalContext as any).activeMode;
+      const currentModeValue = currentMode as string;
+      const shouldUseArchitect = activeModeValue === 'plan_mode' || currentModeValue === 'plan_mode';
+      
+      console.log(`🏛️ [Gemini Service] Architect routing check (FIRST):`);
+      console.log(`  - globalContext.activeMode: "${activeModeValue}"`);
+      console.log(`  - currentMode: "${currentModeValue}"`);
+      console.log(`  - shouldUseArchitect: ${shouldUseArchitect}`);
+      
+      if (shouldUseArchitect) {
+        console.log('🏛️ [Gemini Service] ✅ ROUTING TO ARCHITECT SESSION (early check)');
+        // Prepare parts for attachments if any
+        const parts: any[] = [];
+        if (attachments && attachments.length > 0) {
+          for (const att of attachments) {
+            try {
+              const base64Data = await this.fetchAttachment(att.url);
+              parts.push({
+                inlineData: {
+                  mimeType: att.mimeType,
+                  data: base64Data
+                }
+              });
+            } catch (e) {
+              console.error(`❌ [Gemini Service] Failed to fetch attachment: ${att.url}`, e);
+            }
+          }
+        }
+        return await this.runArchitectSession(message, globalContext, parts);
+      }
 
       // Check if this is a workflow building request
       // NEW: Check for explicit "Plan" vs "Graph" intent passed from Frontend Context
@@ -236,10 +316,8 @@ export class GeminiService extends CoreGeminiService {
         }
       }
 
-      // NEW: Architect/Plan Mode Check
-      if (globalContext.activeMode === 'plan_mode') {
-        return await this.runArchitectSession(message, globalContext, parts);
-      }
+      // Architect check already happened at the beginning - if we reach here, we're using standard agent
+      console.log(`🏛️ [Gemini Service] Using standard agent (Architect check already passed)`);
 
 
       parts.push({ text: userPrompt });

@@ -2,6 +2,8 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { getPredictiveAnalyticsService } from '../ml/PredictiveAnalyticsService';
 import { getVectorSearchService } from '../ml/VectorSearchService';
 
+import { googleMapsService } from '../google/maps';
+
 const db = getFirestore();
 
 export interface ToolExecutionResult {
@@ -36,6 +38,28 @@ export class DataToolExecutor {
                 case 'search_knowledge_base':
                     return this.searchKnowledgeBase(args, organizationId);
 
+                case 'search_google_places':
+                    return this.searchGooglePlaces(args);
+
+                // Execution Tools
+                case 'create_project':
+                    return this.createProject(args, organizationId, userId);
+
+                case 'manage_task':
+                    return this.manageTask(args, organizationId, userId);
+
+                case 'assign_team_member':
+                    return this.assignTeamMember(args, organizationId);
+
+                case 'execute_app_action':
+                    return this.executeAppAction(args, organizationId, userId);
+
+                case 'list_inventory':
+                    return this.listInventory(args, organizationId);
+
+                case 'list_timecards':
+                    return this.listTimecards(args, organizationId);
+
                 // ML-Powered Tools
                 case 'predict_budget_health':
                     return this.predictBudgetHealth(args, organizationId);
@@ -57,6 +81,33 @@ export class DataToolExecutor {
 
                 case 'list_collections':
                     return this.listCollections();
+
+                case 'universal_create':
+                    return this.universalCreate(args, organizationId, userId);
+
+                case 'universal_update':
+                    return this.universalUpdate(args, organizationId, userId);
+
+                case 'create_session':
+                    return this.createSession(args, organizationId, userId);
+
+                case 'create_call_sheet':
+                    return this.createCallSheet(args, organizationId, userId);
+
+                case 'manage_contact':
+                    return this.manageContact(args, organizationId, userId);
+
+                case 'create_budget':
+                    return this.createBudget(args, organizationId, userId);
+
+                case 'manage_inventory_item':
+                    return this.manageInventoryItem(args, organizationId, userId);
+
+                case 'log_visitor':
+                    return this.logVisitor(args, organizationId, userId);
+
+                case 'create_delivery_package':
+                    return this.createDeliveryPackage(args, organizationId, userId);
 
                 default:
                     return {
@@ -141,17 +192,9 @@ export class DataToolExecutor {
 
     private static async searchUsers(args: any, organizationId: string): Promise<ToolExecutionResult> {
         try {
-            // NOTE: Firestore doesn't support full-text search natively on string fields like 'name'.
-            // We will do a basic prefix search if name is provided, or just filter by role.
-            // For production, Algolia or Typesense is recommended.
+            console.log(`👥 [DataToolExecutor] Searching users in org ${organizationId}`);
 
-            let query = db.collection('users') // Or 'teamMembers' depending on architecture
-                .where('organizationId', '==', organizationId); // Assuming users have orgId on them or we query teamMembers
-
-            // NOTE: Accessing 'users' collection with orgId might imply looking at team memberships. 
-            // Let's assume we search `teamMembers` collection which links users to orgs.
-
-            // Changing to search 'teamMembers' which definitely has organizationId
+            // Search 'teamMembers' which links users to orgs using 'organizationId'
             let teamQuery = db.collection('teamMembers').where('organizationId', '==', organizationId);
 
             if (args.role) {
@@ -159,8 +202,12 @@ export class DataToolExecutor {
             }
 
             const snapshot = await teamQuery.limit(20).get();
-            let users = snapshot.docs.map(doc => doc.data());
+            let users = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
 
+            // Client-side filtering for fuzzy name search since Firestore lacks it
             if (args.name) {
                 const lowerName = args.name.toLowerCase();
                 users = users.filter((u: any) =>
@@ -177,6 +224,7 @@ export class DataToolExecutor {
             };
 
         } catch (error: any) {
+            console.error('❌ [DataToolExecutor] Error searching users:', error);
             return { success: false, error: error.message };
         }
     }
@@ -318,14 +366,25 @@ export class DataToolExecutor {
         try {
             if (!args.query) throw new Error('query is required');
 
-            // Note: Vector search requires API key, so we'll need to get it from secrets
-            // For now, return a message that semantic search needs to be called via HTTP
-            // In production, you'd get the API key from secrets
+            const limit = args.limit || 5;
+            // Default collections to search if not specified
+            const collections = args.collections && args.collections.length > 0
+                ? args.collections
+                : ['projects', 'knowledge_base', 'teamMembers'];
+
+            const vectorService = getVectorSearchService();
+            const results = await vectorService.searchAll(args.query, organizationId, collections, limit);
+
             return {
-                success: false,
-                error: 'Semantic search requires API key. Use the searchAll Firebase Function directly from the client.'
+                success: true,
+                data: {
+                    results,
+                    count: results.length,
+                    message: results.length === 0 ? "No relevant results found." : `Found ${results.length} relevant items.`
+                }
             };
         } catch (error: any) {
+            console.error('❌ [DataToolExecutor] Semantic Search Error:', error);
             return { success: false, error: error.message };
         }
     }
@@ -336,13 +395,25 @@ export class DataToolExecutor {
                 throw new Error('collection and entityId are required');
             }
 
-            // Note: Vector search requires API key
-            // For now, return a message that findSimilar needs to be called via HTTP
+            const limit = args.limit || 5;
+            const vectorService = getVectorSearchService();
+
+            const results = await vectorService.findSimilar(
+                args.collection,
+                args.entityId,
+                organizationId,
+                limit
+            );
+
             return {
-                success: false,
-                error: 'Find similar requires API key. Use the findSimilar Firebase Function directly from the client.'
+                success: true,
+                data: {
+                    results,
+                    count: results.length
+                }
             };
         } catch (error: any) {
+            console.error('❌ [DataToolExecutor] Find Similar Error:', error);
             return { success: false, error: error.message };
         }
     }
@@ -433,8 +504,482 @@ export class DataToolExecutor {
         }
     }
 
+    private static async searchGooglePlaces(args: any): Promise<ToolExecutionResult> {
+        try {
+            if (!args.query) throw new Error('query is required');
+
+            const results = await googleMapsService.searchPlaces(args.query);
+
+            return {
+                success: true,
+                data: {
+                    results: results.slice(0, 5), // Limit to top 5
+                    message: results.length === 0 ? "No places found." : `Found ${results.length} places via Google Maps.`
+                }
+            };
+        } catch (error: any) {
+            console.error('❌ [DataToolExecutor] Google Maps Search Error:', error);
+            // Don't fail the whole request, just return error in data
+            return { success: false, error: `Maps Search failed: ${error.message}` };
+        }
+    }
+
+    // Execution Actions
+    private static async createProject(args: any, organizationId: string, userId: string): Promise<ToolExecutionResult> {
+        try {
+            if (!args.name) throw new Error('Project name is required');
+
+            const projectRef = db.collection('projects').doc();
+            const projectData = {
+                name: args.name,
+                phase: args.phase || 'PRE_PRODUCTION',
+                description: args.description || '',
+                organizationId,
+                createdBy: userId,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+                status: 'ACTIVE'
+            };
+
+            await projectRef.set(projectData);
+
+            return {
+                success: true,
+                data: {
+                    id: projectRef.id,
+                    ...projectData,
+                    message: `Project "${args.name}" created successfully.`
+                }
+            };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
+    }
+
+    private static async manageTask(args: any, organizationId: string, userId: string): Promise<ToolExecutionResult> {
+        try {
+            const { action, taskId, projectId, title, assigneeId, dueDate } = args;
+
+            if (action === 'create') {
+                if (!projectId) throw new Error('projectId is required for creating a task');
+                if (!title) throw new Error('title is required');
+
+                const taskRef = db.collection('tasks').doc();
+                const taskData = {
+                    title,
+                    projectId,
+                    organizationId,
+                    status: 'TODO',
+                    createdBy: userId,
+                    createdAt: new Date(),
+                    assignedTo: assigneeId || null,
+                    dueDate: dueDate ? new Date(dueDate) : null
+                };
+
+                await taskRef.set(taskData);
+                return { success: true, data: { id: taskRef.id, ...taskData, message: 'Task created.' } };
+            }
+
+            if (action === 'update' || action === 'complete') {
+                if (!taskId) throw new Error('taskId is required for update');
+                const taskRef = db.collection('tasks').doc(taskId);
+
+                const updates: any = { updatedAt: new Date() };
+                if (title) updates.title = title;
+                if (assigneeId) updates.assignedTo = assigneeId;
+                if (dueDate) updates.dueDate = new Date(dueDate);
+                if (action === 'complete') updates.status = 'COMPLETED';
+
+                await taskRef.update(updates);
+                return { success: true, data: { id: taskId, updates, message: `Task ${action}d.` } };
+            }
+
+            return { success: false, error: 'Invalid action' };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
+    }
+
+    private static async assignTeamMember(args: any, organizationId: string): Promise<ToolExecutionResult> {
+        try {
+            const { projectId, userId, role } = args;
+            if (!projectId || !userId) throw new Error('projectId and userId are required');
+
+            // Simplified: Store in a subcollection or dedicated participants collection
+            // Assuming 'project_participants' collection for now
+            const participantId = `${projectId}_${userId}`;
+            await db.collection('project_participants').doc(participantId).set({
+                projectId,
+                userId,
+                role: role || 'VIEWER',
+                organizationId,
+                addedAt: new Date()
+            }, { merge: true });
+
+            return {
+                success: true,
+                data: { message: `User assigned to project successfully.` }
+            };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
+    }
+
+    private static async executeAppAction(args: any, organizationId: string, userId: string): Promise<ToolExecutionResult> {
+        try {
+            // Dynamic import to avoid circular dependencies and load only when needed
+            const { CallSheetActions } = await import('./appActions/CallSheetActions');
+
+            const { appName, actionName, parameters } = args;
+            console.log(`🎬 [DataToolExecutor] Executing App Action: ${appName}.${actionName}`);
+
+            if (appName === 'call_sheet') {
+                if (actionName === 'duplicate') {
+                    return await CallSheetActions.duplicateCallSheet(parameters.callSheetId, organizationId, userId);
+                }
+                if (actionName === 'publish') {
+                    return await CallSheetActions.publishCallSheet(parameters.callSheetId, organizationId, userId, parameters.baseUrl);
+                }
+                if (actionName === 'unpublish') {
+                    return await CallSheetActions.unpublishCallSheet(parameters.callSheetId, organizationId, userId);
+                }
+            }
+
+            if (appName === 'inventory') {
+                const { InventoryActions } = await import('./appActions/InventoryActions');
+                if (actionName === 'checkout') {
+                    return await InventoryActions.checkoutAsset(parameters.assetId, userId, organizationId);
+                }
+                if (actionName === 'checkin') {
+                    return await InventoryActions.checkinAsset(parameters.assetId, userId, organizationId);
+                }
+            }
+
+            return { success: false, error: `Action ${appName}.${actionName} not supported yet.` };
+
+        } catch (error: any) {
+            console.error('❌ [DataToolExecutor] App Action Error:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+
+
+    private static async listInventory(args: any, organizationId: string): Promise<ToolExecutionResult> {
+        try {
+            const { status, search, limit = 20 } = args;
+            console.log(`📦 [DataToolExecutor] Listing inventory for org ${organizationId}`);
+
+            let query = db.collection('inventoryItems') // Correct collection name
+                .where('organizationId', '==', organizationId);
+
+            if (status) {
+                query = query.where('status', '==', status);
+            }
+
+            // Note: Firestore search is limited. If 'search' is present, we might need client-side filtering 
+            // or specific prefix queries. For simplicity, we limit to just status or fetch recent.
+            // If 'search' is provided, we can't do simple 'where' + 'string contains' in Firestore universally easily.
+            // We'll rely on fetching a batch and filtering if search is small? No, that's inefficient.
+            // Let's assume exact match or just return recent items if no search, 
+            // or use the query_firestore tool's logic if complex.
+
+            // If search is provided, we might rely on the client to ask for specific items,
+            // or use a separate search index. For now, let's just return the top N items.
+
+            const snapshot = await query.limit(limit).get();
+
+            const items = snapshot.docs.map((doc: any) => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            // Basic client-side search if needed (not ideal for large sets but useful for small envs)
+            let finalItems = items;
+            if (search) {
+                const lowerSearch = search.toLowerCase();
+                finalItems = items.filter((item: any) =>
+                    item.name?.toLowerCase().includes(lowerSearch) ||
+                    item.serialNumber?.toLowerCase().includes(lowerSearch)
+                );
+            }
+
+            return {
+                success: true,
+                data: {
+                    items: finalItems,
+                    count: finalItems.length
+                }
+            };
+        } catch (error: any) {
+            console.error('❌ [DataToolExecutor] Error listing inventory:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    private static async listTimecards(args: any, organizationId: string): Promise<ToolExecutionResult> {
+        try {
+            const { userId, status, limit = 20 } = args;
+            console.log(`⏱️ [DataToolExecutor] Listing timecards for org ${organizationId}`);
+
+            let query = db.collection('timecard_entries')
+                .where('organizationId', '==', organizationId);
+
+            if (userId) {
+                query = query.where('userId', '==', userId);
+            }
+            // Status might need careful handling as entries might not have status, but the aggregated card does.
+            // For MVP, if status is requested, we might need to filter after fetch if status isn't on entry.
+            // However, typical schema propagates status to entries or we query aggregated parent?
+            // Let's assume entries have status for now or valid fields.
+            if (status) {
+                query = query.where('status', '==', status);
+            }
+
+            const snapshot = await query.orderBy('date', 'desc').limit(limit).get();
+
+            const timecards = snapshot.docs.map((doc: any) => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            return {
+                success: true,
+                data: {
+                    timecards,
+                    count: timecards.length
+                }
+            };
+        } catch (error: any) {
+            console.error('❌ [DataToolExecutor] Error listing timecards:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    private static async universalCreate(args: any, organizationId: string, userId: string): Promise<ToolExecutionResult> {
+        try {
+            if (!args.collectionName || !args.data) throw new Error('collectionName and data are required');
+
+            const docRef = db.collection(args.collectionName).doc();
+            const fullData = {
+                ...args.data,
+                organizationId,
+                projectId: args.projectId || null,
+                createdBy: userId,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+                createdVia: 'AI_ARCHITECT'
+            };
+
+            await docRef.set(fullData);
+            return { success: true, data: { id: docRef.id, ...fullData } };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
+    }
+
+    private static async universalUpdate(args: any, organizationId: string, userId: string): Promise<ToolExecutionResult> {
+        try {
+            if (!args.collectionName || !args.id || !args.data) throw new Error('collectionName, id, and data are required');
+
+            const docRef = db.collection(args.collectionName).doc(args.id);
+            const doc = await docRef.get();
+
+            if (!doc.exists) throw new Error('Document not found');
+            if (doc.data()?.organizationId !== organizationId) throw new Error('Access denied');
+
+            const updateData = {
+                ...args.data,
+                updatedAt: new Date(),
+                updatedBy: userId
+            };
+
+            await docRef.update(updateData);
+            return { success: true, data: { id: args.id, ...updateData } };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
+    }
+
+    private static async createSession(args: any, organizationId: string, userId: string): Promise<ToolExecutionResult> {
+        try {
+            if (!args.title || !args.projectId) throw new Error('title and projectId are required');
+
+            const sessionRef = db.collection('sessions').doc();
+            const sessionData = {
+                title: args.title,
+                projectId: args.projectId,
+                organizationId,
+                type: args.type || 'Capture',
+                status: 'SCHEDULED',
+                scheduledAt: args.scheduledAt ? new Date(args.scheduledAt) : new Date(),
+                durationMinutes: args.durationMinutes || 60,
+                createdBy: userId,
+                createdAt: new Date(),
+                updatedAt: new Date()
+            };
+
+            await sessionRef.set(sessionData);
+            return { success: true, data: { id: sessionRef.id, ...sessionData } };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
+    }
+
+    private static async createCallSheet(args: any, organizationId: string, userId: string): Promise<ToolExecutionResult> {
+        try {
+            if (!args.title || !args.projectId || !args.date) throw new Error('title, projectId, and date are required');
+
+            const callSheetRef = db.collection('callSheets').doc();
+            const callSheetData = {
+                title: args.title,
+                date: args.date,
+                projectId: args.projectId,
+                organizationId,
+                startTime: args.startTime || '08:00',
+                location: args.location || 'TBD',
+                notes: args.notes || '',
+                status: 'draft',
+                accessCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
+                createdBy: userId,
+                createdAt: new Date(),
+                updatedAt: new Date()
+            };
+
+            await callSheetRef.set(callSheetData);
+            return { success: true, data: { id: callSheetRef.id, ...callSheetData } };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
+    }
+
+    private static async manageContact(args: any, organizationId: string, userId: string): Promise<ToolExecutionResult> {
+        try {
+            if (!args.firstName || !args.lastName) throw new Error('firstName and lastName are required');
+
+            const contactRef = db.collection('contacts').doc();
+            const contactData = {
+                firstName: args.firstName,
+                lastName: args.lastName,
+                organizationId,
+                email: args.email || null,
+                phone: args.phone || null,
+                role: args.role || 'GUEST',
+                addressBookId: args.addressBookId || 'default',
+                createdBy: userId,
+                createdAt: new Date(),
+                updatedAt: new Date()
+            };
+
+            await contactRef.set(contactData);
+            return { success: true, data: { id: contactRef.id, ...contactData } };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
+    }
+
+    private static async createBudget(args: any, organizationId: string, userId: string): Promise<ToolExecutionResult> {
+        try {
+            if (!args.projectId || !args.totalAmount) throw new Error('projectId and totalAmount are required');
+
+            const budgetRef = db.collection('clipShowBudgetMetadata').doc();
+            const budgetData = {
+                projectId: args.projectId,
+                organizationId,
+                totalAmount: args.totalAmount,
+                currency: args.currency || 'USD',
+                status: 'DRAFT',
+                fiscalYear: args.fiscalYear || new Date().getFullYear().toString(),
+                notes: args.notes || '',
+                createdBy: userId,
+                createdAt: new Date(),
+                updatedAt: new Date()
+            };
+
+            await budgetRef.set(budgetData);
+            return { success: true, data: { id: budgetRef.id, ...budgetData } };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
+    }
+
+    private static async manageInventoryItem(args: any, organizationId: string, userId: string): Promise<ToolExecutionResult> {
+        try {
+            if (!args.name || !args.category) throw new Error('name and category are required');
+
+            const itemRef = db.collection('inventoryItems').doc();
+            const itemData = {
+                name: args.name,
+                category: args.category,
+                organizationId,
+                status: 'AVAILABLE',
+                serialNumber: args.serialNumber || null,
+                assignedTo: null,
+                tags: args.tags || [],
+                createdBy: userId,
+                createdAt: new Date(),
+                updatedAt: new Date()
+            };
+
+            await itemRef.set(itemData);
+            return { success: true, data: { id: itemRef.id, ...itemData } };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
+    }
+
+    private static async logVisitor(args: any, organizationId: string, userId: string): Promise<ToolExecutionResult> {
+        try {
+            if (!args.visitorName || !args.purpose) throw new Error('visitorName and purpose are required');
+
+            const logRef = db.collection('visitor_logs').doc();
+            const logData = {
+                visitorName: args.visitorName,
+                purpose: args.purpose,
+                organizationId,
+                checkInTime: new Date(),
+                checkOutTime: null,
+                hostId: userId,
+                location: args.location || 'Reception',
+                status: 'ON_SITE',
+                createdAt: new Date()
+            };
+
+            await logRef.set(logData);
+            return { success: true, data: { id: logRef.id, ...logData } };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
+    }
+
+    private static async createDeliveryPackage(args: any, organizationId: string, userId: string): Promise<ToolExecutionResult> {
+        try {
+            if (!args.name || !args.projectId) throw new Error('name and projectId are required');
+
+            const packageRef = db.collection('delivery_packages').doc();
+            const packageData = {
+                name: args.name,
+                projectId: args.projectId,
+                organizationId,
+                status: 'DRAFT',
+                items: args.items || [],
+                deliveryFormat: args.deliveryFormat || 'Standard',
+                recipientEmail: args.recipientEmail || null,
+                createdBy: userId,
+                createdAt: new Date(),
+                updatedAt: new Date()
+            };
+
+            await packageRef.set(packageData);
+            return { success: true, data: { id: packageRef.id, ...packageData } };
+        } catch (error: any) {
+            return { success: false, error: error.message };
+        }
+    }
+
     private static generateTableColumns(data: any[]): any[] {
         if (!data || data.length === 0) return [];
+        // ... previous implementation ...
 
         const first = data[0];
         const columns: any[] = [];

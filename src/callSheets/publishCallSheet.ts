@@ -4,7 +4,7 @@ import * as admin from 'firebase-admin';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
 
 // Shared business logic function
-async function publishCallSheetLogic(data: any, context?: any): Promise<any> {
+export async function publishCallSheetLogic(data: any, context?: any): Promise<any> {
   try {
     const { callSheetId, organizationId, userId } = data;
 
@@ -22,7 +22,7 @@ async function publishCallSheetLogic(data: any, context?: any): Promise<any> {
     let callSheetDoc = await admin.firestore().collection('dailyCallSheets').doc(callSheetId).get();
     let docData = callSheetDoc.exists ? callSheetDoc.data() : null;
     let isFromDailyCallSheets = callSheetDoc.exists;
-    
+
     // If not found, try callSheets collection (standalone app uses this)
     if (!callSheetDoc.exists) {
       callSheetDoc = await admin.firestore().collection('callSheets').doc(callSheetId).get();
@@ -33,7 +33,7 @@ async function publishCallSheetLogic(data: any, context?: any): Promise<any> {
           .where('organizationId', '==', organizationId)
           .limit(100)
           .get();
-        
+
         let foundInDailyRecord = false;
         for (const dailyDoc of dailyRecordsQuery.docs) {
           const dailyData = dailyDoc.data();
@@ -45,7 +45,7 @@ async function publishCallSheetLogic(data: any, context?: any): Promise<any> {
             break;
           }
         }
-        
+
         if (!foundInDailyRecord) {
           return createErrorResponse('Call sheet not found');
         }
@@ -54,7 +54,7 @@ async function publishCallSheetLogic(data: any, context?: any): Promise<any> {
         isFromDailyCallSheets = false;
       }
     }
-    
+
     // Extract actual call sheet data - handle nested structure from dailyCallSheets
     let actualCallSheetData: any = null;
     if (docData) {
@@ -68,11 +68,11 @@ async function publishCallSheetLogic(data: any, context?: any): Promise<any> {
         console.log(`📋 [PUBLISH CALL SHEET] Using flat call sheet data from callSheets`);
       }
     }
-    
+
     if (!actualCallSheetData) {
       return createErrorResponse('Call sheet data not found');
     }
-    
+
     // Verify organization access - allow if call sheet org matches OR user's org matches
     let userOrgId: string | null = null;
     if (context?.auth?.uid) {
@@ -83,19 +83,19 @@ async function publishCallSheetLogic(data: any, context?: any): Promise<any> {
         console.warn(`📋 [PUBLISH CALL SHEET] Could not get user org ID:`, error);
       }
     }
-    
+
     // Get organization ID from actual call sheet data or parent document
     const callSheetOrgId = actualCallSheetData?.organizationId || docData?.organizationId;
     const requestedOrgId = organizationId;
-    
+
     // Allow if:
     // 1. Call sheet org matches requested org, OR
     // 2. Call sheet org matches user's org, OR
     // 3. User has access to both organizations (enterprise user case)
-    const hasAccess = callSheetOrgId === requestedOrgId || 
-                     callSheetOrgId === userOrgId ||
-                     (userOrgId === 'enterprise-media-org' && (callSheetOrgId === 'enterprise-media-org' || callSheetOrgId === 'enterprise-org-001'));
-    
+    const hasAccess = callSheetOrgId === requestedOrgId ||
+      callSheetOrgId === userOrgId ||
+      (userOrgId === 'enterprise-media-org' && (callSheetOrgId === 'enterprise-media-org' || callSheetOrgId === 'enterprise-org-001'));
+
     if (!hasAccess) {
       console.log(`📋 [PUBLISH CALL SHEET] Organization mismatch:`, {
         callSheetOrgId,
@@ -110,12 +110,12 @@ async function publishCallSheetLogic(data: any, context?: any): Promise<any> {
     let assignedTeamMembers: any[] = [];
     let teamMemberIds: string[] = [];
     const addedEmails = new Set<string>(); // Track emails to avoid duplicates
-    
+
     // 🔧 NEW: Ensure publisher is added to team members
     const publisherId = userId || (context?.auth?.uid || 'system');
     let publisherEmail: string | null = null;
     let publisherName: string | null = null;
-    
+
     try {
       // Get publisher's user information
       if (publisherId && publisherId !== 'system') {
@@ -126,7 +126,7 @@ async function publishCallSheetLogic(data: any, context?: any): Promise<any> {
         } catch (error) {
           console.warn(`📋 [PUBLISH CALL SHEET] Could not get publisher user record:`, error);
         }
-        
+
         // Also try to get from Firestore users collection
         if (!publisherEmail) {
           try {
@@ -144,24 +144,24 @@ async function publishCallSheetLogic(data: any, context?: any): Promise<any> {
     } catch (error) {
       console.warn(`📋 [PUBLISH CALL SHEET] Error getting publisher info:`, error);
     }
-    
+
     if (projectId) {
       try {
         // Get project to find team members
         const projectDoc = await admin.firestore().collection('projects').doc(projectId).get();
         if (projectDoc.exists) {
           const projectData = projectDoc.data();
-          
+
           // Get team assignments from project
           const teamAssignments = projectData?.teamAssignments || projectData?.teamMembers || [];
-          
+
           // Fetch team member details
           for (const assignment of teamAssignments) {
             // 🔧 CRITICAL FIX: Handle different assignment structures
             // teamAssignments can have: userId, teamMemberId, id, or be a string ID
-            const teamMemberId = assignment.userId || assignment.teamMemberId || assignment.id || 
-                                (typeof assignment === 'string' ? assignment : null);
-            
+            const teamMemberId = assignment.userId || assignment.teamMemberId || assignment.id ||
+              (typeof assignment === 'string' ? assignment : null);
+
             if (teamMemberId) {
               try {
                 const teamMemberDoc = await admin.firestore().collection('teamMembers').doc(teamMemberId).get();
@@ -200,14 +200,14 @@ async function publishCallSheetLogic(data: any, context?: any): Promise<any> {
               }
             }
           }
-          
+
           console.log(`📋 [PUBLISH CALL SHEET] Found ${assignedTeamMembers.length} team members for project`);
         }
       } catch (error) {
         console.warn(`📋 [PUBLISH CALL SHEET] Could not fetch project team members:`, error);
       }
     }
-    
+
     // 🔧 NEW: Add publisher as team member if they have an email and aren't already in the list
     if (publisherEmail && !addedEmails.has(publisherEmail)) {
       try {
@@ -218,16 +218,16 @@ async function publishCallSheetLogic(data: any, context?: any): Promise<any> {
           .where('organizationId', '==', organizationId)
           .limit(1)
           .get();
-        
+
         let publisherTeamMemberId: string;
         let publisherTeamMemberData: any;
-        
+
         if (!existingTeamMemberQuery.empty) {
           // Publisher already exists as team member
           const existingDoc = existingTeamMemberQuery.docs[0];
           publisherTeamMemberId = existingDoc.id;
           publisherTeamMemberData = existingDoc.data();
-          
+
           // Ensure they're active
           if (publisherTeamMemberData.isActive === false) {
             await admin.firestore().collection('teamMembers').doc(publisherTeamMemberId).update({
@@ -239,11 +239,11 @@ async function publishCallSheetLogic(data: any, context?: any): Promise<any> {
         } else {
           // Create new team member for publisher
           publisherTeamMemberId = publisherId; // Use publisher's user ID as team member ID
-          
+
           // Get publisher's role from user document or default to 'MEMBER'
           let publisherRole = 'MEMBER';
           let publisherHierarchy = 50;
-          
+
           try {
             const publisherUserDoc = await admin.firestore().collection('users').doc(publisherId).get();
             if (publisherUserDoc.exists) {
@@ -254,7 +254,7 @@ async function publishCallSheetLogic(data: any, context?: any): Promise<any> {
           } catch (error) {
             console.warn(`📋 [PUBLISH CALL SHEET] Could not get publisher role:`, error);
           }
-          
+
           // Create team member document
           publisherTeamMemberData = {
             email: publisherEmail,
@@ -267,7 +267,7 @@ async function publishCallSheetLogic(data: any, context?: any): Promise<any> {
             createdAt: admin.firestore.Timestamp.now(),
             updatedAt: admin.firestore.Timestamp.now()
           };
-          
+
           // Try to get password from user record if available (for authentication)
           try {
             const publisherUserRecord = await admin.auth().getUser(publisherId);
@@ -276,11 +276,11 @@ async function publishCallSheetLogic(data: any, context?: any): Promise<any> {
           } catch (error) {
             console.warn(`📋 [PUBLISH CALL SHEET] Could not get publisher auth record:`, error);
           }
-          
+
           await admin.firestore().collection('teamMembers').doc(publisherTeamMemberId).set(publisherTeamMemberData);
           console.log(`📋 [PUBLISH CALL SHEET] Created team member for publisher: ${publisherEmail}`);
         }
-        
+
         // Add publisher to assigned team members
         assignedTeamMembers.push({
           id: publisherTeamMemberId,
@@ -291,17 +291,17 @@ async function publishCallSheetLogic(data: any, context?: any): Promise<any> {
         });
         teamMemberIds.push(publisherTeamMemberId);
         addedEmails.add(publisherEmail);
-        
+
         console.log(`📋 [PUBLISH CALL SHEET] Added publisher ${publisherEmail} to team members`);
       } catch (error) {
         console.error(`📋 [PUBLISH CALL SHEET] Error adding publisher as team member:`, error);
         // Don't fail the publish if we can't add the publisher - just log the error
       }
     }
-    
+
     // Generate access code (use as both accessCode and publicId for compatibility)
     const accessCode = generatePublicId();
-    
+
     // Create published call sheet with ALL fields explicitly included
     const now = admin.firestore.Timestamp.now();
     const publishedCallSheet = {
@@ -311,7 +311,7 @@ async function publishCallSheetLogic(data: any, context?: any): Promise<any> {
       projectId: actualCallSheetData?.projectId || docData?.projectId,
       userId: actualCallSheetData?.userId || docData?.userId,
       organizationId: organizationId,
-      
+
       // Basic information
       title: actualCallSheetData?.title || actualCallSheetData?.projectName || '',
       projectName: actualCallSheetData?.projectName || '',
@@ -320,48 +320,48 @@ async function publishCallSheetLogic(data: any, context?: any): Promise<any> {
       status: actualCallSheetData?.status || 'published',
       departments: Array.isArray(actualCallSheetData?.departments) ? actualCallSheetData.departments : [],
       description: actualCallSheetData?.description || '',
-      
+
       // Production information
       production: actualCallSheetData?.production || '',
       director: actualCallSheetData?.director || '',
       producer: actualCallSheetData?.producer || '',
-      
+
       // Weather information
       weather: actualCallSheetData?.weather || '',
       sunrise: actualCallSheetData?.sunrise || '',
       sunset: actualCallSheetData?.sunset || '',
       weatherHigh: actualCallSheetData?.weatherHigh || '',
       weatherLow: actualCallSheetData?.weatherLow || '',
-      
+
       // Time information
       callTime: actualCallSheetData?.callTime || '',
       wrapTime: actualCallSheetData?.wrapTime || '',
       generalCrewCall: actualCallSheetData?.generalCrewCall || '',
-      
+
       // Job information
       jobId: actualCallSheetData?.jobId || '',
       shootDay: actualCallSheetData?.shootDay || '',
-      
+
       // Hospital information
       hospitalName: actualCallSheetData?.hospitalName || '',
       hospitalAddress: actualCallSheetData?.hospitalAddress || '',
       hospitalPhone: actualCallSheetData?.hospitalPhone || '',
-      
+
       // Notes
       notes: actualCallSheetData?.notes || '',
-      
+
       // Metadata
       isTemplate: actualCallSheetData?.isTemplate || false,
       createdAt: actualCallSheetData?.createdAt || docData?.createdAt || now,
       updatedAt: actualCallSheetData?.updatedAt || docData?.updatedAt || now,
-      
+
       // Nested arrays - ensure they're arrays and preserve all nested structures
       personnel: Array.isArray(actualCallSheetData?.personnel) ? actualCallSheetData.personnel : [],
       locations: Array.isArray(actualCallSheetData?.locations) ? actualCallSheetData.locations : [],
       schedule: Array.isArray(actualCallSheetData?.schedule) ? actualCallSheetData.schedule : [],
       vendors: Array.isArray(actualCallSheetData?.vendors) ? actualCallSheetData.vendors : [],
       walkieChannels: Array.isArray(actualCallSheetData?.walkieChannels) ? actualCallSheetData.walkieChannels : [],
-      
+
       // Publishing metadata
       publishedAt: now,
       publishedBy: userId || (context?.auth?.uid || 'system'),
@@ -372,7 +372,7 @@ async function publishCallSheetLogic(data: any, context?: any): Promise<any> {
       assignedTeamMembers: assignedTeamMembers,
       teamMemberIds: teamMemberIds,
       expiresAt: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)), // 7 days
-      
+
       // Real-time update fields
       isLive: true,
       version: 1,
@@ -381,7 +381,7 @@ async function publishCallSheetLogic(data: any, context?: any): Promise<any> {
       lastUpdatedAt: now,
       updateHistory: []
     };
-    
+
     console.log(`📋 [PUBLISH CALL SHEET] Published call sheet includes:`, {
       hasPersonnel: publishedCallSheet.personnel.length > 0,
       hasLocations: publishedCallSheet.locations.length > 0,
@@ -406,10 +406,10 @@ async function publishCallSheetLogic(data: any, context?: any): Promise<any> {
           .where('status', '==', 'published')
           .where('isActive', '==', true)
           .get();
-        
+
         if (!existingPublishedQuery.empty) {
           console.log(`📋 [PUBLISH CALL SHEET] Found ${existingPublishedQuery.size} existing published call sheets for project ${projectId}, unpublishing them...`);
-          
+
           const batch = admin.firestore().batch();
           existingPublishedQuery.docs.forEach(doc => {
             // Skip the current call sheet if it's being republished
@@ -425,7 +425,7 @@ async function publishCallSheetLogic(data: any, context?: any): Promise<any> {
               });
             }
           });
-          
+
           await batch.commit();
           console.log(`📋 [PUBLISH CALL SHEET] Unpublished ${existingPublishedQuery.size} old call sheets for project ${projectId}`);
         }
@@ -434,15 +434,15 @@ async function publishCallSheetLogic(data: any, context?: any): Promise<any> {
         // Don't fail the publish if we can't unpublish old ones - just log the error
       }
     }
-    
+
     // Check if there's an existing published call sheet (for republishing case)
     const existingPublishedDoc = await admin.firestore().collection('publishedCallSheets').doc(callSheetId).get();
     const isRepublishing = existingPublishedDoc.exists;
-    
+
     if (isRepublishing) {
       console.log(`📋 [PUBLISH CALL SHEET] Republishing call sheet: ${callSheetId} (was previously disabled)`);
     }
-    
+
     // Save published call sheet (this will overwrite existing document, re-enabling it)
     await admin.firestore().collection('publishedCallSheets').doc(callSheetId).set(publishedCallSheet);
 
@@ -480,29 +480,29 @@ export const publishCallSheet = onRequest(
   },
   async (req: any, res: any) => {
     try {
-    // Set CORS headers
-    res.set('Access-Control-Allow-Origin', '*');
-    res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Application-Mode, X-Requested-With, Cache-Control, Pragma, Expires, x-request-started-at, X-Request-Started-At, request-started-at, X-Request-ID, x-auth-token, X-Client-Type, x-client-type, X-Client-Version, x-client-version');
-    res.set('Access-Control-Allow-Credentials', 'true');
-    
-    if (req.method === 'OPTIONS') {
-      res.status(204).send('');
-      return;
-    }
+      // Set CORS headers
+      res.set('Access-Control-Allow-Origin', '*');
+      res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+      res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Application-Mode, X-Requested-With, Cache-Control, Pragma, Expires, x-request-started-at, X-Request-Started-At, request-started-at, X-Request-ID, x-auth-token, X-Client-Type, x-client-type, X-Client-Version, x-client-version');
+      res.set('Access-Control-Allow-Credentials', 'true');
 
-    const result = await publishCallSheetLogic(req.body);
-    
-    if (result.success) {
-      res.status(200).json(result);
-    } else {
-      res.status(400).json(result);
-    }
+      if (req.method === 'OPTIONS') {
+        res.status(204).send('');
+        return;
+      }
 
-  } catch (error: any) {
-    console.error('❌ [PUBLISH CALL SHEET HTTP] Error:', error);
-    res.status(500).json(createErrorResponse('Failed to publish call sheet', error instanceof Error ? error.message : String(error)));
-  }
+      const result = await publishCallSheetLogic(req.body);
+
+      if (result.success) {
+        res.status(200).json(result);
+      } else {
+        res.status(400).json(result);
+      }
+
+    } catch (error: any) {
+      console.error('❌ [PUBLISH CALL SHEET HTTP] Error:', error);
+      res.status(500).json(createErrorResponse('Failed to publish call sheet', error instanceof Error ? error.message : String(error)));
+    }
   }
 );
 

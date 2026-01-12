@@ -145,10 +145,23 @@ export const callAIAgent = onCall(
         (globalContext as any).workflowAction = context.workflowAction;
       }
 
+      // NEW: Pass conversation history to globalContext for Architect mode
+      if (context?.conversationHistory && Array.isArray(context.conversationHistory)) {
+        (globalContext as any).conversationHistory = context.conversationHistory.map((msg: any) => ({
+          role: msg.role || (msg.sender === 'user' ? 'user' : 'assistant'),
+          content: msg.content || msg.text || msg.message
+        }));
+      }
+
+      // NEW: Pass activeMode to globalContext for Architect mode routing
+      const currentMode = context?.activeMode || 'none';
+      (globalContext as any).activeMode = currentMode;
+      console.log(`🎯 [AI AGENT] Active mode set to: ${currentMode}`);
+      console.log(`🎯 [AI AGENT] Context received:`, JSON.stringify(context, null, 2));
+
       // 4. Generate Intelligent Response using Gemini
       console.log(`🧠 [AI AGENT] Generating intelligent response with Gemini...`);
       const geminiService = createGeminiService();
-      const currentMode = context?.activeMode || 'none';
 
       // Check if function calling mode is enabled for workflows
       const useFunctionCalling = context?.useFunctionCalling === true && currentMode === 'workflows';

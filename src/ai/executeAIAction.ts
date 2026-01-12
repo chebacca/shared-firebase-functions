@@ -54,6 +54,7 @@ export const executeAIAction = onCall(
     try {
       let result: ActionExecutionResult;
 
+      // Handle specific legacy actions or complex logic
       switch (actionType) {
         case 'status_update':
           result = await executeStatusUpdate(actionData, organizationId, userId);
@@ -72,7 +73,47 @@ export const executeAIAction = onCall(
           break;
 
         default:
-          throw new HttpsError('invalid-argument', `Unknown action type: ${actionType}`);
+          // 🛠️ GENERIC GATEWAY: Try to execute via DataToolExecutor
+          console.log(`📡 [executeAIAction] Routing generic action: ${actionType}`);
+          
+          try {
+            const { DataToolExecutor } = await import('./DataToolExecutor');
+            const toolResult = await DataToolExecutor.executeTool(
+              actionType as any,
+              actionData,
+              organizationId,
+              userId
+            );
+
+            if (!toolResult.success) {
+              // Provide more detailed error messages
+              let errorMessage = toolResult.error || 'Execution failed';
+              
+              // Check if it's an unknown tool
+              if (errorMessage.includes('Unknown data tool')) {
+                errorMessage = `Action type "${actionType}" is not supported. Available actions: create_project, create_session, manage_task, assign_team_member, and others.`;
+              }
+              
+              result = {
+                success: false,
+                message: errorMessage,
+                error: errorMessage
+              };
+            } else {
+              result = {
+                success: true,
+                message: `Successfully executed ${actionType}`,
+                data: toolResult.data
+              };
+            }
+          } catch (importError: any) {
+            console.error(`❌ [executeAIAction] Failed to import DataToolExecutor:`, importError);
+            result = {
+              success: false,
+              message: `Failed to load execution module: ${importError.message}`,
+              error: importError.message
+            };
+          }
       }
 
       // Update alert status if alertId provided
@@ -99,7 +140,7 @@ export const executeAIAction = onCall(
       return result;
     } catch (error) {
       console.error('[executeAIAction] Error executing action:', error);
-      
+
       // Log failed execution
       await logActionExecution({
         organizationId,

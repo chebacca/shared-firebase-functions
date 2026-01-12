@@ -25,3 +25,24 @@ export function getEncryptionKey(): string {
   }
 }
 
+// Define the Google Maps API key secret
+export const googleMapsApiKey = defineSecret('GOOGLE_MAPS_API_KEY');
+
+/**
+ * Get the Google Maps API key
+ */
+export function getGoogleMapsApiKey(): string {
+  try {
+    const key = googleMapsApiKey.value();
+    if (!key) {
+      // Allow fallback for local development if needed, or throw
+      console.warn('GOOGLE_MAPS_API_KEY secret not found. Maps features may fail.');
+      return '';
+    }
+    return key;
+  } catch (error) {
+    console.warn('Error accessing GOOGLE_MAPS_API_KEY secret:', error);
+    return '';
+  }
+}
+

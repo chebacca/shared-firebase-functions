@@ -232,5 +232,148 @@ export const dataToolDeclarations: FunctionDeclaration[] = [
             type: SchemaType.OBJECT,
             properties: {}
         }
+    },
+    {
+        name: 'search_google_places',
+        description: 'Search for real-world places, addresses, and establishments using Google Maps. Returns names, locations, ratings, and IDs. Use for finding locations, researching vendors, or scouting places.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                query: {
+                    type: SchemaType.STRING,
+                    description: 'The search query (e.g., "Universal Studios Hollywood", "camera rental in Los Angeles")'
+                }
+            },
+            required: ['query']
+        }
+    },
+    {
+        name: 'list_inventory',
+        description: 'List inventory items in the organization. Use this to see what equipment (cameras, lights, etc.) is available or checked out.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                status: {
+                    type: SchemaType.STRING,
+                    format: 'enum',
+                    enum: ['AVAILABLE', 'CHECKED_OUT', 'MAINTENANCE', 'LOST'],
+                    description: 'Filter by item status'
+                },
+                search: {
+                    type: SchemaType.STRING,
+                    description: 'Search term for item name or serial number'
+                },
+                limit: {
+                    type: SchemaType.NUMBER,
+                    description: 'Max number of items to return (default: 20)'
+                }
+            },
+            required: []
+        }
+    },
+    {
+        name: 'list_timecards',
+        description: 'List timecards for the organization. Use this to check payroll status, clock-in/out times, or find missing timecards.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                userId: {
+                    type: SchemaType.STRING,
+                    description: 'Filter by specific user ID'
+                },
+                status: {
+                    type: SchemaType.STRING,
+                    format: 'enum',
+                    enum: ['draft', 'pending', 'approved', 'rejected', 'completed'],
+                    description: 'Filter by timecard status'
+                },
+                limit: {
+                    type: SchemaType.NUMBER,
+                    description: 'Max number of timecards to return (default: 20)'
+                }
+            },
+            required: []
+        }
+    },
+    // Execution / Action Tools
+    {
+        name: 'create_project',
+        description: 'Create a new project in the system.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                name: { type: SchemaType.STRING, description: 'Project Name' },
+                phase: {
+                    type: SchemaType.STRING,
+                    format: 'enum',
+                    enum: ['PRE_PRODUCTION', 'PRODUCTION', 'POST_PRODUCTION', 'DEVELOPMENT'],
+                    description: 'Initial project phase'
+                },
+                description: { type: SchemaType.STRING, description: 'Brief description of the project' }
+            },
+            required: ['name']
+        }
+    },
+    {
+        name: 'manage_task',
+        description: 'Create or update a task.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                action: { type: SchemaType.STRING, format: 'enum', enum: ['create', 'update', 'complete'], description: 'Action to perform' },
+                taskId: { type: SchemaType.STRING, description: 'Task ID (required for update/complete)' },
+                projectId: { type: SchemaType.STRING, description: 'Project ID (required for create)' },
+                title: { type: SchemaType.STRING, description: 'Task title' },
+                assigneeId: { type: SchemaType.STRING, description: 'User ID to assign to' },
+                dueDate: { type: SchemaType.STRING, description: 'Due date (YYYY-MM-DD)' }
+            },
+            required: ['action']
+        }
+    },
+    {
+        name: 'assign_team_member',
+        description: 'Assign a team member to a project or role.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                projectId: { type: SchemaType.STRING, description: 'Project ID' },
+                userId: { type: SchemaType.STRING, description: 'User ID to assign' },
+                role: { type: SchemaType.STRING, description: 'Role (e.g. Viewer, Editor, Admin)' }
+            },
+            required: ['projectId', 'userId']
+        }
+    },
+    {
+        name: 'execute_app_action',
+        description: 'Perform specific application actions like duplicating call sheets, publishing items, or other app-specific workflows.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                appName: {
+                    type: SchemaType.STRING,
+                    description: 'The application to target. Allowed values: call_sheet, project_manager, inventory',
+                    format: 'enum',
+                    enum: ['call_sheet', 'project_manager', 'inventory']
+                },
+                actionName: {
+                    type: SchemaType.STRING,
+                    description: 'The action to perform (e.g., "duplicate", "publish", "unpublish", "checkout", "checkin")'
+                },
+                parameters: {
+                    type: SchemaType.OBJECT,
+                    description: 'Key-value pairs for action parameters',
+                    // Note: We can't define deep properties here easily for generic tools, 
+                    // so we keep it as a generic object container. 
+                    // Gemini handles this well.
+                    properties: {
+                        callSheetId: { type: SchemaType.STRING, description: 'ID of the call sheet (if applicable)' },
+                        assetId: { type: SchemaType.STRING, description: 'ID of the asset to checkout/checkin' },
+                        baseUrl: { type: SchemaType.STRING, description: 'Base URL for links (if applicable)' }
+                    },
+                    required: [] // No specific required params as they depend on action
+                }
+            },
+            required: ['appName', 'actionName', 'parameters']
+        }
     }
 ];

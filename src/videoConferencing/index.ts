@@ -275,9 +275,7 @@ export const getVideoConferencingProvidersHttp = onRequest(
     try {
       const { organizationId } = req.body as {
         organizationId: string;
-      };
-
-      if (!organizationId) {
+      };      if (!organizationId) {
         res.status(400).json({
           success: false,
           error: 'Organization ID is required',

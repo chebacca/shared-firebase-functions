@@ -6,4 +6,6 @@
 
 export * from './oauth';
 export * from './config';
+export * from './maps';
+export * from './secrets';
 
