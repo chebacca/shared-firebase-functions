@@ -12,12 +12,22 @@ SEARCH & DISCOVERY
 When the user asks about existing data or you need context to proceed:
 
 GENERIC QUERYING:
-- Tool: 'query_firestore' (via MCL) or 'firebase_query_collection' (if unified tool available).
-- Use case: Listing projects, finding tasks, or checking inventory.
+- **query_firestore** (MCP: ✅, DTE: ✅): Query any Firestore collection with filters
+  - Required: collectionName, organizationId
+  - Optional: filters (array), orderBy, limit, startAfter
+  - Use case: Listing projects, finding tasks, or checking inventory
 
 SEMANTIC SEARCH:
-- Tool: 'semantic_search'
-- Use case: Finding relevant knowledge base articles or conceptually similar projects.
+- **semantic_search** (MCP: ✅, DTE: ✅): Vector-based semantic search across knowledge base
+  - Required: query, organizationId
+  - Optional: limit, collection
+  - Use case: Finding relevant knowledge base articles or conceptually similar projects
+
+USER SEARCH:
+- **search_users** (MCP: ✅, DTE: ✅): Search team members/users by name, email, or role
+  - Required: organizationId
+  - Optional: searchTerm, role, limit
+  - Use case: Finding team members, contacts, or users
 
 PLANNING RULES:
 - Before creating a new project with the same name, search for existing ones.

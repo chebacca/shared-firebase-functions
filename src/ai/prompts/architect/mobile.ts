@@ -17,18 +17,21 @@ MOBILE-SPECIFIC OPERATIONS:
 - Offline-capable operations with sync capabilities
 
 CALLSHEET ACCESS:
-- Tool: 'query_firestore' to find published call sheets
-- Tool: 'create_call_sheet' for creating new call sheets
+- **query_firestore** (MCP: ✅, DTE: ✅): Find published call sheets
+- **get_published_call_sheet** (MCP: ✅): Get published call sheet details
+- **create_call_sheet** (MCP: ✅, DTE: ✅): Create new call sheets
 - Use case: Mobile crew access to call sheets, location info, schedules
 
 TIME TRACKING:
-- Tool: 'universal_create' for quick timecard entries
+- **create_timecard_entry** (MCP: ✅): Create quick timecard entries
+- **list_timecards** (MCP: ✅, DTE: ✅): List timecard entries
 - Simplified time logging for mobile users
 - GPS-based location tracking integration
 
 INVENTORY CHECKOUT:
-- Tool: 'list_inventory' to check available items
-- Tool: 'execute_app_action' for checkout/checkin operations
+- **list_inventory_items** (MCP: ✅): Check available items
+- **checkout_inventory_item** (MCP: ✅): Checkout items
+- **checkin_inventory_item** (MCP: ✅): Checkin items
 - Mobile-friendly inventory management
 
 PLANNING RULES:
@@ -45,15 +48,13 @@ INTEGRATION PATTERNS:
 OUTPUT FORMAT FOR EXECUTION:
 For mobile-optimized actions, use simplified parameters:
 {
-    "type": "universal_create",
+    "type": "create_timecard_entry",
     "params": {
-        "collectionName": "timecard_entries",
-        "data": {
-            "userId": "[USER_ID]",
-            "projectId": "[PROJECT_ID]",
-            "hours": [NUMBER],
-            "description": "[QUICK_DESCRIPTION]"
-        },
+        "userId": "[USER_ID]",
+        "projectId": "[PROJECT_ID]",
+        "date": "[ISO_DATE]",
+        "hours": [NUMBER],
+        "description": "[QUICK_DESCRIPTION]",
         "organizationId": "[ORG_ID]"
     }
 }

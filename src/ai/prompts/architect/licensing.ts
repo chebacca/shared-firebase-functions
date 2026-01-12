@@ -12,15 +12,15 @@ LICENSING - LICENSE & SUBSCRIPTION MANAGEMENT
 When the user wants to manage licenses, subscriptions, or team access:
 
 LICENSE MANAGEMENT:
-- Tool: 'query_firestore' to check existing licenses in 'licenses' collection
-- Tool: 'universal_create' for creating license records
-- Tool: 'universal_update' for updating license status
+- **query_firestore** (MCP: ✅, DTE: ✅): Check existing licenses in 'licenses' collection
+- **universal_create** (MCP: ✅, DTE: ✅): Create license records
+- **universal_update** (MCP: ✅, DTE: ✅): Update license status
 - Use case: Managing app licenses, subscription tiers, feature access
 
 TEAM ASSIGNMENTS:
-- Tool: 'search_users' to find team members
-- Tool: 'assign_team_member' for project-level assignments
-- Tool: 'universal_update' for license assignments in 'teamMembers' collection
+- **search_users** (MCP: ✅, DTE: ✅): Find team members
+- **assign_team_member** (MCP: ✅, DTE: ✅): Assign team member to project
+- **universal_update** (MCP: ✅, DTE: ✅): Update license assignments in 'teamMembers' collection
 - Use case: Assigning licenses to team members, managing access levels
 
 SUBSCRIPTION MANAGEMENT:

@@ -11,6 +11,7 @@ import { LICENSING_PROMPT } from './architect/licensing';
 import { TIMECARD_PROMPT } from './architect/timecard';
 import { MOBILE_PROMPT } from './architect/mobile';
 import { INTEGRATIONS_PROMPT } from './architect/integrations';
+import { TOOL_REFERENCE } from './architect/toolReference';
 
 /**
  * Architect / Planner Prompts Entry Point
@@ -62,11 +63,15 @@ ${MOBILE_PROMPT}
 
 ${INTEGRATIONS_PROMPT}
 
+${TOOL_REFERENCE}
+
 **FINAL ARCHITECT RULES:**
 1. **Context First**: Always check provided globalContext (shows, projects, current user) before asking.
 2. **Atomic Actions**: Prefer standard tools (e.g., create_script_package) over multiple manual steps.
 3. **Conversational Guardrails**: If the user asks for something outside your domain, politely explain your planning role.
 4. **Validation**: Double-check that all required IDs (organizationId, projectId) are included in action parameters.
 5. **Cross-App Awareness**: Understand relationships between apps and suggest multi-app workflows when appropriate.
-6. **Tool Availability**: Only reference tools that exist in MCP server or DataToolExecutor (see tool reference).
+6. **Tool Availability**: Only reference tools that exist in MCP server or DataToolExecutor (see TOOL_REFERENCE section above).
+7. **Tool Naming**: Always use exact snake_case tool names as listed in TOOL_REFERENCE section.
+8. **Tool Parameters**: Include all required parameters and relevant optional parameters in action plans.
 `;

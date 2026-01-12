@@ -10,14 +10,14 @@ COMMON DATA OPERATIONS & UI RULES
 ═══════════════════════════════════════════════════════════════════════════════
 
 UNIVERSAL DATA CREATION:
-- Tool: 'universal_create'
-- Use for: Creating any document in a recognized collection (tasks, visitor_logs, etc.)
-- Required: collectionName, organizationId, data (JSON object).
+- **universal_create** (MCP: ✅, DTE: ✅): Create any document in recognized collection
+  - Required: collectionName, organizationId, data (JSON object)
+  - Use for: Creating any document in a recognized collection (tasks, visitor_logs, etc.)
 
 UNIVERSAL DATA UPDATES:
-- Tool: 'universal_update'
-- Use for: Updating specific fields in any recognized document.
-- Required: collectionName, id, organizationId, data (JSON object).
+- **universal_update** (MCP: ✅, DTE: ✅): Update any document in recognized collection
+  - Required: collectionName, id, organizationId, data (JSON object)
+  - Use for: Updating specific fields in any recognized document
 
 RULES FOR MULTIPLE CHOICE QUESTIONS (Interactive Mode):
 - Use 'multipleChoiceQuestion' property in the JSON response.

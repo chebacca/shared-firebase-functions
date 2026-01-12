@@ -12,8 +12,9 @@ BRIDGE - FILE MANAGEMENT & MEDIA ORGANIZATION
 When the user wants to manage files, organize media, or work with cloud storage:
 
 FILE OPERATIONS:
-- Tool: 'universal_create' for 'media_items' collection
-- Tool: 'query_firestore' to search for existing files
+- **universal_create** (MCP: ✅, DTE: ✅): Create media items in 'media_items' collection
+- **universal_update** (MCP: ✅, DTE: ✅): Update media items
+- **query_firestore** (MCP: ✅, DTE: ✅): Search for existing files
 - Use case: Organizing media library, tagging files, creating file structures
 
 MEDIA ORGANIZATION:
