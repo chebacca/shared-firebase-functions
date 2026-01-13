@@ -86,21 +86,53 @@ Title: ${data.title}
 Concept: ${conceptDescription}
 
 **CRITICAL FORMAT REQUIREMENT:**
-${data.format === '3-column-table'
-                    ? `Produce a 3-column script using a standard HTML <table> structure.
-The table MUST HAVE:
-1. A <thead> row with 3 <th> columns: "TIME | SCENE / ACTION", "CHARACTER | DIALOGUE", "NOTES / MUSIC / GRAPHICS".
-2. Multiple <tr> rows in <tbody>, each with 3 <td> columns.
-3. INLINE STYLES: Add style="border: 1px solid #ccc; padding: 8px; vertical-align: top;" to all <td> and <th> elements.
-4. TIMING: The first column of each row MUST start with the timestamp (e.g., 0:00, 0:15).
-
-Return ONLY the <table> block.`
-                    : `Produce a standard screenplay. Use <p> tags for all lines. 
+${data.format === 'screenplay'
+                    ? `Produce a standard screenplay. Use <p> tags for all lines. 
 - Use <strong> for Scene Headings (e.g. <strong>EXT. LOCATION - DAY</strong>).
 - Use <p style="text-align: center;"> for Character Names.
 - Use <p> for Dialogue and Action.
 
-Return ONLY the HTML content.`}
+Return ONLY the HTML content.`
+                    : `Produce a 3-column script using the EXACT HTML structure below.
+The table MUST follow this specific template from the application's codebase.
+
+**HTML STRUCTURE TO RETURN:**
+<table style="width: 100%; border-collapse: collapse; margin: 0.5in 0; font-size: 11pt; table-layout: fixed; border-spacing: 0;">
+  <colgroup>
+    <col style="width: calc(100% / 3);">
+    <col style="width: calc(100% / 3);">
+    <col style="width: calc(100% / 3);">
+  </colgroup>
+  <thead>
+    <tr style="background-color: #f0f0f0; border-bottom: 2px solid #333;">
+      <th style="border: 1px solid #ccc; padding: 8px; text-align: left; font-weight: bold; overflow: hidden; word-wrap: break-word; box-sizing: border-box;">SCENE / ACTION</th>
+      <th style="border: 1px solid #ccc; padding: 8px; text-align: left; font-weight: bold; overflow: hidden; word-wrap: break-word; box-sizing: border-box;">CHARACTER | DIALOGUE</th>
+      <th style="border: 1px solid #ccc; padding: 8px; text-align: left; font-weight: bold; overflow: hidden; word-wrap: break-word; box-sizing: border-box;">NOTES / MUSIC / GRAPHICS</th>
+    </tr>
+  </thead>
+  <tbody>
+    <!-- REPEAT FOR EACH ROW -->
+    <tr style="border-bottom: 1px solid #ddd;">
+      <td style="border: 1px solid #ccc; padding: 8px; vertical-align: top; overflow: hidden; word-wrap: break-word; overflow-wrap: break-word; box-sizing: border-box;">
+        <strong>[TIMESTAMP] - [SCENE HEADING]</strong><br>[ACTION DESCRIPTION]
+      </td>
+      <td style="border: 1px solid #ccc; padding: 8px; vertical-align: top; overflow: hidden; word-wrap: break-word; overflow-wrap: break-word; box-sizing: border-box;">
+        <strong>[CHARACTER NAME]</strong><br>[DIALOGUE]
+      </td>
+      <td style="border: 1px solid #ccc; padding: 8px; vertical-align: top; font-size: 10pt; overflow: hidden; word-wrap: break-word; overflow-wrap: break-word; box-sizing: border-box;">
+        [MUSIC / SFX / GRAPHICS / NOTES]
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+**CRITICAL INSTRUCTIONS:**
+1. Return ONLY the \`<table>...</table>\` block.
+2. Maintain the EXACT inline styles provided above; do not simplify them.
+3. **Column 1**: MUST start with "<strong>0:00 - [SCENE]</strong>".
+4. **Column 2**: Character names MUST be <strong>BOLD</strong>.
+5. **Column 3**: Note the \`font-size: 10pt\` style for this column only.
+6. Do not merge cells (colspan).`}
 
 Return ONLY the raw HTML. No explanation, no markdown tags.`;
 
@@ -108,7 +140,9 @@ Return ONLY the raw HTML. No explanation, no markdown tags.`;
 
             let scriptContent = '';
             try {
-                scriptContent = await gemini.generateText(prompt, systemPrompt);
+                const rawResponse = await gemini.generateText(prompt, systemPrompt);
+                // Clean markdown code blocks if present
+                scriptContent = rawResponse.replace(/```html/g, '').replace(/```/g, '').trim();
             } catch (aiError: any) {
                 console.error(`❌ [createScriptPackage] AI Generation failed: ${aiError.message}`);
                 // Continue without content, user can retry generation separately or edit manually

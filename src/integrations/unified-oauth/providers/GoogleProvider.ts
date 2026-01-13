@@ -26,7 +26,20 @@ export class GoogleProvider implements OAuthProvider {
    * Generate OAuth authorization URL
    */
   async getAuthUrl(params: OAuthInitParams): Promise<string> {
-    const config = await this.getConfig(params.organizationId);
+    let config: ProviderConfig;
+    try {
+      config = await this.getConfig(params.organizationId);
+    } catch (error: any) {
+      // Re-throw with clearer error message for missing credentials
+      if (error.message?.includes('not configured') || error.message?.includes('client secret')) {
+        throw new Error(`Google Drive is not configured. Please configure Google OAuth credentials in Integration Settings (organizations/${params.organizationId}/integrationSettings/google or organizations/${params.organizationId}/integrationConfigs/google-drive-integration).`);
+      }
+      throw error;
+    }
+    
+    if (!config.clientId || !config.clientSecret) {
+      throw new Error(`Google OAuth credentials are incomplete. Client ID and Client Secret must be configured in Integration Settings.`);
+    }
     
     const oauth2Client = new google.auth.OAuth2(
       config.clientId,

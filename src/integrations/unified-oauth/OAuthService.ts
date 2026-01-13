@@ -68,10 +68,10 @@ export class UnifiedOAuthService {
     });
 
     // Determine the redirect URI for the provider
-    // For Google on localhost, we redirect back to the client directly
-    const isLocalhost = redirectUrl.includes('localhost') || redirectUrl.includes('127.0.0.1');
+    // ALWAYS use Firebase Functions callback URL - it will redirect back to the client URL after processing
+    // This ensures the redirect URI is always authorized in Google Cloud Console
     const oauthCallbackUrl = 'https://us-central1-backbone-logic.cloudfunctions.net/handleOAuthCallback';
-    const redirectUriToUse = (isLocalhost && providerName === 'google') ? redirectUrl : oauthCallbackUrl;
+    const redirectUriToUse = oauthCallbackUrl;
 
     const authUrl = await (provider as OAuthProvider).getAuthUrl({
       organizationId,
@@ -173,9 +173,9 @@ export class UnifiedOAuthService {
     }
 
     // CRITICAL: The redirect URI must match EXACTLY what was used in the authorization request
-    const isLocalhost = stateData.redirectUrl?.includes('localhost') || stateData.redirectUrl?.includes('127.0.0.1');
+    // Always use Firebase Functions callback URL (consistent with initiateOAuth)
     const oauthCallbackUrl = 'https://us-central1-backbone-logic.cloudfunctions.net/handleOAuthCallback';
-    const redirectUri = (isLocalhost && providerName === 'google') ? stateData.redirectUrl : oauthCallbackUrl;
+    const redirectUri = oauthCallbackUrl;
 
     console.log(`🔍 [OAuthService] Exchanging code for tokens`, {
       provider: providerName,

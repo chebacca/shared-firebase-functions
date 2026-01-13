@@ -273,16 +273,75 @@ export async function handleMyManager(req: any, res: any, organizationId: string
   try {
     console.log(`⏰ [MY MANAGER] Getting manager info for user: ${userId} in org: ${organizationId}`);
 
-    // Find team member record where this user is the employee
-    const teamMemberQuery = await db.collection('teamMembers')
+    // 🔥 PRIMARY SOURCE: Check userDirectReports collection (matches all frontend implementations)
+    const directReportQuery = await db.collection('userDirectReports')
       .where('organizationId', '==', organizationId)
-      .where('userId', '==', userId)
+      .where('employeeId', '==', userId)
       .where('isActive', '==', true)
       .limit(1)
       .get();
 
-    if (teamMemberQuery.empty) {
-      console.log(`⏰ [MY MANAGER] No active team member record found for user: ${userId}`);
+    if (directReportQuery.empty) {
+      // Check if user is owner/admin (they can be self-managed)
+      const teamMemberQuery = await db.collection('teamMembers')
+        .where('organizationId', '==', organizationId)
+        .where('userId', '==', userId)
+        .where('isActive', '==', true)
+        .limit(1)
+        .get();
+
+      if (!teamMemberQuery.empty) {
+        const teamMember = teamMemberQuery.docs[0].data();
+        const isOwner = teamMember.isOrganizationOwner === true || 
+                        teamMember.role === 'owner' || 
+                        teamMember.role === 'SUPERADMIN' ||
+                        teamMember.teamMemberRole === 'owner';
+        const isAdmin = teamMember.isAdmin === true || 
+                        teamMember.role === 'admin' || 
+                        teamMember.role === 'ADMIN' ||
+                        teamMember.dashboardRole === 'ADMIN';
+        
+        // For owners/admins without managers, return self-manager response
+        if (isOwner || isAdmin) {
+          const userDoc = await db.collection('users').doc(userId).get();
+          const userData = userDoc.exists ? userDoc.data() : null;
+          
+          const selfManagerInfo = {
+            id: teamMemberQuery.docs[0].id,
+            employeeId: userId,
+            managerId: userId, // Self-manager
+            isActive: true,
+            canApproveTimecards: true,
+            isSelfManager: true,
+            effectiveDate: (teamMember.createdAt && typeof teamMember.createdAt.toDate === 'function') 
+              ? teamMember.createdAt.toDate().toISOString() 
+              : new Date().toISOString(),
+            manager: {
+              id: userId,
+              name: userData?.displayName || userData?.name || `${userData?.firstName || ''} ${userData?.lastName || ''}`.trim() || teamMember.email || 'You',
+              firstName: userData?.firstName || undefined,
+              lastName: userData?.lastName || undefined,
+              email: userData?.email || teamMember.email || undefined,
+              role: teamMember.role || userData?.role || undefined,
+              department: teamMember.department || userData?.department || undefined
+            },
+            assigner: {
+              id: 'system',
+              name: 'System',
+              email: 'system@backbone.app'
+            }
+          };
+
+          console.log(`⏰ [MY MANAGER] Returning self-manager for owner/admin: ${userId}`);
+          res.status(200).json(createSuccessResponse(
+            selfManagerInfo,
+            'You are self-managed for timecard approvals (organization owner/admin)'
+          ));
+          return;
+        }
+      }
+      
+      console.log(`⏰ [MY MANAGER] No active direct report relationship found for user: ${userId}`);
       res.status(404).json(createErrorResponse(
         'No active direct report relationship found',
         'You do not have an active manager assigned for timecard approvals'
@@ -290,75 +349,12 @@ export async function handleMyManager(req: any, res: any, organizationId: string
       return;
     }
 
-    const teamMemberDoc = teamMemberQuery.docs[0];
-    const teamMember = teamMemberDoc.data();
-    
-    if (!teamMember) {
-      console.log(`⏰ [MY MANAGER] Team member document has no data for user: ${userId}`);
-      res.status(404).json(createErrorResponse(
-        'Team member data not found',
-        'Your team member record exists but contains no data'
-      ));
-      return;
-    }
-    
-    // Check if user is owner/admin
-    const isOwner = teamMember.isOrganizationOwner === true || 
-                    teamMember.role === 'owner' || 
-                    teamMember.role === 'SUPERADMIN' ||
-                    teamMember.teamMemberRole === 'owner';
-    const isAdmin = teamMember.isAdmin === true || 
-                    teamMember.role === 'admin' || 
-                    teamMember.role === 'ADMIN' ||
-                    teamMember.dashboardRole === 'ADMIN';
-    
-    const managerId = teamMember.managerId;
+    const directReportDoc = directReportQuery.docs[0];
+    const directReportData = directReportDoc.data();
+    const managerId = directReportData.managerId;
 
-    // Handle case where user doesn't have a manager
     if (!managerId) {
-      console.log(`⏰ [MY MANAGER] No manager ID found for user: ${userId} (isOwner: ${isOwner}, isAdmin: ${isAdmin})`);
-      
-      // For owners/admins without managers, return self-manager response
-      if (isOwner || isAdmin) {
-        // Get user's own details for self-manager response
-        const userDoc = await db.collection('users').doc(userId).get();
-        const userData = userDoc.exists ? userDoc.data() : null;
-        
-        const selfManagerInfo = {
-          id: teamMemberDoc.id,
-          employeeId: userId,
-          managerId: userId, // Self-manager
-          isActive: true,
-          canApproveTimecards: true,
-          isSelfManager: true,
-          effectiveDate: (teamMember.createdAt && typeof teamMember.createdAt.toDate === 'function') 
-            ? teamMember.createdAt.toDate().toISOString() 
-            : new Date().toISOString(),
-          manager: {
-            id: userId,
-            name: userData?.displayName || userData?.name || `${userData?.firstName || ''} ${userData?.lastName || ''}`.trim() || teamMember.email || 'You',
-            firstName: userData?.firstName || undefined,
-            lastName: userData?.lastName || undefined,
-            email: userData?.email || teamMember.email || undefined,
-            role: teamMember.role || userData?.role || undefined,
-            department: teamMember.department || userData?.department || undefined
-          },
-          assigner: {
-            id: 'system',
-            name: 'System',
-            email: 'system@backbone.app'
-          }
-        };
-
-        console.log(`⏰ [MY MANAGER] Returning self-manager for owner/admin: ${userId}`);
-        res.status(200).json(createSuccessResponse(
-          selfManagerInfo,
-          'You are self-managed for timecard approvals (organization owner/admin)'
-        ));
-        return;
-      }
-      
-      // For regular users without managers, return informative error
+      console.log(`⏰ [MY MANAGER] No manager ID found in userDirectReports for user: ${userId}`);
       res.status(404).json(createErrorResponse(
         'No manager assigned',
         'You do not have a manager assigned for timecard approvals. Please contact your administrator.'
@@ -393,35 +389,33 @@ export async function handleMyManager(req: any, res: any, organizationId: string
     }
     
     // Build response matching the expected UserDirectReport type
-    // Safely access properties with defaults
+    // Use data from userDirectReports collection
     const directReportInfo = {
-      id: teamMemberDoc.id,
+      id: directReportDoc.id,
       employeeId: userId,
       managerId: managerId,
-      isActive: teamMember.isActive !== false, // Default to true if not set
-      canApproveTimecards: teamMember.canApproveTimecards !== false, // Default to true if not set
+      isActive: directReportData.isActive !== false, // Default to true if not set
+      canApproveTimecards: directReportData.canApproveTimecards !== false, // Default to true if not set
       isSelfManager: isSelfManager, // Flag to indicate self-management
-      effectiveDate: (teamMember.createdAt && typeof teamMember.createdAt.toDate === 'function') 
-        ? teamMember.createdAt.toDate().toISOString() 
-        : (teamMember.createdAt || new Date().toISOString()),
+      effectiveDate: (directReportData.effectiveDate && typeof directReportData.effectiveDate.toDate === 'function') 
+        ? directReportData.effectiveDate.toDate().toISOString() 
+        : (directReportData.effectiveDate || (directReportData.createdAt && typeof directReportData.createdAt.toDate === 'function')
+          ? directReportData.createdAt.toDate().toISOString()
+          : new Date().toISOString()),
       manager: {
         id: managerId,
         name: managerData.displayName || managerData.name || `${managerData.firstName || ''} ${managerData.lastName || ''}`.trim() || managerData.email || 'Unknown',
         firstName: managerData.firstName || undefined,
         lastName: managerData.lastName || undefined,
         email: managerData.email || undefined,
-        role: managerData.role || teamMember.role || undefined,
-        department: managerData.department || teamMember.department || undefined
+        role: managerData.role || undefined,
+        department: managerData.department || directReportData.department || undefined
       },
-      assigner: teamMember.createdBy ? {
-        id: teamMember.createdBy,
+      assigner: directReportData.assignedBy ? {
+        id: directReportData.assignedBy,
         name: 'System',
         email: 'system@backbone.app'
-      } : (teamMember.managerAssignedBy ? {
-        id: teamMember.managerAssignedBy,
-        name: 'System',
-        email: 'system@backbone.app'
-      } : undefined)
+      } : undefined
     };
 
     const managerType = isSelfManager ? 'self-manager' : 'assigned manager';

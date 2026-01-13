@@ -48,15 +48,35 @@ export const initiateOAuth = onCall(
       throw new HttpsError('permission-denied', 'Admin role required to connect integrations');
     }
 
-    // Initiate OAuth with return URL
-    const result = await oauthService.initiateOAuth(
-      provider,
-      organizationId,
-      request.auth.uid,
-      returnUrl // Pass return URL to store in state
-    );
+    try {
+      // Initiate OAuth with return URL
+      const result = await oauthService.initiateOAuth(
+        provider,
+        organizationId,
+        request.auth.uid,
+        returnUrl // Pass return URL to store in state
+      );
 
-    return result;
+      return result;
+    } catch (error: any) {
+      console.error(`❌ [initiateOAuth] Error initiating OAuth for ${provider}:`, error);
+      
+      // Preserve HttpsError as-is
+      if (error instanceof HttpsError) {
+        throw error;
+      }
+      
+      // Convert regular errors to HttpsError with proper message
+      const errorMessage = error?.message || 'Failed to initiate OAuth flow';
+      
+      // Check for specific error types
+      if (errorMessage.includes('not configured') || errorMessage.includes('credentials') || errorMessage.includes('clientId') || errorMessage.includes('client secret')) {
+        throw new HttpsError('failed-precondition', errorMessage);
+      }
+      
+      // Generic internal error
+      throw new HttpsError('internal', errorMessage);
+    }
   }
 );
 
