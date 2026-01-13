@@ -67,16 +67,16 @@ export class UnifiedOAuthService {
       expiresIn: '1 hour'
     });
 
-    // Get auth URL from provider
-    // For Dropbox, use the specific callback function; for others, use the unified handler
-    const redirectUri = providerName === 'dropbox' 
-      ? 'https://us-central1-backbone-logic.cloudfunctions.net/dropboxOAuthCallbackHttp'
-      : 'https://us-central1-backbone-logic.cloudfunctions.net/handleOAuthCallback';
-    
+    // Determine the redirect URI for the provider
+    // For Google on localhost, we redirect back to the client directly
+    const isLocalhost = redirectUrl.includes('localhost') || redirectUrl.includes('127.0.0.1');
+    const oauthCallbackUrl = 'https://us-central1-backbone-logic.cloudfunctions.net/handleOAuthCallback';
+    const redirectUriToUse = (isLocalhost && providerName === 'google') ? redirectUrl : oauthCallbackUrl;
+
     const authUrl = await (provider as OAuthProvider).getAuthUrl({
       organizationId,
       userId,
-      redirectUri,
+      redirectUri: redirectUriToUse,
       state
     });
 
@@ -172,10 +172,10 @@ export class UnifiedOAuthService {
       throw new Error(`Invalid provider: ${providerName}`);
     }
 
-    // Exchange code for tokens
     // CRITICAL: The redirect URI must match EXACTLY what was used in the authorization request
-    // This is always the Firebase Function callback URL (not the return URL to the app)
-    const redirectUri = 'https://us-central1-backbone-logic.cloudfunctions.net/handleOAuthCallback';
+    const isLocalhost = stateData.redirectUrl?.includes('localhost') || stateData.redirectUrl?.includes('127.0.0.1');
+    const oauthCallbackUrl = 'https://us-central1-backbone-logic.cloudfunctions.net/handleOAuthCallback';
+    const redirectUri = (isLocalhost && providerName === 'google') ? stateData.redirectUrl : oauthCallbackUrl;
 
     console.log(`🔍 [OAuthService] Exchanging code for tokens`, {
       provider: providerName,
@@ -245,6 +245,39 @@ export class UnifiedOAuthService {
           connectedBy: userId,
           organizationId
         });
+    } else if (providerName === 'dropbox') {
+      // Dropbox-specific connection format
+      const dropboxConnectionData: any = {
+        organizationId,
+        type: 'organization',
+        userId: userId || null,
+        accountEmail: tokens.accountInfo.email || '',
+        accountName: tokens.accountInfo.name || 'Dropbox User',
+        accountId: tokens.accountInfo.id,
+        accessToken: encryptedAccessToken,
+        scopes: tokens.scopes,
+        connectedBy: userId || 'system',
+        isActive: true,
+        connectedAt: Timestamp.now(),
+        lastRefreshedAt: Timestamp.now()
+      };
+
+      if (encryptedRefreshToken) {
+        dropboxConnectionData.refreshToken = encryptedRefreshToken;
+      }
+
+      if (tokens.expiresAt) {
+        dropboxConnectionData.tokenExpiresAt = Timestamp.fromDate(tokens.expiresAt);
+      }
+
+      // Save to dropboxConnections collection
+      const dropboxConnectionRef = await db
+        .collection('organizations')
+        .doc(organizationId)
+        .collection('dropboxConnections')
+        .add(dropboxConnectionData);
+
+      console.log(`✅ [OAuthService] Saved Dropbox connection to dropboxConnections/${dropboxConnectionRef.id}`);
     }
 
     // Build connection data (for ALL providers, including Slack for multi-workspaces/backwards compatibility)

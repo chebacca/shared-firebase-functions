@@ -274,6 +274,11 @@ export class FeatureAccessService {
       allScopes.add('https://www.googleapis.com/auth/userinfo.profile');
     }
 
+    // 🔥 ALWAYS include base scopes for Dropbox (account info)
+    if (provider === 'dropbox') {
+      allScopes.add('account_info.read');
+    }
+
     return Array.from(allScopes);
   }
 }

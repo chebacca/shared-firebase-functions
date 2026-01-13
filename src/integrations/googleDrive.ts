@@ -1024,10 +1024,30 @@ export async function refreshGoogleAccessToken(userId: string, organizationId: s
       // Decrypt tokens from 'encryptedTokens' field (legacy format)
       tokens = decryptTokens(encryptedTokens);
     } else if (plainAccessToken && plainRefreshToken) {
-      // Use plain tokens if available (from frontend save)
+      // Use tokens if available (decrypt if they are in encrypted format)
+      let accessToken = plainAccessToken;
+      let refreshToken = plainRefreshToken;
+
+      // Check if tokens are encrypted (colon-hex format from singular encryptToken)
+      if (typeof accessToken === 'string' && accessToken.includes(':')) {
+        try {
+          accessToken = decryptToken(accessToken);
+        } catch (e) {
+          console.warn('[googleDrive] Failed to decrypt accessToken field, using as-is');
+        }
+      }
+
+      if (typeof refreshToken === 'string' && refreshToken.includes(':')) {
+        try {
+          refreshToken = decryptToken(refreshToken);
+        } catch (e) {
+          console.warn('[googleDrive] Failed to decrypt refreshToken field, using as-is');
+        }
+      }
+
       tokens = {
-        access_token: plainAccessToken,
-        refresh_token: plainRefreshToken,
+        access_token: accessToken,
+        refresh_token: refreshToken,
         expiry_date: integrationData?.expiresAt?.toDate?.()?.getTime() || null
       };
     } else {
@@ -1189,14 +1209,15 @@ Current config: clientId=${usedClientId ? 'set (' + usedClientId.substring(0, 20
     // Update Firestore with both encrypted and plain formats for compatibility
     // CRITICAL: Only update refreshToken if a NEW one was provided by Google
     // Most refresh calls do NOT return a new refresh token
+    // Encrypt new tokens before saving for security and consistency
     const updateData: any = {
-      accessToken: credentials.access_token,
+      accessToken: encryptToken(credentials.access_token),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       expiresAt: credentials.expiry_date ? admin.firestore.Timestamp.fromDate(new Date(credentials.expiry_date)) : null
     };
 
     if (credentials.refresh_token) {
-      updateData.refreshToken = credentials.refresh_token;
+      updateData.refreshToken = encryptToken(credentials.refresh_token);
     }
 
     // Also update encryptedTokens field for unified compatibility

@@ -166,7 +166,7 @@ export class GeminiService extends CoreGeminiService {
 
       // Clean up the JSON string (remove any trailing commas, etc.)
       jsonStr = jsonStr.trim();
-      
+
       const parsed = JSON.parse(jsonStr);
 
       // Determine context: Use architect's suggestion if provided, otherwise default to plan_mode
@@ -187,6 +187,7 @@ export class GeminiService extends CoreGeminiService {
           requiresApproval: parsed.requiresApproval || false,
           actions: parsed.actions || [], // Extract execution actions
           multipleChoiceQuestion: parsed.multipleChoiceQuestion || null, // Extract multiple choice question
+          responseForm: parsed.responseForm || null, // Extract structured form
           ...parsed.contextData // Include any extra data (e.g. for user list)
         },
         followUpSuggestions: parsed.suggestedActions || [],
@@ -233,12 +234,12 @@ export class GeminiService extends CoreGeminiService {
       const activeModeValue = (globalContext as any).activeMode;
       const currentModeValue = currentMode as string;
       const shouldUseArchitect = activeModeValue === 'plan_mode' || currentModeValue === 'plan_mode';
-      
+
       console.log(`🏛️ [Gemini Service] Architect routing check (FIRST):`);
       console.log(`  - globalContext.activeMode: "${activeModeValue}"`);
       console.log(`  - currentMode: "${currentModeValue}"`);
       console.log(`  - shouldUseArchitect: ${shouldUseArchitect}`);
-      
+
       if (shouldUseArchitect) {
         console.log('🏛️ [Gemini Service] ✅ ROUTING TO ARCHITECT SESSION (early check)');
         // Prepare parts for attachments if any

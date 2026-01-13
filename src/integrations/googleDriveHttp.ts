@@ -86,9 +86,13 @@ export const initiateGoogleOAuthHttp = functions.https.onRequest(async (req, res
     // Default to /dashboard/integrations (correct route) instead of /integration-settings
     const clientReturnUrl = body.redirectUri || body.returnUrl || `${body.origin || 'https://backbone-logic.web.app'}/dashboard/integrations`;
 
-    // Use unified OAuth callback URL for Google OAuth redirect
-    // This must match what's configured in Google Cloud Console
+    // Determine the redirect URI for Google
+    // For localhost development, we want Google to redirect back to the client directly
+    // This bypasses the need to register every dev's localhost URL in GC Console
+    // because Google allows any localhost port by default.
+    const isLocalhost = clientReturnUrl.includes('localhost') || clientReturnUrl.includes('127.0.0.1');
     const oauthCallbackUrl = 'https://us-central1-backbone-logic.cloudfunctions.net/handleOAuthCallback';
+    const redirectUriToUse = isLocalhost ? clientReturnUrl : oauthCallbackUrl;
 
     // Generate secure state parameter
     const state = generateSecureState();
@@ -104,18 +108,18 @@ export const initiateGoogleOAuthHttp = functions.https.onRequest(async (req, res
         organizationId,
         userId,
         redirectUrl: clientReturnUrl, // Client app URL (where to redirect after OAuth completes)
+        googleRedirectUri: redirectUriToUse, // Store the specific URI used for Google
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         expiresAt: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 3600000)) // 1 hour (matches unified system)
       });
 
     // Generate authorization URL
-    // CRITICAL: Must use the unified callback URL that's configured in Google Cloud Console
     const authUrl = oauth2Client.generateAuthUrl({
       access_type: 'offline',
       scope: SCOPES,
       state: state,
       prompt: 'consent', // Force consent to get refresh token
-      redirect_uri: oauthCallbackUrl // Use unified callback URL
+      redirect_uri: redirectUriToUse // Use the determined redirect URI
     });
 
     console.log(`Google OAuth initiated for user ${hashForLogging(userId)} in org ${organizationId} with oauthCallbackUrl: ${oauthCallbackUrl}, clientReturnUrl: ${clientReturnUrl}`);
@@ -181,9 +185,9 @@ export const handleGoogleOAuthCallbackHttp = functions.https.onRequest(async (re
       throw new Error('State parameter has expired');
     }
 
-    // Use the redirectUri stored in state (or fallback to default)
+    // Use the specific Google redirect URI stored in state, or fallback to redirectUrl
     // This allows dynamic redirect URIs (e.g. for localhost vs production)
-    const redirectUri = stateData.redirectUri || REDIRECT_URI;
+    const redirectUri = stateData.googleRedirectUri || stateData.redirectUrl || REDIRECT_URI;
 
     console.log(`Exchanging Google code for tokens using redirectUri: ${redirectUri}`);
 

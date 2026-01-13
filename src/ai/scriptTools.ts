@@ -71,45 +71,38 @@ export const createScriptPackage = onCall(
             const apiKey = geminiApiKey.value();
             const gemini = new CoreGeminiService(apiKey);
 
-            const formatNote = data.format === '3-column-table'
-                ? 'Use 3-column table format (TIME | SCENE/ACTION, CHARACTER/DIALOGUE, NOTES/MUSIC/GRAPHICS)'
-                : 'Use traditional screenplay format';
-
             const durationSecs = data.duration || 360;
             const durationNote = `${durationSecs} seconds (${Math.floor(durationSecs / 60)} minutes)`;
 
             const conceptDescription = data.concept || `A ${data.title}`;
 
             // Enhanced prompt with more structure and guidance
-            const systemPrompt = `You are an expert scriptwriter for TV production with deep knowledge of broadcast television formats, pacing, and production requirements. You create engaging, production-ready scripts that balance entertainment value with practical production constraints.`;
+            const systemPrompt = `You are an expert scriptwriter for TV production. You MUST output your response in raw HTML format. 
+Do NOT use markdown (no \`\`\`), no conversational filler, no headers outside the script.
+ONLY return the script content itself as HTML.`;
 
-            const prompt = `Generate a complete ${durationNote} script for broadcast television.
+            const prompt = `Generate a complete ${durationNote} script for:
+Title: ${data.title}
+Concept: ${conceptDescription}
 
-**Title:** ${data.title}
+**CRITICAL FORMAT REQUIREMENT:**
+${data.format === '3-column-table'
+                    ? `Produce a 3-column script using a standard HTML <table> structure.
+The table MUST HAVE:
+1. A <thead> row with 3 <th> columns: "TIME | SCENE / ACTION", "CHARACTER | DIALOGUE", "NOTES / MUSIC / GRAPHICS".
+2. Multiple <tr> rows in <tbody>, each with 3 <td> columns.
+3. INLINE STYLES: Add style="border: 1px solid #ccc; padding: 8px; vertical-align: top;" to all <td> and <th> elements.
+4. TIMING: The first column of each row MUST start with the timestamp (e.g., 0:00, 0:15).
 
-**Concept:** ${conceptDescription}
+Return ONLY the <table> block.`
+                    : `Produce a standard screenplay. Use <p> tags for all lines. 
+- Use <strong> for Scene Headings (e.g. <strong>EXT. LOCATION - DAY</strong>).
+- Use <p style="text-align: center;"> for Character Names.
+- Use <p> for Dialogue and Action.
 
-**Format Requirements:**
-${formatNote}
+Return ONLY the HTML content.`}
 
-**Script Structure Guidelines:**
-1. **Opening Hook (0-30 seconds)**: Grab viewer attention immediately
-2. **Main Content (30 seconds - ${Math.floor(durationSecs - 30)} seconds)**: Develop the concept with clear scenes
-3. **Closing (Last 30 seconds)**: Strong conclusion or call-to-action
-
-**Production Considerations:**
-- Each scene should be clearly defined with visual and audio elements
-- Dialogue should be natural and conversational
-- Include specific production notes for graphics, music cues, and transitions
-- Ensure content fits exactly within ${durationNote} runtime
-- Use timestamps every 15-30 seconds for pacing
-
-**Output Format:**
-${data.format === '3-column-table' 
-  ? 'Use a 3-column table format:\n| TIME | VIDEO/SCENE | AUDIO/DIALOGUE | NOTES/MUSIC/GRAPHICS |\n\nEach row should represent a distinct moment in the script.'
-  : 'Use traditional screenplay format with proper scene headings, action lines, and dialogue blocks.'}
-
-Generate the complete script content. Return ONLY the script content, no additional commentary.`;
+Return ONLY the raw HTML. No explanation, no markdown tags.`;
 
             console.log(`🧠 [createScriptPackage] Generating content via Gemini with enhanced prompt...`);
 

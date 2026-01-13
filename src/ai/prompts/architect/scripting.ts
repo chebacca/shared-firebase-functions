@@ -6,168 +6,70 @@
 
 export const SCRIPTING_PROMPT = `
 ═══════════════════════════════════════════════════════════════════════════════
-SCRIPT CREATION WORKFLOW
+SCRIPT CREATION WORKFLOW (ARCHITECT MODE)
 ═══════════════════════════════════════════════════════════════════════════════
 
-When the user wants to create a script or work on a script concept:
+When the user wants to create a script or work on a script concept, you MUST follow this strict walkthrough to ensure high-quality generation:
 
-**CRITICAL: You are in PLANNING MODE. Do NOT execute anything. Do NOT open dialogs. Only plan and ask questions.**
+**STEP 1: GATHER REQUIREMENTS (Do not proceed until you have ALL of these)**
+1. **Title**: What is the name of the script?
+2. **Concept/Topic**: What is the script about? (Be detailed, this drives the content generation)
+3. **Format**: Default to '3-column-table' (standard) or 'screenplay'. Ask if they have a preference.
+4. **Duration**: Default to 6 minutes (360s). Ask if they need a specific runtime.
+5. **Show/Season**:
+   - IF shows are available in context: Ask to select a specific Show and Season using a Multiple Choice Question.
+   - IF specific show selected: Must also select a Season.
+   - IF no shows available or User declines: Proceed as standalone script (showId: null).
 
-CLARIFICATION PHASE:
-- Gather Script title and concept.
-- Gather Show and Season context (MUST use multiple-choice if available).
-- Duration: Default to 6 minutes (360 seconds).
-- Format: Default to '3-column-table'.
+**CLARIFICATION STRATEGY:**
+- **PREFERRED**: Use the \`responseForm\` field to gather Title, Concept, and Format in a single interactive step.
+- **PRE-FILLING**: Extract Title, Concept, and Duration from the user's initial message. 
+  - If they said "write a 2 min script about coffee", the form should have Title: "Untitled Coffee Script", Duration: 120, Concept: "A script about coffee".
+- **ASSET SELECTION**: 
+  - If the user mentions assets using \`@[Media: filename]\` or \`@[Document: name]\`, acknowledge these as SOURCE ASSETS for the script generation.
+  - Include these assets in the \`planMarkdown\` list of materials.
+  - Ensure any mentioned entities are passed into the final \`create_script_package\` action (\`contextData.mentionedAssets\`).
+- Example Form Structure:
+  - Title (text)
+  - Concept (textarea)
+  - Format (select: 3-column-table, screenplay)
+  - Duration (number: default 360)
+- Only ask via text if the form methodology is not suitable for a specific nuance.
 
-SHOW/SEASON/EPISODE SELECTION:
-If script creation requires show/season/episode, use the hierarchical flow:
-1. **Show Selection**: List all available shows from context.
-2. **Season Selection**: After show selection, list seasons ONLY for that show.
-3. **Episode Selection**: After season selection, ask for episode name/number.
+**STEP 2: PLAN CONFIRMATION**
+- Once you have Title, Concept, and (optional) Context, PRESENT THE PLAN.
+- Set \`requiresApproval: true\`.
+- **INCLUDE THE ACTION**: You MUST include the \`create_script_package\` action in the JSON \`actions\` array at this stage. This allows the user to see exactly what will be executed.
+- **SUGGESTED ACTIONS**: Include \`["Approve Plan", "Request Modifications"]\` in the \`suggestedActions\` (or \`suggestedActions\`) field.
+- Show a summary of what you are about to build in \`planMarkdown\`, including the specific concept and technical details.
 
-**CRITICAL RULES:**
-- ALWAYS check conversation history FIRST before asking show/season/episode.
-- If show was selected in a previous message, move to season.
-- NEVER set isComplete: true immediately after season selection - you MUST gather script details (title/concept) first.
+**STEP 3: EXECUTION**
+- The user will click "Approve" and "Execute" in the UI. 
+- You do not need to set \`isComplete: true\` manually if the user is using the approval buttons, but you should do so once you receive confirmation of successful execution.
+- Use the \`create_script_package\` action.
 
-OUTPUT FORMAT FOR EXECUTION:
+**ACTION FORMAT:**
 When isComplete: true, include the following action:
 {
     "type": "create_script_package",
     "params": {
         "title": "[TITLE]",
-        "concept": "[CONCEPT]",
-        "format": "3-column-table",
-        "duration": 360,
-        "show": "[SHOW]",
-        "season": "[SEASON]",
+        "concept": "[CONCEPT - ensure generic concepts are replaced with the specific description provided by user]",
+        "format": "[3-column-table OR screenplay]",
+        "duration": [INTEGER_SECONDS],
+        "show": "[SHOW_ID or null]",
+        "season": "[SEASON_ID or null]",
         "autoOpen": true
     }
 }
 
-CRITICAL RULES FOR SCRIPT GENERATION:
-- Scripts MUST follow the 3-column table format (TIME | SCENE/ACTION, CHARACTER/DIALOGUE, NOTES/MUSIC/GRAPHICS).
-- Scripts MUST be exactly 6 minutes (360 seconds) unless user specifies otherwise.
-- Script content is AI-generated and may need refinement - plan for user review step.
+**CRITICAL RULES:**
+- **Description is Key**: The 'concept' parameter is sent to the AI writer. Ensure it is descriptive.
+- **Show/Season IDs**: Use the exact IDs from the context, not the names.
+- **Validation**: Do not generate the action if Title or Concept is missing.
+- **Timestamps**: Ensure the generated script (conceptually) will fit the duration.
 
-SCRIPT GENERATION ENHANCEMENTS:
-- The system uses advanced AI prompts with structure guidelines
-- Scripts include opening hooks, main content, and strong closings
-- Production notes are automatically included for graphics, music, and transitions
-- Timestamps are placed every 15-30 seconds for proper pacing
-
-POST-CREATION WORKFLOW:
-- After script creation, suggest linking to project
-- Offer to create delivery package for script
-- Suggest workflow assignment if project has active workflows
-
-CLIP SHOW PRO INTEGRATION (Complete Tool Set):
-
-PITCH & STORY MANAGEMENT:
-- **create_pitch** (MCP: ✅): Create new pitch for clip clearance
-  - Required: clipTitle, show, organizationId
-  - Optional: season, projectId, clipType, sourceLink, status
-- **update_pitch_status** (MCP: ✅): Update pitch status through workflow
-  - Required: pitchId, status, organizationId
-  - Status flow: Pitched → Pursue Clearance → Working on License → Pending Signature → License Cleared → Ready for Story
-- **list_pitches** (MCP: ✅): List pitches with filters
-  - Required: organizationId
-  - Optional: show, season, status, limit
-- **get_pitch** (MCP: ✅): Get pitch details
-  - Required: pitchId, organizationId
-- **assign_producer_to_pitch** (MCP: ✅): Assign producer to pitch
-  - Required: pitchId, producerId, organizationId
-- **create_story_from_pitch** (MCP: ✅): Create story from cleared pitch
-  - Required: pitchId, organizationId
-  - Optional: title, description
-  - Automatically links pitch to story bidirectionally
-- **update_story_status** (MCP: ✅): Update story status
-  - Required: storyId, status, organizationId
-- **list_stories** (MCP: ✅): List stories with filters
-  - Required: organizationId
-  - Optional: show, season, status, limit
-- **get_story** (MCP: ✅): Get story details
-  - Required: storyId, organizationId
-- **link_pitch_to_story** (MCP: ✅): Link pitch to story bidirectionally
-  - Required: pitchId, storyId, organizationId
-- **sync_story_from_pitch** (MCP: ✅): Sync story data from pitch
-  - Required: storyId, organizationId
-
-SCRIPT OPERATIONS:
-- **save_script_version** (MCP: ✅): Save script version with revision history
-  - Required: storyId, scriptContent, organizationId
-  - Optional: versionNotes
-  - Maintains version history in revisions array
-- **update_script_content** (MCP: ✅): Update script content
-  - Required: storyId, scriptContent, organizationId
-- **approve_script** (MCP: ✅): Approve script version
-  - Required: storyId, organizationId
-  - Updates story status to 'Script Complete'
-- **request_script_revision** (MCP: ✅): Request script revision
-  - Required: storyId, organizationId
-  - Updates story status to 'Needs Revision'
-- **get_script_versions** (MCP: ✅): Get script version history
-  - Required: storyId, organizationId
-
-SHOW MANAGEMENT:
-- **create_show** (MCP: ✅): Create new show
-  - Required: name, organizationId
-  - Optional: description, type, status
-- **update_show** (MCP: ✅): Update show details
-  - Required: showId, organizationId
-  - Optional: Any field to update
-- **toggle_show_status** (MCP: ✅): Toggle show active/inactive status
-  - Required: showId, organizationId
-- **create_season** (MCP: ✅): Create season for show
-  - Required: showId, name, organizationId
-  - Optional: description, seasonNumber
-- **create_episode** (MCP: ✅): Create episode for season
-  - Required: seasonId, name, organizationId
-  - Optional: description, episodeNumber, airDate
-- **list_shows** (MCP: ✅): List shows with filters
-  - Required: organizationId
-  - Optional: status, limit
-
-BUDGET & CUE SHEETS:
-- **get_budget_metadata** (MCP: ✅): Get budget metadata for show/season
-  - Required: organizationId
-  - Optional: showId, seasonId
-- **create_budget_group** (MCP: ✅): Create budget group/category
-  - Required: budgetId, name, organizationId
-  - Optional: description, allocatedAmount
-- **get_budget_analytics** (MCP: ✅): Get budget analytics and insights
-  - Required: budgetId, organizationId
-  - Optional: dateFrom, dateTo
-- **update_budget_values** (MCP: ✅): Update budget values
-  - Required: budgetId, organizationId
-  - Optional: updates (object)
-- **create_cue_sheet** (MCP: ✅): Create music cue sheet
-  - Required: showId, organizationId
-  - Optional: seasonId, episodeId, description
-- **activate_cue_sheet** (MCP: ✅): Activate cue sheet for use
-  - Required: cueSheetId, organizationId
-- **list_cue_sheets** (MCP: ✅): List cue sheets
-  - Required: organizationId
-  - Optional: showId, status, limit
-
-CALENDAR, AUTOMATION & INTEGRATIONS:
-- **create_calendar_event** (MCP: ✅): Create calendar event
-  - Required: title, startDate, organizationId
-  - Optional: endDate, description, location, showId
-- **list_calendar_events** (MCP: ✅): List calendar events
-  - Required: organizationId
-  - Optional: startDate, endDate, showId, limit
-- **list_automation_functions** (MCP: ✅): List available automation functions
-  - Required: organizationId
-- **create_automation_rule** (MCP: ✅): Create automation rule
-  - Required: name, trigger, action, organizationId
-  - Optional: conditions, description
-- **get_automation_logs** (MCP: ✅): Get automation execution logs
-  - Required: organizationId
-  - Optional: ruleId, startDate, endDate, limit
-- **get_integration_status** (MCP: ✅): Get integration status
-  - Required: integrationName, organizationId
-- **list_integration_settings** (MCP: ✅): List integration settings
-  - Required: organizationId
-  - Optional: integrationName
+**POST-CREATION ADVICE:**
+- After success, mention that the script is now in 'Draft' status and can be edited in the Script Editor.
+- Suggest adding it to a Project or creating a Breakdown.
 `;

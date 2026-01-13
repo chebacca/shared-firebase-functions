@@ -281,9 +281,7 @@ export const getVideoConferencingProvidersHttp = onRequest(
           error: 'Organization ID is required',
         });
         return;
-      }
-
-      console.log(`🔍 [VideoConferencing HTTP] Checking providers for org: ${organizationId}`);
+      }      console.log(`🔍 [VideoConferencing HTTP] Checking providers for org: ${organizationId}`);
 
       // Check Google Meet connection
       const googleConnections = await db
@@ -293,9 +291,7 @@ export const getVideoConferencingProvidersHttp = onRequest(
         .where('type', '==', 'organization')
         .where('isActive', '==', true)
         .limit(1)
-        .get();
-
-      // Fallback: allow Firestore OAuth stored in cloudIntegrations/google
+        .get();      // Fallback: allow Firestore OAuth stored in cloudIntegrations/google
       let hasGoogleConnection = !googleConnections.empty;
       if (!hasGoogleConnection) {
         const cloudIntegrationDoc = await db

@@ -6,6 +6,7 @@
  */
 
 import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
+import * as functions from 'firebase-functions';
 import { db, verifyAuthToken, createSuccessResponse, createErrorResponse, setCorsHeaders } from '../shared/utils';
 import * as crypto from 'crypto';
 import { getDropboxConfig } from './config';
@@ -14,6 +15,7 @@ import { encryptionKey, getEncryptionKey } from './secrets';
 
 import * as admin from 'firebase-admin';
 import { encryptTokens } from '../integrations/encryption';
+import { FeatureAccessService } from '../integrations/unified-oauth/FeatureAccessService';
 
 /**
  * Encrypt sensitive token data
@@ -252,16 +254,19 @@ export const dropboxOAuthInitiate = onCall(
       // Generate Dropbox OAuth URL
       // Use Firebase Function URL as redirect_uri for Dropbox
       const dropboxAuthBaseUrl = 'https://www.dropbox.com/oauth2/authorize';
-      
+
       // Log the redirect URI being sent to Dropbox for debugging
       console.log(`🔍 [DropboxOAuth] Using redirect_uri: ${oauthCallbackUrl}`);
       console.log(`🔍 [DropboxOAuth] Make sure this EXACT URI is configured in Dropbox App Console`);
-      
+
+      const requiredScopes = FeatureAccessService.getAllRequiredScopesForProvider('dropbox');
+
       const authUrlParams = new URLSearchParams({
         client_id: config.appKey,
         redirect_uri: oauthCallbackUrl, // Firebase Function URL
         response_type: 'code',
         state: state,
+        scope: requiredScopes.join(' '),
         token_access_type: 'offline', // Request refresh token
       });
       const authUrl = `${dropboxAuthBaseUrl}?${authUrlParams.toString()}`;
@@ -548,28 +553,44 @@ export const dropboxOAuthCallback = onCall(
 /**
  * Helper function to get redirect URL from state or return null
  */
+/**
+ * Get redirect URL from state document
+ * Supports both unified oauthStates and legacy dropboxOAuthStates
+ */
 async function getDropboxRedirectUrlFromState(state: string | undefined, errorType: string): Promise<string | null> {
   if (!state) return null;
 
   try {
-    const stateDoc = await db.collection('dropboxOAuthStates')
-      .where('state', '==', state)
+    const stateStr = state as string;
+
+    // Check unified oauthStates first with retry logic
+    let stateDoc = await db.collection('oauthStates').doc(stateStr).get();
+    let retryCount = 0;
+    const maxRetries = 2;
+
+    while (!stateDoc.exists && retryCount < maxRetries) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      stateDoc = await db.collection('oauthStates').doc(stateStr).get();
+      retryCount++;
+    }
+
+    if (stateDoc.exists) {
+      const stateData = stateDoc.data();
+      if (stateData?.redirectUrl) {
+        return formatErrorRedirect(stateData.redirectUrl, errorType);
+      }
+    }
+
+    // Fallback to legacy dropboxOAuthStates
+    const stateQuery = await db.collection('dropboxOAuthStates')
+      .where('state', '==', stateStr)
       .limit(1)
       .get();
 
-    if (!stateDoc.empty) {
-      const stateData = stateDoc.docs[0].data();
+    if (!stateQuery.empty) {
+      const stateData = stateQuery.docs[0].data();
       if (stateData.redirectUrl) {
-        // Replace success param with error param, preserving the origin
-        let errorRedirectUrl = stateData.redirectUrl
-          .replace('dropbox_connected=true', `dropbox_error=${errorType}`)
-          .replace('dropbox_connected=true&', `dropbox_error=${errorType}&`);
-        // If no success param exists, append error param
-        if (!errorRedirectUrl.includes('dropbox_error=') && !errorRedirectUrl.includes('dropbox_connected=')) {
-          const separator = errorRedirectUrl.includes('?') ? '&' : '?';
-          errorRedirectUrl = `${errorRedirectUrl}${separator}dropbox_error=${errorType}`;
-        }
-        return errorRedirectUrl;
+        return formatErrorRedirect(stateData.redirectUrl, errorType);
       }
     }
   } catch (e) {
@@ -580,28 +601,77 @@ async function getDropboxRedirectUrlFromState(state: string | undefined, errorTy
 }
 
 /**
+ * Helper to format the error redirect URL
+ */
+function formatErrorRedirect(baseUrl: string, errorType: string): string {
+  let errorRedirectUrl = baseUrl
+    .replace('dropbox_connected=true', `dropbox_error=${errorType}`)
+    .replace('dropbox_connected=true&', `dropbox_error=${errorType}&`);
+
+  if (!errorRedirectUrl.includes('dropbox_error=') && !errorRedirectUrl.includes('dropbox_connected=')) {
+    const separator = errorRedirectUrl.includes('?') ? '&' : '?';
+    errorRedirectUrl = `${errorRedirectUrl}${separator}dropbox_error=${errorType}`;
+  }
+  return errorRedirectUrl;
+}
+
+/**
  * Return HTML error page when state is missing/expired
  */
 function sendDropboxErrorPage(res: any, message: string) {
+  const deployId = 'DEPLOY_2026_01_12_V3';
+  console.error(`🛑 [DropboxOAuth] Sending error page (${deployId}): ${message}`);
   const html = `
     <!DOCTYPE html>
     <html>
     <head>
-      <title>OAuth Error</title>
+      <title>Backbone - Connection Error</title>
       <style>
-        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
-        h1 { color: #d32f2f; }
-        p { color: #666; }
+        body { 
+          font-family: 'Inter', -apple-system, sans-serif; 
+          background: #0f172a; 
+          color: white; 
+          display: flex; 
+          flex-direction: column; 
+          align-items: center; 
+          justify-content: center; 
+          height: 100vh; 
+          margin: 0; 
+          text-align: center;
+        }
+        .card { 
+          background: #1e293b; 
+          padding: 40px; 
+          border-radius: 12px; 
+          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3); 
+          max-width: 500px;
+        }
+        h1 { color: #f87171; margin-top: 0; }
+        p { color: #cbd5e1; line-height: 1.6; }
+        .code { 
+          background: #0f172a; 
+          padding: 8px 12px; 
+          border-radius: 6px; 
+          font-family: monospace; 
+          color: #38bdf8;
+          margin-top: 20px;
+          display: inline-block;
+        }
+        .footer { margin-top: 30px; font-size: 12px; color: #64748b; }
       </style>
     </head>
     <body>
-      <h1>OAuth Session Expired</h1>
-      <p>${message}</p>
-      <p>Please return to the application and try again.</p>
+      <div class="card">
+        <h1>Connection Error</h1>
+        <p>${message}</p>
+        <p>Please return to the Backbone Hub and start the connection again.</p>
+        <div class="code">ID: ${deployId}</div>
+      </div>
+      <div class="footer">Backbone Logic Service &bull; us-central1</div>
     </body>
     </html>
   `;
-  res.status(400).send(html);
+  res.status(400).header('Content-Type', 'text/html').send(html);
 }
 
 /**
@@ -640,38 +710,74 @@ export const dropboxOAuthCallbackHttp = onRequest(
 
       // Verify state and complete OAuth flow
       // Check unified oauthStates collection first (new system), then dropboxOAuthStates (legacy)
-      let stateDoc = await db.collection('oauthStates').doc(state as string).get();
+      const stateStr = (state as string || '').trim();
+      console.log(`🔍 [DropboxOAuth] Checking state in Firestore: "${stateStr.substring(0, 12)}..."`);
+
+      // 1. Try unified oauthStates by ID (preferred method for new system)
+      let stateDoc = await db.collection('oauthStates').doc(stateStr).get();
       let stateData: any = null;
       let isUnifiedOAuth = false;
+
+      // Add retry logic for eventual consistency
+      let retryCount = 0;
+      const maxRetries = 3;
+      while (!stateDoc.exists && retryCount < maxRetries) {
+        const delay = (retryCount + 1) * 500;
+        console.warn(`⚠️ [DropboxOAuth] State not found in oauthStates by ID, retrying in ${delay}ms (attempt ${retryCount + 1}/${maxRetries})...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        stateDoc = await db.collection('oauthStates').doc(stateStr).get();
+        retryCount++;
+      }
 
       if (stateDoc.exists) {
         stateData = stateDoc.data();
         isUnifiedOAuth = true;
-        console.log(`🔗 [DropboxOAuth] Found state in unified oauthStates collection`);
+        console.log(`🔗 [DropboxOAuth] Found state in oauthStates by ID`);
       } else {
-        // Fallback to legacy dropboxOAuthStates collection
-        const legacyStateQuery = await db.collection('dropboxOAuthStates')
-          .where('state', '==', state)
+        // 2. Try unified oauthStates by field (in case it was mistakenly added with auto-id)
+        console.log(`🔍 [DropboxOAuth] Not found by ID, checking oauthStates by field...`);
+        const stateFieldQuery = await db.collection('oauthStates')
+          .where('state', '==', stateStr)
           .limit(1)
           .get();
-        
-        if (!legacyStateQuery.empty) {
-          stateData = legacyStateQuery.docs[0].data();
-          console.log(`🔗 [DropboxOAuth] Found state in legacy dropboxOAuthStates collection`);
+
+        if (!stateFieldQuery.empty) {
+          stateData = stateFieldQuery.docs[0].data();
+          isUnifiedOAuth = true;
+          console.log(`🔗 [DropboxOAuth] Found state in oauthStates by query`);
+        } else {
+          // 3. Fallback to legacy dropboxOAuthStates collection
+          console.log(`🔍 [DropboxOAuth] Not found in oauthStates, checking legacy dropboxOAuthStates collection...`);
+          const legacyStateQuery = await db.collection('dropboxOAuthStates')
+            .where('state', '==', stateStr)
+            .limit(1)
+            .get();
+
+          if (!legacyStateQuery.empty) {
+            stateData = legacyStateQuery.docs[0].data();
+            console.log(`🔗 [DropboxOAuth] Found state in legacy dropboxOAuthStates collection`);
+          }
         }
       }
 
       if (!stateData) {
         // State expired or invalid - show error page instead of redirecting to production
-        return sendDropboxErrorPage(res, 'OAuth session has expired. Please return to the application and try connecting again.');
+        console.error(`❌ [DropboxOAuth] State not found in any collection after all attempts: "${stateStr}"`);
+        // Log all collection counts if possible for debugging (careful with performance)
+        return sendDropboxErrorPage(res, `OAuth session has expired or is invalid. Reference: ${stateStr.substring(0, 12)}`);
       }
 
-      console.log(`🔗 [DropboxOAuth] Retrieved state data, redirectUrl: ${stateData.redirectUrl || 'not found'}`);
+      console.log(`🔗 [DropboxOAuth] Retrieved state data:`, {
+        provider: stateData.provider,
+        organizationId: stateData.organizationId,
+        hasRedirectUrl: !!stateData.redirectUrl,
+        isUnified: isUnifiedOAuth
+      });
 
       // redirectUrl must be present in state - if not, this is a configuration error
       if (!stateData.redirectUrl) {
-        console.error('❌ [DropboxOAuth] redirectUrl missing from state document - this should not happen');
-        return sendDropboxErrorPage(res, 'OAuth configuration error. Please contact support.');
+        console.error('❌ [DropboxOAuth] redirectUrl missing from state document!', stateData);
+        return sendDropboxErrorPage(res, 'OAuth configuration error: Missing redirect URL in session state.');
       }
 
       // Exchange code for token (call internal function logic)
@@ -726,6 +832,13 @@ async function completeOAuthCallbackLogic(code: string, state: string, stateData
 
     // Use redirectUri from state (Firebase Function URL) for token exchange
     const tokenExchangeRedirectUri = redirectUri || 'https://us-central1-backbone-logic.cloudfunctions.net/dropboxOAuthCallbackHttp';
+
+    console.log(`🔄 [DropboxOAuth] Initiating token exchange for org: ${organizationId}`, {
+      redirectUri: tokenExchangeRedirectUri,
+      hasCode: !!code,
+      hasAppKey: !!dropboxConfig.appKey
+    });
+
     const tokenData = querystring.stringify({
       code: code,
       grant_type: 'authorization_code',
@@ -757,8 +870,11 @@ async function completeOAuthCallbackLogic(code: string, state: string, stateData
             let errorMessage = `Token exchange failed: ${res.statusCode}`;
             try {
               const errorData = JSON.parse(data);
+              console.error(`❌ [DropboxOAuth] Dropbox API Error:`, errorData);
               if (errorData.error_description) {
                 errorMessage = errorData.error_description;
+              } else if (errorData.error) {
+                errorMessage = `${errorData.error}: ${errorData.error_description || ''}`;
               }
             } catch { }
             reject(new Error(errorMessage));
@@ -1036,16 +1152,19 @@ export const dropboxOAuthInitiateHttp = onRequest(
 
       // Generate Dropbox OAuth URL
       const dropboxAuthBaseUrl = 'https://www.dropbox.com/oauth2/authorize';
-      
+
       // Log the redirect URI being sent to Dropbox for debugging
       console.log(`🔍 [DropboxOAuth] Using redirect_uri: ${oauthCallbackUrl}`);
       console.log(`🔍 [DropboxOAuth] Make sure this EXACT URI is configured in Dropbox App Console`);
-      
+
+      const requiredScopes = FeatureAccessService.getAllRequiredScopesForProvider('dropbox');
+
       const authUrlParams = new URLSearchParams({
         client_id: config.appKey,
         redirect_uri: oauthCallbackUrl,
         response_type: 'code',
         state: state,
+        scope: requiredScopes.join(' '),
         token_access_type: 'offline',
       });
       const authUrl = `${dropboxAuthBaseUrl}?${authUrlParams.toString()}`;

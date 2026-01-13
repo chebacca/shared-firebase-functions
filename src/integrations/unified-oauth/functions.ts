@@ -23,28 +23,31 @@ export const initiateOAuth = onCall(
     secrets: [encryptionKey],
   },
   async (request) => {
-    const { provider, organizationId, returnUrl } = request.data;
-    
+    const data = request.data;
+    const provider = data.provider || data.providerName;
+    const organizationId = data.organizationId;
+    const returnUrl = data.returnUrl || data.redirectUri;
+
     // Validate provider exists
     if (!providerRegistry.hasProvider(provider)) {
       throw new HttpsError('invalid-argument', `Unknown provider: ${provider}`);
     }
-    
+
     // Validate user is org member
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
     }
-    
+
     if (!request.auth.token.organizationId || request.auth.token.organizationId !== organizationId) {
       throw new HttpsError('permission-denied', 'Not authorized for this organization');
     }
-    
+
     // Check if user is admin (for organization-level connections)
     const userRole = request.auth.token.role?.toLowerCase();
     if (userRole !== 'admin' && userRole !== 'owner') {
       throw new HttpsError('permission-denied', 'Admin role required to connect integrations');
     }
-    
+
     // Initiate OAuth with return URL
     const result = await oauthService.initiateOAuth(
       provider,
@@ -52,7 +55,7 @@ export const initiateOAuth = onCall(
       request.auth.uid,
       returnUrl // Pass return URL to store in state
     );
-    
+
     return result;
   }
 );
@@ -68,14 +71,14 @@ export const handleOAuthCallback = onRequest(
   },
   async (req, res) => {
     const { code, state, error } = req.query;
-    
+
     if (error) {
       console.warn(`⚠️ [handleOAuthCallback] OAuth error from provider: ${error}`);
-      
+
       // Get redirect URL from state - should always exist
       const { db } = await import('../../shared/utils');
       let baseUrl: string | null = null;
-      
+
       if (state) {
         try {
           const stateDoc = await db.collection('oauthStates').doc(state as string).get();
@@ -94,7 +97,7 @@ export const handleOAuthCallback = onRequest(
           console.error(`❌ [handleOAuthCallback] Error retrieving state:`, stateError);
         }
       }
-      
+
       // If we couldn't get redirectUrl from state, we can't redirect properly
       if (!baseUrl) {
         console.error(`❌ [handleOAuthCallback] Cannot redirect - no redirectUrl available`);
@@ -109,17 +112,17 @@ export const handleOAuthCallback = onRequest(
         `);
         return;
       }
-      
+
       return res.redirect(`${baseUrl}?oauth_error=${error}`);
     }
-    
+
     if (!code || !state) {
       console.warn(`⚠️ [handleOAuthCallback] Missing parameters`, { hasCode: !!code, hasState: !!state });
-      
+
       // Get redirect URL from state - should always exist
       const { db } = await import('../../shared/utils');
       let baseUrl: string | null = null;
-      
+
       if (state) {
         try {
           const stateDoc = await db.collection('oauthStates').doc(state as string).get();
@@ -138,7 +141,7 @@ export const handleOAuthCallback = onRequest(
           console.error(`❌ [handleOAuthCallback] Error retrieving state:`, stateError);
         }
       }
-      
+
       // If we couldn't get redirectUrl from state, we can't redirect properly
       if (!baseUrl) {
         console.error(`❌ [handleOAuthCallback] Cannot redirect - no redirectUrl available`);
@@ -153,7 +156,7 @@ export const handleOAuthCallback = onRequest(
         `);
         return;
       }
-      
+
       // Get provider from state if available
       let providerParam = '';
       if (state) {
@@ -169,23 +172,23 @@ export const handleOAuthCallback = onRequest(
           console.warn(`⚠️ [handleOAuthCallback] Could not get provider from state for error redirect:`, stateError);
         }
       }
-      
+
       return res.redirect(`${baseUrl}?oauth_error=missing_parameters${providerParam}`);
     }
-    
+
     try {
       const result = await oauthService.handleCallback(
         code as string,
         state as string
       );
-      
+
       return res.redirect(result.redirectUrl);
     } catch (error: any) {
       console.error('❌ [handleOAuthCallback] OAuth callback error:', error);
-      
+
       // Get redirect URL from state - should always exist
       const { db } = await import('../../shared/utils');
-      
+
       // Get provider from state for error logging
       let providerName = 'unknown';
       if (state) {
@@ -198,7 +201,7 @@ export const handleOAuthCallback = onRequest(
           // Ignore errors getting provider
         }
       }
-      
+
       console.error('❌ [handleOAuthCallback] Error details:', {
         message: error?.message,
         code: error?.code,
@@ -207,7 +210,7 @@ export const handleOAuthCallback = onRequest(
         provider: providerName
       });
       let baseUrl: string | null = null;
-      
+
       if (state) {
         try {
           const stateDoc = await db.collection('oauthStates').doc(state as string).get();
@@ -226,11 +229,11 @@ export const handleOAuthCallback = onRequest(
           console.error(`❌ [handleOAuthCallback] Error retrieving state for redirect:`, stateError);
         }
       }
-      
+
       // Determine error type
       const errorMessage = error?.message || 'callback_failed';
       let errorParam = 'callback_failed';
-      
+
       if (errorMessage.includes('expired') || errorMessage.includes('Invalid or expired state')) {
         errorParam = 'session_expired';
       } else if (errorMessage.includes('Invalid') || errorMessage.includes('invalid')) {
@@ -240,7 +243,7 @@ export const handleOAuthCallback = onRequest(
       } else if (errorMessage.includes('redirect_uri_mismatch') || errorMessage.includes('redirect URI')) {
         errorParam = 'redirect_uri_mismatch';
       }
-      
+
       // If we couldn't get redirectUrl from state, we can't redirect properly
       if (!baseUrl) {
         console.error(`❌ [handleOAuthCallback] Cannot redirect - no redirectUrl available. Error: ${errorMessage}`);
@@ -255,7 +258,7 @@ export const handleOAuthCallback = onRequest(
         `);
         return;
       }
-      
+
       // Update providerName if we got it from state (reuse the variable declared earlier)
       if (state && providerName === 'unknown') {
         try {
@@ -270,7 +273,7 @@ export const handleOAuthCallback = onRequest(
           console.warn(`⚠️ [handleOAuthCallback] Could not get provider from state for error redirect:`, stateError);
         }
       }
-      
+
       // Parse URL properly to handle existing query params
       try {
         const url = new URL(baseUrl);
@@ -281,7 +284,7 @@ export const handleOAuthCallback = onRequest(
         // Set error params
         url.searchParams.set('oauth_error', errorParam);
         url.searchParams.set('provider', providerName);
-        
+
         const errorRedirectUrl = url.toString();
         console.log(`🔄 [handleOAuthCallback] Redirecting to error URL: ${errorRedirectUrl}`);
         return res.redirect(errorRedirectUrl);
@@ -306,58 +309,58 @@ export const refreshOAuthToken = onCall(
   async (request) => {
     try {
       const { provider, organizationId } = request.data;
-      
+
       // Validate input
       if (!provider || !organizationId) {
         throw new HttpsError('invalid-argument', 'Missing required parameters: provider and organizationId');
       }
-      
+
       // Validate provider exists
       if (!providerRegistry.hasProvider(provider)) {
         throw new HttpsError('invalid-argument', `Unknown provider: ${provider}`);
       }
-      
+
       // Validate authentication
       if (!request.auth) {
         throw new HttpsError('unauthenticated', 'User must be authenticated');
       }
-      
+
       if (!request.auth.token.organizationId || request.auth.token.organizationId !== organizationId) {
         throw new HttpsError('permission-denied', 'Not authorized for this organization');
       }
-      
+
       // Refresh connection
       await oauthService.refreshConnection(organizationId, provider);
-      
+
       return { success: true };
     } catch (error: any) {
       // If it's already an HttpsError, re-throw it
       if (error instanceof HttpsError) {
         throw error;
       }
-      
+
       // Log the error for debugging
       console.error(`[refreshOAuthToken] Error refreshing token for ${request.data?.provider}:`, error);
-      
+
       // Convert common errors to appropriate HttpsErrors
       const errorMessage = error?.message || 'Unknown error occurred';
-      
+
       if (errorMessage.includes('Connection not found') || errorMessage.includes('not found')) {
         throw new HttpsError('not-found', 'OAuth connection not found. Please reconnect the integration.');
       }
-      
+
       if (errorMessage.includes('No refresh token') || errorMessage.includes('refresh token')) {
         throw new HttpsError('failed-precondition', 'No refresh token available. Please reconnect the integration.');
       }
-      
+
       if (errorMessage.includes('Invalid provider')) {
         throw new HttpsError('invalid-argument', `Invalid provider configuration: ${request.data?.provider}`);
       }
-      
+
       if (errorMessage.includes('invalid_grant') || errorMessage.includes('Token has been expired or revoked')) {
         throw new HttpsError('failed-precondition', 'Refresh token is invalid or expired. Please reconnect the integration.');
       }
-      
+
       // For any other error, return a generic internal error
       throw new HttpsError('internal', `Failed to refresh OAuth token: ${errorMessage}`);
     }
@@ -376,21 +379,21 @@ export const updateOAuthAccountInfo = onCall(
   },
   async (request) => {
     const { provider, organizationId } = request.data;
-    
+
     // Validate
     if (!providerRegistry.hasProvider(provider)) {
       throw new HttpsError('invalid-argument', `Unknown provider: ${provider}`);
     }
-    
+
     if (!request.auth || request.auth.token.organizationId !== organizationId) {
       throw new HttpsError('permission-denied', 'Not authorized');
     }
-    
+
     // Only support Box and Dropbox for now
     if (provider !== 'box' && provider !== 'dropbox') {
       throw new HttpsError('invalid-argument', `Account info update only supported for box and dropbox`);
     }
-    
+
     try {
       // Get connection from Firestore
       const connectionDoc = await db
@@ -399,21 +402,21 @@ export const updateOAuthAccountInfo = onCall(
         .collection('cloudIntegrations')
         .doc(provider)
         .get();
-      
+
       if (!connectionDoc.exists) {
         throw new HttpsError('not-found', 'Connection not found');
       }
-      
+
       const connectionData = connectionDoc.data()!;
-      
+
       // Decrypt access token
       const { decryptToken } = await import('./encryption');
       const accessToken = decryptToken(connectionData.accessToken);
-      
+
       let accountEmail = '';
       let accountName = '';
       let accountId = '';
-      
+
       if (provider === 'box') {
         // Use Box REST API to get current user info
         // This is more reliable than the Box SDK which has initialization issues
@@ -424,15 +427,15 @@ export const updateOAuthAccountInfo = onCall(
             'Content-Type': 'application/json'
           }
         });
-        
+
         if (!response.ok) {
           const errorText = await response.text();
           console.error(`❌ [updateOAuthAccountInfo] Box API error: ${response.status} ${response.statusText}`, errorText);
           throw new Error(`Box API error: ${response.status} ${response.statusText}`);
         }
-        
+
         const user = await response.json() as any;
-        
+
         accountEmail = user.login || user.email || '';
         accountName = user.name || '';
         accountId = user.id || '';
@@ -444,17 +447,17 @@ export const updateOAuthAccountInfo = onCall(
             'Authorization': `Bearer ${accessToken}`
           }
         });
-        
+
         if (!response.ok) {
           throw new Error('Failed to get Dropbox account info');
         }
-        
+
         const data = await response.json();
         accountEmail = (data as any).email || '';
         accountName = (data as any).name?.display_name || (data as any).name?.given_name || '';
         accountId = (data as any).account_id || '';
       }
-      
+
       // Update connection document with account info
       await connectionDoc.ref.update({
         accountEmail,
@@ -462,13 +465,13 @@ export const updateOAuthAccountInfo = onCall(
         accountId: accountId || connectionData.accountId || '',
         lastRefreshedAt: admin.firestore.FieldValue.serverTimestamp()
       });
-      
+
       console.log(`✅ [updateOAuthAccountInfo] Updated ${provider} account info:`, {
         accountEmail,
         accountName,
         accountId
       });
-      
+
       return {
         success: true,
         accountEmail,
@@ -493,25 +496,25 @@ export const revokeOAuthConnection = onCall(
   },
   async (request) => {
     const { provider, organizationId } = request.data;
-    
+
     // Validate
     if (!providerRegistry.hasProvider(provider)) {
       throw new HttpsError('invalid-argument', `Unknown provider: ${provider}`);
     }
-    
+
     if (!request.auth || request.auth.token.organizationId !== organizationId) {
       throw new HttpsError('permission-denied', 'Not authorized');
     }
-    
+
     // Check if user is admin
     const userRole = request.auth.token.role?.toLowerCase();
     if (userRole !== 'admin' && userRole !== 'owner') {
       throw new HttpsError('permission-denied', 'Admin role required to disconnect integrations');
     }
-    
+
     // Revoke
     await oauthService.revokeConnection(organizationId, provider);
-    
+
     return { success: true };
   }
 );
@@ -528,58 +531,58 @@ export const disconnectIntegration = onCall(
   },
   async (request) => {
     const { provider } = request.data;
-    
+
     // Get organizationId from auth token or request data
     const organizationId = request.auth?.token?.organizationId || request.data?.organizationId;
-    
+
     if (!organizationId) {
       throw new HttpsError('invalid-argument', 'Organization ID is required');
     }
-    
+
     // Validate provider exists
     if (!providerRegistry.hasProvider(provider)) {
       throw new HttpsError('invalid-argument', `Unknown provider: ${provider}`);
     }
-    
+
     // Validate user is authenticated and belongs to organization
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
     }
-    
+
     // Allow users to disconnect if they belong to the organization
     // Organization-level integrations can be disconnected by any org member
     const userOrgId = request.auth.token.organizationId;
     if (userOrgId !== organizationId) {
       throw new HttpsError('permission-denied', 'Not authorized for this organization');
     }
-    
+
     // ✅ FIXED: Allow any organization member to disconnect (not just admins)
     // Organization-level integrations are shared, so any member can disconnect
-    
+
     // Slack uses a different structure (slackConnections subcollection)
     if (provider === 'slack') {
       const { connectionId } = request.data;
-      
+
       if (!connectionId) {
         // No specific connection ID - client already deleted it, that's fine
         console.log(`[disconnectIntegration] Slack connection already removed client-side for org ${organizationId}`);
         return { success: true, message: 'Connection already removed' };
       }
-      
+
       // Check if the specific Slack connection exists
       const slackConnectionRef = db
         .collection('organizations')
         .doc(organizationId)
         .collection('slackConnections')
         .doc(connectionId);
-      
+
       const slackConnectionDoc = await slackConnectionRef.get();
-      
+
       if (!slackConnectionDoc.exists) {
         console.log(`[disconnectIntegration] Slack connection ${connectionId} already removed for org ${organizationId}`);
         return { success: true, message: 'Connection already removed' };
       }
-      
+
       // Connection exists - delete it (Slack doesn't use OAuth revoke like other providers)
       try {
         await slackConnectionRef.delete();
@@ -590,22 +593,22 @@ export const disconnectIntegration = onCall(
         throw error instanceof HttpsError ? error : new HttpsError('internal', error.message || 'Failed to disconnect Slack integration');
       }
     }
-    
+
     // For other providers, use cloudIntegrations collection
     const connectionRef = db
       .collection('organizations')
       .doc(organizationId)
       .collection('cloudIntegrations')
       .doc(provider);
-    
+
     const connectionDoc = await connectionRef.get();
-    
+
     // If connection doesn't exist, it was already deleted client-side - that's fine
     if (!connectionDoc.exists) {
       console.log(`[disconnectIntegration] Connection already removed for ${provider} in org ${organizationId}`);
       return { success: true, message: 'Connection already removed' };
     }
-    
+
     // Connection exists, revoke it
     try {
       await oauthService.revokeConnection(organizationId, provider);
@@ -627,7 +630,7 @@ export const listAvailableProviders = onCall(
   },
   async (request) => {
     const providers = providerRegistry.getAllProviders();
-    
+
     return {
       providers: providers.map(p => ({
         name: p.name,
@@ -649,26 +652,26 @@ export const verifyIntegrationAccess = onCall(
   },
   async (request) => {
     const { appName, provider, organizationId } = request.data;
-    
+
     // Validate
     if (!providerRegistry.hasProvider(provider)) {
       throw new HttpsError('invalid-argument', `Unknown provider: ${provider}`);
     }
-    
+
     if (!request.auth || request.auth.token.organizationId !== organizationId) {
       throw new HttpsError('permission-denied', 'Not authorized');
     }
-    
+
     // Get features app needs
     const features = FeatureAccessService.getAppFeatures(appName as any, provider as any);
-    
+
     // Verify scopes
     const verification = await FeatureAccessService.verifyScopes(
       organizationId,
       provider as any,
       features
     );
-    
+
     return {
       hasAccess: verification.hasAccess,
       missingScopes: verification.missingScopes,

@@ -176,3 +176,5 @@ credentials.json
 *.crt
 *.key
 
+# Generated deployment files
+functions_list.json

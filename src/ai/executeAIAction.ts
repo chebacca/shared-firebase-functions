@@ -75,7 +75,7 @@ export const executeAIAction = onCall(
         default:
           // 🛠️ GENERIC GATEWAY: Try to execute via DataToolExecutor
           console.log(`📡 [executeAIAction] Routing generic action: ${actionType}`);
-          
+
           try {
             const { DataToolExecutor } = await import('./DataToolExecutor');
             const toolResult = await DataToolExecutor.executeTool(
@@ -88,12 +88,12 @@ export const executeAIAction = onCall(
             if (!toolResult.success) {
               // Provide more detailed error messages
               let errorMessage = toolResult.error || 'Execution failed';
-              
+
               // Check if it's an unknown tool
               if (errorMessage.includes('Unknown data tool')) {
                 errorMessage = `Action type "${actionType}" is not supported. Available actions: create_project, create_session, manage_task, assign_team_member, and others.`;
               }
-              
+
               result = {
                 success: false,
                 message: errorMessage,
@@ -104,7 +104,7 @@ export const executeAIAction = onCall(
                 success: true,
                 message: `Successfully executed ${actionType}`,
                 data: toolResult.data
-              };
+              } as any;
             }
           } catch (importError: any) {
             console.error(`❌ [executeAIAction] Failed to import DataToolExecutor:`, importError);

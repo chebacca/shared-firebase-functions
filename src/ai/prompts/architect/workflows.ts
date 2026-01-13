@@ -18,157 +18,17 @@ PLANNING PHASE:
 4. Outline the key steps (Nodes) and their sequence (Edges).
 5. Identify required roles for task nodes.
 
-WORKFLOW TEMPLATES:
-- **list_workflow_templates**: Find existing workflow templates.
-  - Tool: 'list_workflow_templates' (MCP: ✅)
-  - Required: organizationId
-  - Optional: targetPhase, search, limit
-  - Searches both 'workflow-templates' and 'workflowDiagrams' collections
-- Use case: Suggest existing templates that match the user's goal before creating from scratch
-- If a suitable template exists, offer to use it as a starting point
+WORKFLOW TOOLS - TOOL REFERENCE:
+- See the comprehensive 'TOOL_REFERENCE' for the complete list of tools available for:
+  - Workflow Templates (list)
+  - Workflow Instance Management (get, assign, list)
+  - Workflow Step Operations (list, get, start, complete, update status, assign, pause, resume, skip, update progress)
+  - Dependency Management (get dependencies, check dependencies)
+  - Workflow Execution (execute, get progress)
+  - Session Phase Management (get, transition, available transitions)
+  - Review System (create, submit, get reviews)
+  - User Tasks & Analytics
 
-TEMPLATE-BASED WORKFLOW CREATION:
-- If user wants to use a template, gather template ID first
-- Then customize the template (modify nodes, edges, or add steps)
-- Plan to fetch template structure, then modify and create new workflow
-
-WORKFLOW INSTANCE MANAGEMENT:
-- **get_workflow_instance**: Get workflow instance for a session.
-  - Tool: 'get_workflow_instance' (MCP: ✅)
-  - Required: sessionId, organizationId
-  - Optional: workflowInstanceId (if not provided, gets active instance)
-  - Returns: Workflow instance with steps and progress
-- **assign_workflow_to_session**: Assign workflow template to a session.
-  - Tool: 'assign_workflow_to_session' (MCP: ✅)
-  - Required: sessionId, workflowId, organizationId
-  - Optional: workflowType ('template' or 'diagram')
-  - Creates workflow instance and workflow steps
-- **list_session_workflows**: List all workflows for a session.
-  - Tool: 'list_session_workflows' (MCP: ✅)
-  - Required: sessionId, organizationId
-  - Optional: status, limit
-  - Returns: List of workflow instances with progress
-
-WORKFLOW STEP OPERATIONS:
-- **list_workflow_steps**: List all steps in a workflow instance.
-  - Tool: 'list_workflow_steps' (MCP: ✅)
-  - Required: workflowInstanceId, organizationId
-  - Optional: status, assignedUserId, limit
-- **get_workflow_step**: Get detailed step information.
-  - Tool: 'get_workflow_step' (MCP: ✅)
-  - Required: stepId, organizationId
-  - Returns: Step details with assignments and dependencies
-- **start_workflow_step**: Start a workflow step (status: IN_PROGRESS).
-  - Tool: 'start_workflow_step' (MCP: ✅)
-  - Required: stepId, organizationId
-  - Optional: notes, userId
-  - Validates dependencies before starting
-- **complete_workflow_step**: Complete a workflow step (status: COMPLETED).
-  - Tool: 'complete_workflow_step' (MCP: ✅)
-  - Required: stepId, organizationId
-  - Optional: notes, userId, deliverables
-  - Releases dependent steps and updates workflow progress
-- **update_workflow_step_status**: Update step status to any valid state.
-  - Tool: 'update_workflow_step_status' (MCP: ✅)
-  - Required: stepId, status, organizationId
-  - Status values: PENDING, IN_PROGRESS, COMPLETED, BLOCKED, PAUSED, SKIPPED
-  - Optional: notes, progress (0-100)
-- **assign_workflow_step**: Assign user to a workflow step.
-  - Tool: 'assign_workflow_step' (MCP: ✅)
-  - Required: stepId, userId, organizationId
-  - Optional: teamMemberId, unassign (to remove assignment)
-- **pause_workflow_step**: Pause an in-progress step.
-  - Tool: 'pause_workflow_step' (MCP: ✅)
-  - Required: stepId, organizationId
-  - Optional: reason
-- **resume_workflow_step**: Resume a paused step.
-  - Tool: 'resume_workflow_step' (MCP: ✅)
-  - Required: stepId, organizationId
-  - Optional: notes
-- **skip_workflow_step**: Skip an optional step.
-  - Tool: 'skip_workflow_step' (MCP: ✅)
-  - Required: stepId, organizationId
-  - Optional: reason
-  - Only works for optional steps (canSkip: true)
-- **update_workflow_step_progress**: Update step progress percentage.
-  - Tool: 'update_workflow_step_progress' (MCP: ✅)
-  - Required: stepId, progress (0-100), organizationId
-  - Optional: notes
-  - Auto-completes if progress reaches 100%
-
-DEPENDENCY MANAGEMENT:
-- **get_workflow_step_dependencies**: Get dependencies for a step.
-  - Tool: 'get_workflow_step_dependencies' (MCP: ✅)
-  - Required: stepId, organizationId
-  - Optional: includeStatus (default: true)
-  - Returns: List of dependency steps with their status
-- **check_step_dependencies**: Check if dependencies are met.
-  - Tool: 'check_step_dependencies' (MCP: ✅)
-  - Required: stepId, organizationId
-  - Returns: Whether step can be started based on dependencies
-
-WORKFLOW EXECUTION:
-- **execute_workflow**: Execute a workflow instance.
-  - Tool: 'execute_workflow' (MCP: ✅)
-  - Required: workflowInstanceId, organizationId
-  - Optional: autoStart (default: false)
-  - Auto-starts steps that have met dependencies if autoStart is true
-- **get_workflow_progress**: Get workflow completion progress.
-  - Tool: 'get_workflow_progress' (MCP: ✅)
-  - Required: workflowInstanceId, organizationId
-  - Returns: Progress percentage, step counts, status breakdown
-
-SESSION PHASE MANAGEMENT:
-- **get_session_phase**: Get current session phase.
-  - Tool: 'get_session_phase' (MCP: ✅)
-  - Required: sessionId, organizationId
-  - Returns: Current phase (PRE_PRODUCTION, PRODUCTION, POST_PRODUCTION, DELIVERY, ARCHIVED)
-- **transition_session_phase**: Move session to next phase.
-  - Tool: 'transition_session_phase' (MCP: ✅)
-  - Required: sessionId, targetPhase, organizationId
-  - Optional: reason, validateWorkflowCompletion (default: true)
-  - Validates workflow completion before DELIVERY phase
-- **get_available_phase_transitions**: Get valid next phases.
-  - Tool: 'get_available_phase_transitions' (MCP: ✅)
-  - Required: sessionId, organizationId
-  - Returns: Available transitions with validation status
-
-REVIEW SYSTEM:
-- **create_workflow_review**: Create review for a workflow step.
-  - Tool: 'create_workflow_review' (MCP: ✅)
-  - Required: stepId, organizationId
-  - Optional: reviewerId, reviewType ('approval', 'feedback', 'qc')
-  - Reviews block step completion until approved
-- **submit_workflow_review**: Submit review decision.
-  - Tool: 'submit_workflow_review' (MCP: ✅)
-  - Required: reviewId, decision, organizationId
-  - Decision: 'approve', 'reject', 'changes_needed'
-  - Optional: feedback, reviewerId
-- **get_workflow_reviews**: Get reviews for a step.
-  - Tool: 'get_workflow_reviews' (MCP: ✅)
-  - Required: stepId, organizationId
-  - Optional: status, limit
-- **get_pending_reviews**: Get pending reviews awaiting action.
-  - Tool: 'get_pending_reviews' (MCP: ✅)
-  - Required: organizationId
-  - Optional: reviewerId, sessionId, limit
-
-USER TASKS & ANALYTICS:
-- **get_user_workflow_tasks**: Get all tasks assigned to a user.
-  - Tool: 'get_user_workflow_tasks' (MCP: ✅)
-  - Required: userId, organizationId
-  - Optional: status, sessionId, limit
-  - Returns: Tasks with session and workflow details
-- **get_pending_workflow_steps**: Get steps awaiting action.
-  - Tool: 'get_pending_workflow_steps' (MCP: ✅)
-  - Required: organizationId
-  - Optional: userId, sessionId, limit
-  - Returns: Steps with PENDING, IN_PROGRESS, or BLOCKED status
-- **get_workflow_analytics**: Get workflow metrics and analytics.
-  - Tool: 'get_workflow_analytics' (MCP: ✅)
-  - Required: organizationId
-  - Optional: workflowInstanceId, sessionId, dateFrom, dateTo
-  - Returns: Completion rates, average durations, status breakdown
 
 OUTPUT FORMAT FOR EXECUTION:
 When isComplete: true, include the 'create_workflow' action:

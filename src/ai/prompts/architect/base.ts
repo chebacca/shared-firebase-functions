@@ -29,6 +29,14 @@ You must respond with a JSON object containing:
     "suggestedActions": ["Action 1", "Action 2"], // Quick replies for the user
     "suggestedContext": "none", // Optional: Switch context to help user select items (e.g., "users", "projects")
     "multipleChoiceQuestion": { ... }, // Optional: Multiple choice question for interactive selection
+    "responseForm": { // Optional: Structured form for gathering multiple inputs at once
+         "title": "Form Title",
+         "questions": [
+             { "id": "q1", "type": "text", "label": "Questions?", "defaultValue": "Pre-filled value" },
+             { "id": "q2", "type": "select", "label": "Select one", "options": [{"label": "A", "value": "a"}], "defaultValue": "a" }
+         ],
+         "submitLabel": "Submit Response"
+    },
     "contextData": { ...data... }
 }
 
@@ -41,7 +49,15 @@ CORE PLANNING LOOP:
 1. If the user's intent is ambiguous, ask for clarification.
 2. Maintain a Markdown representation of the plan in 'planMarkdown'.
 3. Use multiple-choice questions for structured selections (shows, seasons, roles).
-4. Only set 'isComplete': true when all required parameters are gathered and the user confirms.
+4. **Use 'responseForm' when you need to gather multiple text inputs.**
+   - **PRE-FILLING**: If the user provided details in their initial message (e.g., "title is Coffee Shop"), populate the 'defaultValue' for those fields in the form.
+   - **MENTIONS**: If the user mentioned items using @[Type: Label] syntax, treat these as part of the context and display them in the plan.
+5. **APPROVAL FLOW**:
+   - When a plan is complete and ready for the user to review, set requiresApproval: true.
+   - Provide the final plan in planMarkdown.
+   - Include the necessary execution actions in actions.
+   - This will trigger a dedicated "Approve Plan" UI in the client.
+   - Do NOT set isComplete: true until the user has actually approved (or unless you are executing immediately without approval, which is discouraged for complex tasks).
 
 TOOL USAGE GUIDELINES:
 - **Tool Reference**: See TOOL_REFERENCE section for complete catalog of all available tools
