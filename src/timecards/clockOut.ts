@@ -51,7 +51,13 @@ export const clockOut = onCall(
       const now = admin.firestore.Timestamp.now();
       const today = new Date().toISOString().split('T')[0];
 
-      // Look back 7 days to find any active session (handles overnight/long shifts and missing fields)
+      // 1. Fetch User Data (for labor rule and rates)
+      const teamMemberDoc = await db.collection('teamMembers').doc(userId).get();
+      const teamMemberData = teamMemberDoc.data();
+      const laborRuleId = teamMemberData?.laborRuleId || 'non-union-default';
+      const hourlyRate = teamMemberData?.rates?.hourlyRate || teamMemberData?.hourlyRate || 0;
+
+      // 2. Look back 7 days to find any active session
       const lookbackDate = new Date();
       lookbackDate.setDate(lookbackDate.getDate() - 7);
       lookbackDate.setHours(0, 0, 0, 0);
@@ -73,21 +79,48 @@ export const clockOut = onCall(
       });
 
       if (!timecardDoc) {
-        throw new HttpsError('failed-precondition', `You are not currently clocked in. (Debug: User=${userId?.substring(0, 5)}..., Org=${userOrgId})`);
+        throw new HttpsError('failed-precondition', `You are not currently clocked in.`);
       }
       const timecardRef = timecardDoc.ref;
       const timecardData = timecardDoc.data();
 
-      // Calculate total hours
+      // 3. Calculate total hours
       const clockInTime = timecardData.clockInTime?.toDate?.() || new Date(timecardData.clockInTime);
       const clockOutTime = now.toDate();
       const totalHours = (clockOutTime.getTime() - clockInTime.getTime()) / (1000 * 60 * 60);
+
+      // 4. Fetch Labor Rule for Calculation
+      let regularHours = totalHours;
+      let overtimeHours = 0;
+      let doubleTimeHours = 0;
+
+      if (laborRuleId) {
+        const ruleDoc = await db.collection('labor_rules').doc(laborRuleId).get();
+        const rule = ruleDoc.data();
+
+        if (rule) {
+          const otThreshold = rule.overtimeThreshold || 8;
+          const dtThreshold = rule.doubleTimeThreshold || 12;
+
+          if (totalHours > dtThreshold) {
+            doubleTimeHours = totalHours - dtThreshold;
+            overtimeHours = dtThreshold - otThreshold;
+            regularHours = otThreshold;
+          } else if (totalHours > otThreshold) {
+            overtimeHours = totalHours - otThreshold;
+            regularHours = otThreshold;
+          }
+        }
+      }
 
       // Update timecard entry
       await timecardRef.update({
         clockOutTime: now,
         totalHours: totalHours,
-        regularHours: totalHours, // Simplified - could calculate overtime based on rules
+        regularHours: regularHours,
+        overtimeHours: overtimeHours,
+        doubleTimeHours: doubleTimeHours,
+        hourlyRate: hourlyRate || timecardData.hourlyRate || 0,
         status: 'PENDING',
         notes: notes || timecardData.notes || '',
         updatedAt: now
@@ -113,7 +146,7 @@ export const clockOut = onCall(
         wrappedStatus as WrappedStatus
       );
 
-      console.log(`✅ [CLOCK OUT] User ${userId} clocked out successfully`);
+      console.log(`✅ [CLOCK OUT] User ${userId} clocked out successfully. Hours: ${totalHours.toFixed(2)} (Reg: ${regularHours.toFixed(2)}, OT: ${overtimeHours.toFixed(2)})`);
 
       return createSuccessResponse({
         id: updatedTimecard.id,
@@ -127,6 +160,9 @@ export const clockOut = onCall(
         organizationId: updatedTimecard.organizationId,
         status: updatedTimecard.status,
         totalHours: updatedTimecard.totalHours || 0,
+        regularHours: regularHours,
+        overtimeHours: overtimeHours,
+        doubleTimeHours: doubleTimeHours,
         locationStatus: updatedState.currentLocationStatus,
         wrappedStatus
       }, 'Successfully clocked out');

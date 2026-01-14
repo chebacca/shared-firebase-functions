@@ -232,6 +232,7 @@ export {
 export * from './ai';
 export { createScriptPackage } from './ai/scriptTools';
 export { createWorkflow } from './ai/workflowCloudFunctions';
+export { executeAIAction } from './ai/executeAIAction';
 
 // Export Clip Show Pro AI and Workflow functions
 export {

@@ -26,7 +26,7 @@ const geminiApiKey = defineSecret('GEMINI_API_KEY');
 // Preview context modes - Complete list including all God Mode integrations
 export type PreviewContextMode =
   // Core
-  | 'none' | 'script' | 'projects' | 'callsheet' | 'media' | 'pdf' | 'graph'
+  | 'none' | 'plan_mode' | 'script' | 'projects' | 'callsheet' | 'media' | 'pdf' | 'graph'
   // Phase 1: Shared Resources
   | 'team' | 'contacts' | 'users' | 'files'
   // Phase 2: Production Management
@@ -96,6 +96,13 @@ export class GeminiService extends CoreGeminiService {
 
     // Build context information for the Architect
     let contextInfo = '';
+
+    // Add current user and organization context explicitly to prevent hallucination
+    contextInfo += `\n\nCURRENT USER & ORG CONTEXT:\n`;
+    contextInfo += `- organizationId: "${globalContext.organizationId}"\n`;
+    contextInfo += `- userId: "${globalContext.userId || 'N/A'}"\n`;
+    contextInfo += `- timestamp: "${globalContext.timestamp}"\n`;
+
     if (globalContext.availableShows && globalContext.availableShows.shows.length > 0) {
       contextInfo = '\n\nAVAILABLE SHOWS AND SEASONS:\n';
       globalContext.availableShows.shows.forEach((show) => {
@@ -108,26 +115,25 @@ export class GeminiService extends CoreGeminiService {
     }
 
     // Prepare history (limit to last few turns for specific plan context)
-    const history = globalContext.conversationHistory || []; // Cast to any if needed to avoid type errors
+    const history = globalContext.conversationHistory || [];
     // Limit to prevent context overflow and focus on immediate planning
     const recentHistory = history.slice(-10).map((msg: any) => ({
       role: msg.role === 'user' ? 'user' : 'model',
       parts: [{ text: msg.content }]
     }));
 
+    // Create a specific model for the Architect with system instruction and JSON mode
+    const architectModel = this.genAI.getGenerativeModel({
+      model: 'gemini-1.5-pro', // Use Pro for complex planning tasks
+      systemInstruction: ARCHITECT_SYSTEM_PROMPT + contextInfo
+    });
+
     // Start chat with Architect Persona
-    const chat = this.model.startChat({
-      history: [
-        {
-          role: 'user',
-          parts: [{ text: "SYSTEM INSTRUCTION: " + ARCHITECT_SYSTEM_PROMPT + contextInfo }]
-        },
-        {
-          role: 'model',
-          parts: [{ text: "Understood. I am the Architect. I will help the user plan their tasks. I await their input." }]
-        },
-        ...recentHistory
-      ]
+    const chat = architectModel.startChat({
+      history: recentHistory,
+      generationConfig: {
+        responseMimeType: 'application/json',
+      }
     });
 
     // Send user message
@@ -157,11 +163,15 @@ export class GeminiService extends CoreGeminiService {
         jsonStr = codeBlockMatch[1];
       } else {
         // If no code block, try to find JSON object directly
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) {
-          throw new Error('No JSON found in Architect response');
+        // Improved regex to handle cases where the model might omit the opening { or include text before it
+        const startIndex = text.indexOf('{');
+        const endIndex = text.lastIndexOf('}');
+
+        if (startIndex === -1 || endIndex === -1 || startIndex > endIndex) {
+          throw new Error('No valid JSON object delimiters found in Architect response');
         }
-        jsonStr = jsonMatch[0];
+
+        jsonStr = text.substring(startIndex, endIndex + 1);
       }
 
       // Clean up the JSON string (remove any trailing commas, etc.)
@@ -1317,7 +1327,7 @@ RULES:
   private validateContextMode(mode: string): PreviewContextMode {
     const validModes: PreviewContextMode[] = [
       // Core
-      'none', 'script', 'projects', 'callsheet', 'media', 'pdf', 'graph',
+      'none', 'plan_mode', 'script', 'projects', 'callsheet', 'media', 'pdf', 'graph',
       // Phase 1: Shared Resources
       'team', 'contacts', 'users', 'files',
       // Phase 2: Production Management

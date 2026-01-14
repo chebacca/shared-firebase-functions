@@ -113,14 +113,14 @@ function parseViewIntent(
   // Skip keyword-based detection if message is in suggestions mode
   // Suggestions mode messages should not trigger view intent parsing
   const isSuggestionsMode = originalMessage.trim().startsWith('[SUGGESTIONS MODE]');
-  
+
   if (isSuggestionsMode) {
     return null; // Skip view intent parsing for suggestions mode
   }
-  
+
   // Keyword-based detection
   const viewKeywords = ['show', 'view', 'display', 'open', 'see', 'look at'];
-  const hasViewKeyword = viewKeywords.some(keyword => 
+  const hasViewKeyword = viewKeywords.some(keyword =>
     originalMessage.toLowerCase().includes(keyword)
   );
 
@@ -182,10 +182,10 @@ function parseCreateIntent(aiResponse: string): {
   } catch (error) {
     // If JSON parsing fails, check for create keywords in the response
     const createKeywords = ['create', 'make', 'add', 'new', 'generate'];
-    const hasCreateKeyword = createKeywords.some(keyword => 
+    const hasCreateKeyword = createKeywords.some(keyword =>
       aiResponse.toLowerCase().includes(keyword)
     );
-    
+
     if (hasCreateKeyword) {
       // Try to infer entity type from response
       const entityTypeMap: { [key: string]: string } = {
@@ -307,21 +307,21 @@ function normalizeText(text: string): string {
 function calculateSimilarity(str1: string, str2: string): number {
   const normalized1 = normalizeText(str1);
   const normalized2 = normalizeText(str2);
-  
+
   if (normalized1 === normalized2) return 1.0;
   if (normalized1.length === 0 || normalized2.length === 0) return 0;
-  
+
   // Simple substring matching
   if (normalized2.includes(normalized1) || normalized1.includes(normalized2)) {
     return 0.8;
   }
-  
+
   // Check for word overlap
   const words1 = normalized1.toLowerCase().split(/\s+/);
   const words2 = normalized2.toLowerCase().split(/\s+/);
   const commonWords = words1.filter(w => words2.includes(w));
   const totalWords = Math.max(words1.length, words2.length);
-  
+
   if (totalWords === 0) return 0;
   return commonWords.length / totalWords;
 }
@@ -332,21 +332,21 @@ function calculateSimilarity(str1: string, str2: string): number {
  */
 function validateSuggestion(suggestion: any, scriptContent?: string, scriptFormat?: 'table' | 'plain'): { isValid: boolean; confidence?: number } {
   // Basic structure validation
-  if (!suggestion || 
-      typeof suggestion.id !== 'string' ||
-      typeof suggestion.type !== 'string' ||
-      !['replace', 'insert', 'delete'].includes(suggestion.type) ||
-      typeof suggestion.targetText !== 'string' ||
-      typeof suggestion.description !== 'string' ||
-      (suggestion.type !== 'delete' && typeof suggestion.newText !== 'string')) {
+  if (!suggestion ||
+    typeof suggestion.id !== 'string' ||
+    typeof suggestion.type !== 'string' ||
+    !['replace', 'insert', 'delete'].includes(suggestion.type) ||
+    typeof suggestion.targetText !== 'string' ||
+    typeof suggestion.description !== 'string' ||
+    (suggestion.type !== 'delete' && typeof suggestion.newText !== 'string')) {
     return { isValid: false };
   }
-  
+
   // If script content is available, verify targetText exists
   if (scriptContent && suggestion.targetText) {
     const normalized = normalizeText(scriptContent);
     const targetNormalized = normalizeText(suggestion.targetText);
-    
+
     // For table format, also check column-specific matching
     if (scriptFormat === 'table') {
       // Table format: targetText might be from a specific column
@@ -365,7 +365,7 @@ function validateSuggestion(suggestion: any, scriptContent?: string, scriptForma
           return similarity >= 0.5; // Lower threshold for table columns
         });
       });
-      
+
       if (columnMatches) {
         console.log('[aiChatAssistant] Table format: Found targetText in table columns', {
           targetText: suggestion.targetText.substring(0, 100),
@@ -374,17 +374,17 @@ function validateSuggestion(suggestion: any, scriptContent?: string, scriptForma
         return { isValid: true, confidence: 0.9 };
       }
     }
-    
+
     // Check exact match (works for both formats)
     if (normalized.includes(targetNormalized)) {
       return { isValid: true, confidence: 1.0 };
     }
-    
+
     // Try fuzzy match
     const similarity = calculateSimilarity(normalized, targetNormalized);
     // Lower threshold for table format (0.5) vs plain text (0.6)
     const threshold = scriptFormat === 'table' ? 0.5 : 0.6;
-    
+
     if (similarity < threshold) {
       console.warn('[aiChatAssistant] Suggestion targetText not found in script:', {
         targetText: suggestion.targetText.substring(0, 100),
@@ -395,11 +395,11 @@ function validateSuggestion(suggestion: any, scriptContent?: string, scriptForma
       });
       return { isValid: false }; // Too different, reject suggestion
     }
-    
+
     // Set confidence based on similarity
     return { isValid: true, confidence: similarity };
   }
-  
+
   return { isValid: true, confidence: 0.8 }; // Default confidence if no script content
 }
 
@@ -409,32 +409,32 @@ function validateSuggestion(suggestion: any, scriptContent?: string, scriptForma
  */
 function extractAnchorContext(scriptContent: string, targetText: string, scriptFormat?: 'table' | 'plain'): { beforeContext: string; afterContext: string } | null {
   if (!scriptContent || !targetText) return null;
-  
+
   // For table format, search within rows
   if (scriptFormat === 'table') {
     const rows = scriptContent.split('\n');
     const normalizedTarget = normalizeText(targetText);
-    
+
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       const normalizedRow = normalizeText(row);
-      
+
       // Check if target text is in this row
       if (normalizedRow.includes(normalizedTarget)) {
         // Get previous and next rows for context
         const beforeRow = i > 0 ? rows[i - 1] : '';
         const afterRow = i < rows.length - 1 ? rows[i + 1] : '';
-        
+
         return {
           beforeContext: beforeRow.trim(),
           afterContext: afterRow.trim()
         };
       }
     }
-    
+
     // If not found in rows, fall through to standard matching
   }
-  
+
   // Standard matching for plain text or fallback
   const targetIndex = scriptContent.indexOf(targetText);
   if (targetIndex === -1) {
@@ -443,16 +443,16 @@ function extractAnchorContext(scriptContent: string, targetText: string, scriptF
     const normalizedTarget = normalizeText(targetText);
     const normalizedIndex = normalized.indexOf(normalizedTarget);
     if (normalizedIndex === -1) return null;
-    
+
     // Approximate position
     const beforeContext = normalized.substring(Math.max(0, normalizedIndex - 50), normalizedIndex);
     const afterContext = normalized.substring(normalizedIndex + normalizedTarget.length, Math.min(normalized.length, normalizedIndex + normalizedTarget.length + 50));
     return { beforeContext: beforeContext.trim(), afterContext: afterContext.trim() };
   }
-  
+
   const beforeContext = scriptContent.substring(Math.max(0, targetIndex - 50), targetIndex);
   const afterContext = scriptContent.substring(targetIndex + targetText.length, Math.min(scriptContent.length, targetIndex + targetText.length + 50));
-  
+
   return {
     beforeContext: beforeContext.trim(),
     afterContext: afterContext.trim()
@@ -470,29 +470,29 @@ function parseScriptSuggestions(aiResponse: string, scriptContent?: string, scri
       scriptFormat: scriptFormat || 'unknown',
       scriptContentLength: scriptContent?.length || 0
     });
-    
+
     // Try to find JSON suggestions in the response
     // Look for patterns like {"suggestions": [...]} or just [...]
     const jsonMatch = aiResponse.match(/\{[\s\S]*"suggestions"[\s\S]*\}/);
-    
+
     if (jsonMatch) {
       console.log('[aiChatAssistant] Found JSON match for suggestions:', jsonMatch[0].substring(0, 500));
       const parsed = JSON.parse(jsonMatch[0]);
-      
+
       if (parsed.suggestions && Array.isArray(parsed.suggestions)) {
         console.log('[aiChatAssistant] Found suggestions array with', parsed.suggestions.length, 'items');
-        
+
         // Validate suggestion structure with semantic validation
         const validSuggestions = parsed.suggestions.filter((s: any) => {
           // CRITICAL: If user selected specific text, targetText MUST match exactly
           if (selectedText && selectedText.trim().length > 0) {
             const normalizedSelected = selectedText.trim();
             const normalizedTarget = (s.targetText || '').trim();
-            
+
             // Check if targetText matches the selected text exactly (allowing for whitespace normalization)
             const selectedNormalized = normalizeText(normalizedSelected);
             const targetNormalized = normalizeText(normalizedTarget);
-            
+
             if (selectedNormalized !== targetNormalized) {
               console.warn('[aiChatAssistant] ❌ REJECTED: targetText does not match selected text', {
                 suggestionId: s.id,
@@ -505,15 +505,15 @@ function parseScriptSuggestions(aiResponse: string, scriptContent?: string, scri
               });
               return false; // Reject suggestion - targetText doesn't match selected text
             }
-            
+
             console.log('[aiChatAssistant] ✅ VALIDATED: targetText matches selected text exactly', {
               suggestionId: s.id,
               textLength: normalizedSelected.length
             });
           }
-          
+
           const validation = validateSuggestion(s, scriptContent, scriptFormat);
-          
+
           if (!validation.isValid) {
             console.log('[aiChatAssistant] Invalid suggestion filtered out:', {
               id: s.id,
@@ -523,12 +523,12 @@ function parseScriptSuggestions(aiResponse: string, scriptContent?: string, scri
             });
             return false;
           }
-          
+
           // Set confidence if calculated
           if (validation.confidence !== undefined) {
             s.confidence = validation.confidence;
           }
-          
+
           // Extract anchor context if script content available
           if (scriptContent && s.targetText) {
             const anchor = extractAnchorContext(scriptContent, s.targetText, scriptFormat);
@@ -539,7 +539,7 @@ function parseScriptSuggestions(aiResponse: string, scriptContent?: string, scri
               };
             }
           }
-          
+
           // Set default metadata if not provided
           if (!s.metadata) {
             s.metadata = {
@@ -550,14 +550,14 @@ function parseScriptSuggestions(aiResponse: string, scriptContent?: string, scri
             s.metadata.timestamp = s.metadata.timestamp || Date.now();
             s.metadata.confidence = s.metadata.confidence || validation.confidence || 0.8;
           }
-          
+
           return true;
         });
-        
+
         console.log('[aiChatAssistant] Valid suggestions after filtering:', validSuggestions.length, {
           scriptFormat: scriptFormat || 'unknown'
         });
-        
+
         if (validSuggestions.length > 0) {
           // Ensure each suggestion has a unique ID
           validSuggestions.forEach((s: any, index: number) => {
@@ -565,7 +565,7 @@ function parseScriptSuggestions(aiResponse: string, scriptContent?: string, scri
               s.id = `suggestion-${Date.now()}-${index}`;
             }
           });
-          
+
           console.log('[aiChatAssistant] Returning', validSuggestions.length, 'valid script suggestions');
           return validSuggestions;
         } else {
@@ -586,16 +586,16 @@ function parseScriptSuggestions(aiResponse: string, scriptContent?: string, scri
             console.log('[aiChatAssistant] Found suggestions array at end with', parsed.suggestions.length, 'items');
             const validSuggestions = parsed.suggestions.filter((s: any) => {
               const validation = validateSuggestion(s, scriptContent, scriptFormat);
-              
+
               if (!validation.isValid) {
                 return false;
               }
-              
+
               // Set confidence if calculated
               if (validation.confidence !== undefined) {
                 s.confidence = validation.confidence;
               }
-              
+
               // Extract anchor context if script content available
               if (scriptContent && s.targetText) {
                 const anchor = extractAnchorContext(scriptContent, s.targetText, scriptFormat);
@@ -606,7 +606,7 @@ function parseScriptSuggestions(aiResponse: string, scriptContent?: string, scri
                   };
                 }
               }
-              
+
               // Set default metadata if not provided
               if (!s.metadata) {
                 s.metadata = {
@@ -617,17 +617,17 @@ function parseScriptSuggestions(aiResponse: string, scriptContent?: string, scri
                 s.metadata.timestamp = s.metadata.timestamp || Date.now();
                 s.metadata.confidence = s.metadata.confidence || validation.confidence || 0.8;
               }
-              
+
               return true;
             });
-            
+
             if (validSuggestions.length > 0) {
               validSuggestions.forEach((s: any, index: number) => {
                 if (!s.id || s.id === '') {
                   s.id = `suggestion-${Date.now()}-${index}`;
                 }
               });
-              
+
               console.log('[aiChatAssistant] Returning', validSuggestions.length, 'valid script suggestions from end');
               return validSuggestions;
             }
@@ -641,7 +641,7 @@ function parseScriptSuggestions(aiResponse: string, scriptContent?: string, scri
     // If parsing fails, return null (not a critical error)
     console.log('[aiChatAssistant] Could not parse script suggestions from response:', error);
   }
-  
+
   console.log('[aiChatAssistant] No script suggestions found, returning null');
   return null;
 }
@@ -688,162 +688,162 @@ export const aiChatAssistant = onCall(
     secrets: [encryptionKeySecret]
   },
   async (request): Promise<ChatResponse> => {
-  try {
-    // Verify authentication
-    if (!request.auth) {
-      throw new HttpsError('unauthenticated', 'User must be authenticated');
-    }
-
-    const userId = request.auth.uid;
-    const { message, organizationId, context, preferredProvider } = request.data as ChatRequest;
-
-    if (!message || !organizationId) {
-      throw new HttpsError('invalid-argument', 'Message and organizationId are required');
-    }
-
-    // Security validation: Ensure userId matches authenticated user
-    // This prevents any potential userId manipulation in the request
-    if (!userId || userId !== request.auth.uid) {
-      throw new HttpsError('permission-denied', 'Invalid user authentication');
-    }
-
-    // Determine provider
-    const provider = preferredProvider || 'openai';
-
-    // Get API key
-    const apiKeyData = await getAIApiKey(organizationId, provider, userId);
-    if (!apiKeyData) {
-      throw new HttpsError(
-        'failed-precondition',
-        `No ${provider} API key configured. Please configure in Integration Settings.`
-      );
-    }
-
-    // Gather context
-    let aiContext;
-    if (context?.entityId && context?.entityType) {
-      aiContext = await gatherEntityContext(
-        organizationId,
-        userId,
-        context.entityType,
-        context.entityId,
-        { page: context.page || '', selectedItems: context.selectedItems }
-      );
-    } else {
-      aiContext = await gatherGeneralContext(
-        organizationId,
-        userId,
-        { page: context?.page || '', selectedItems: context?.selectedItems }
-      );
-    }
-
-    // Add alert context if provided
-    if (context?.alertContext) {
-      aiContext.alertContext = context.alertContext;
-    }
-
-    // Retrieve vector context if this is a general query (not script-specific)
-    if (!context?.scriptContext && message) {
-      try {
-        const vectorContext = await retrieveVectorContext(organizationId, message, {
-          includeSimilarScenarios: true,
-          includeRoleKnowledge: true,
-          limit: 3
-        });
-        aiContext.vectorContext = vectorContext;
-      } catch (error) {
-        console.warn('[aiChatAssistant] Error retrieving vector context:', error);
-        // Continue without vector context - not critical
+    try {
+      // Verify authentication
+      if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'User must be authenticated');
       }
-    }
 
-    // Format context for prompt
-    const contextPrompt = formatContextForPrompt(aiContext);
+      const userId = request.auth.uid;
+      const { message, organizationId, context, preferredProvider } = request.data as ChatRequest;
 
-    // Check if this is a script writing request with script context
-    // Prioritize scriptContext - if it exists, use it regardless of entityType
-    const hasScriptContext = !!context?.scriptContext;
-    
-    // Build messages - use specialized prompt for script writing
-    let systemPrompt: string = '';
-    
-    if (hasScriptContext) {
-      const scriptContext = context.scriptContext;
-      
-      // Log script context for debugging with enhanced details
-      const currentScript = scriptContext.story?.currentScript || '';
-      const currentScriptTrimmed = currentScript.trim();
-      const hasValidScriptContent = currentScriptTrimmed.length > 0;
-      
-      console.log('[aiChatAssistant] Script context received:', {
-        storyId: scriptContext.storyId,
-        storyTitle: scriptContext.story?.clipTitle,
-        scriptFormat: scriptContext.scriptFormat || 'unknown',
-        hasCurrentScript: !!scriptContext.story?.currentScript,
-        currentScriptLength: currentScript.length,
-        currentScriptTrimmedLength: currentScriptTrimmed.length,
-        hasValidScriptContent: hasValidScriptContent,
-        currentScriptPreview: currentScriptTrimmed.substring(0, 500) + (currentScriptTrimmed.length > 500 ? '...' : ''),
-        currentScriptLineCount: currentScriptTrimmed.split('\n').length,
-        entityType: context?.entityType,
-        entityId: context?.entityId
-      });
-      
-      // CRITICAL: Validate script content
-      if (!scriptContext.story?.currentScript) {
-        console.error('[aiChatAssistant] CRITICAL: Script context received but no currentScript found!', {
-          storyId: scriptContext.storyId,
-          hasStory: !!scriptContext.story,
-          storyKeys: scriptContext.story ? Object.keys(scriptContext.story) : []
-        });
-        
-        // Return error response instead of proceeding with empty context
-        return {
-          success: false,
-          response: "I'm having trouble accessing the script content. Please try refreshing the editor or reopening the Clipsy assistant.",
-          error: "Script context validation failed: no script content available"
-        };
-      } else if (!hasValidScriptContent) {
-        console.error('[aiChatAssistant] CRITICAL: Script context received but currentScript is empty or only whitespace!', {
-          storyId: scriptContext.storyId,
-          originalLength: currentScript.length,
-          trimmedLength: currentScriptTrimmed.length,
-          scriptPreview: currentScript.substring(0, 200)
-        });
-        
-        // Return error response instead of proceeding with empty context
-        return {
-          success: false,
-          response: "I'm having trouble accessing the script content. Please try refreshing the editor or reopening the Clipsy assistant.",
-          error: "Script context validation failed: script content is empty or whitespace only"
-        };
+      if (!message || !organizationId) {
+        throw new HttpsError('invalid-argument', 'Message and organizationId are required');
       }
-      
-      // Log successful validation
-      console.log('[aiChatAssistant] ✅ Script context validated successfully', {
-        storyId: scriptContext.storyId,
-        scriptLength: currentScriptTrimmed.length,
-        scriptPreview: currentScriptTrimmed.substring(0, 200)
-      });
-      
-      // Build script content section - THIS IS THE MOST IMPORTANT PART
-      let scriptContentSection = '';
-      if (hasValidScriptContent) {
-        const scriptTitle = scriptContext.story?.clipTitle || 'Unknown';
-        const script = currentScriptTrimmed;
-        const scriptFormat = scriptContext.scriptFormat || 'plain';
-        // Increased from 100,000 to 500,000 characters to support longer scripts
-        // Gemini 1.5 Pro supports 2M tokens (~8M characters), so 500k is well within limits
-        const maxLength = 500000;
-        let scriptPreview = script;
-        let scriptSummary = '';
-        
-        if (script.length > maxLength) {
-          // For very long scripts, create a summary of the full script + detailed preview
-          const previewLength = 250000; // First 250k characters for detailed context
-          const summaryLength = 50000;  // Last 50k characters for ending context
-          
-          scriptSummary = `**SCRIPT SUMMARY**: This is a very long script (${script.length} characters, ${script.split('\n').length} lines).
+
+      // Security validation: Ensure userId matches authenticated user
+      // This prevents any potential userId manipulation in the request
+      if (!userId || userId !== request.auth.uid) {
+        throw new HttpsError('permission-denied', 'Invalid user authentication');
+      }
+
+      // Determine provider
+      const provider = preferredProvider || 'openai';
+
+      // Get API key
+      const apiKeyData = await getAIApiKey(organizationId, provider, userId);
+      if (!apiKeyData) {
+        throw new HttpsError(
+          'failed-precondition',
+          `No ${provider} API key configured. Please configure in Integration Settings.`
+        );
+      }
+
+      // Gather context
+      let aiContext;
+      if (context?.entityId && context?.entityType) {
+        aiContext = await gatherEntityContext(
+          organizationId,
+          userId,
+          context.entityType,
+          context.entityId,
+          { page: context.page || '', selectedItems: context.selectedItems }
+        );
+      } else {
+        aiContext = await gatherGeneralContext(
+          organizationId,
+          userId,
+          { page: context?.page || '', selectedItems: context?.selectedItems }
+        );
+      }
+
+      // Add alert context if provided
+      if (context?.alertContext) {
+        aiContext.alertContext = context.alertContext;
+      }
+
+      // Retrieve vector context if this is a general query (not script-specific)
+      if (!context?.scriptContext && message) {
+        try {
+          const vectorContext = await retrieveVectorContext(organizationId, message, {
+            includeSimilarScenarios: true,
+            includeRoleKnowledge: true,
+            limit: 3
+          });
+          aiContext.vectorContext = vectorContext;
+        } catch (error) {
+          console.warn('[aiChatAssistant] Error retrieving vector context:', error);
+          // Continue without vector context - not critical
+        }
+      }
+
+      // Format context for prompt
+      const contextPrompt = formatContextForPrompt(aiContext);
+
+      // Check if this is a script writing request with script context
+      // Prioritize scriptContext - if it exists, use it regardless of entityType
+      const hasScriptContext = !!context?.scriptContext;
+
+      // Build messages - use specialized prompt for script writing
+      let systemPrompt: string = '';
+
+      if (hasScriptContext) {
+        const scriptContext = context.scriptContext;
+
+        // Log script context for debugging with enhanced details
+        const currentScript = scriptContext.story?.currentScript || '';
+        const currentScriptTrimmed = currentScript.trim();
+        const hasValidScriptContent = currentScriptTrimmed.length > 0;
+
+        console.log('[aiChatAssistant] Script context received:', {
+          storyId: scriptContext.storyId,
+          storyTitle: scriptContext.story?.clipTitle,
+          scriptFormat: scriptContext.scriptFormat || 'unknown',
+          hasCurrentScript: !!scriptContext.story?.currentScript,
+          currentScriptLength: currentScript.length,
+          currentScriptTrimmedLength: currentScriptTrimmed.length,
+          hasValidScriptContent: hasValidScriptContent,
+          currentScriptPreview: currentScriptTrimmed.substring(0, 500) + (currentScriptTrimmed.length > 500 ? '...' : ''),
+          currentScriptLineCount: currentScriptTrimmed.split('\n').length,
+          entityType: context?.entityType,
+          entityId: context?.entityId
+        });
+
+        // CRITICAL: Validate script content
+        if (!scriptContext.story?.currentScript) {
+          console.error('[aiChatAssistant] CRITICAL: Script context received but no currentScript found!', {
+            storyId: scriptContext.storyId,
+            hasStory: !!scriptContext.story,
+            storyKeys: scriptContext.story ? Object.keys(scriptContext.story) : []
+          });
+
+          // Return error response instead of proceeding with empty context
+          return {
+            success: false,
+            response: "I'm having trouble accessing the script content. Please try refreshing the editor or reopening the Clipsy assistant.",
+            error: "Script context validation failed: no script content available"
+          };
+        } else if (!hasValidScriptContent) {
+          console.error('[aiChatAssistant] CRITICAL: Script context received but currentScript is empty or only whitespace!', {
+            storyId: scriptContext.storyId,
+            originalLength: currentScript.length,
+            trimmedLength: currentScriptTrimmed.length,
+            scriptPreview: currentScript.substring(0, 200)
+          });
+
+          // Return error response instead of proceeding with empty context
+          return {
+            success: false,
+            response: "I'm having trouble accessing the script content. Please try refreshing the editor or reopening the Clipsy assistant.",
+            error: "Script context validation failed: script content is empty or whitespace only"
+          };
+        }
+
+        // Log successful validation
+        console.log('[aiChatAssistant] ✅ Script context validated successfully', {
+          storyId: scriptContext.storyId,
+          scriptLength: currentScriptTrimmed.length,
+          scriptPreview: currentScriptTrimmed.substring(0, 200)
+        });
+
+        // Build script content section - THIS IS THE MOST IMPORTANT PART
+        let scriptContentSection = '';
+        if (hasValidScriptContent) {
+          const scriptTitle = scriptContext.story?.clipTitle || 'Unknown';
+          const script = currentScriptTrimmed;
+          const scriptFormat = scriptContext.scriptFormat || 'plain';
+          // Increased from 100,000 to 500,000 characters to support longer scripts
+          // Gemini 1.5 Pro supports 2M tokens (~8M characters), so 500k is well within limits
+          const maxLength = 500000;
+          let scriptPreview = script;
+          let scriptSummary = '';
+
+          if (script.length > maxLength) {
+            // For very long scripts, create a summary of the full script + detailed preview
+            const previewLength = 250000; // First 250k characters for detailed context
+            const summaryLength = 50000;  // Last 50k characters for ending context
+
+            scriptSummary = `**SCRIPT SUMMARY**: This is a very long script (${script.length} characters, ${script.split('\n').length} lines).
 The script has been truncated for context efficiency. Full detailed content is provided for the first ${previewLength.toLocaleString()} characters and last ${summaryLength.toLocaleString()} characters.
 
 **SCRIPT STRUCTURE**:
@@ -858,28 +858,28 @@ ${scriptContext.tableStructure?.totalPages ? `- Total Pages: ${scriptContext.tab
 [The middle section contains the bulk of the script content. When making suggestions, focus on the detailed sections provided below, or request specific page/coordinate context if needed.]
 
 `;
-          
-          scriptPreview = script.substring(0, previewLength) + 
-            '\n\n[... MIDDLE SECTION TRUNCATED FOR CONTEXT EFFICIENCY - ' + 
-            String(script.length - previewLength - summaryLength) + 
-            ' characters omitted ...]\n\n' +
-            script.substring(script.length - summaryLength);
-        }
-        
-        // Add coordinate map if available (for table format)
-        const coordinateMapSection = scriptFormat === 'table' && scriptContext.coordinateMap 
-          ? `\n\n${scriptContext.coordinateMap}\n`
-          : '';
-        
-        // Get page information from table structure if available
-        const totalPages = scriptContext.tableStructure?.totalPages;
-        const hasPages = totalPages && totalPages > 1;
-        const pageInfo = hasPages 
-          ? `\n**PAGINATION**: This script has ${totalPages} pages (industry standard: ~22 rows per page). Use page-aware coordinates for better accuracy.`
-          : '';
-        
-        const formatNote = scriptFormat === 'table' 
-          ? `\n**SCRIPT FORMAT: TABLE/GRID** - This script uses a 3-column table format. Content is formatted as [ROW N] Column1 | Column2 | Column3 where:
+
+            scriptPreview = script.substring(0, previewLength) +
+              '\n\n[... MIDDLE SECTION TRUNCATED FOR CONTEXT EFFICIENCY - ' +
+              String(script.length - previewLength - summaryLength) +
+              ' characters omitted ...]\n\n' +
+              script.substring(script.length - summaryLength);
+          }
+
+          // Add coordinate map if available (for table format)
+          const coordinateMapSection = scriptFormat === 'table' && scriptContext.coordinateMap
+            ? `\n\n${scriptContext.coordinateMap}\n`
+            : '';
+
+          // Get page information from table structure if available
+          const totalPages = scriptContext.tableStructure?.totalPages;
+          const hasPages = totalPages && totalPages > 1;
+          const pageInfo = hasPages
+            ? `\n**PAGINATION**: This script has ${totalPages} pages (industry standard: ~22 rows per page). Use page-aware coordinates for better accuracy.`
+            : '';
+
+          const formatNote = scriptFormat === 'table'
+            ? `\n**SCRIPT FORMAT: TABLE/GRID** - This script uses a 3-column table format. Content is formatted as [ROW N] Column1 | Column2 | Column3 where:
 - **Column 1 (TIME | SCENE / ACTION)**: Contains timestamps, scene headings, action descriptions, and transitions
 - **Column 2 (CHARACTER | DIALOGUE)**: Contains character names and their dialogue
 - **Column 3 (NOTES / MUSIC / GRAPHICS)**: Contains production notes, music cues, graphics descriptions, and visual references
@@ -896,9 +896,9 @@ ${hasPages ? `- **PAGE-AWARE COORDINATES**: For scripts with multiple pages, use
 - Extract targetText from the specific column you want to change (TIME/SCENE, CHARACTER/DIALOGUE, or NOTES/GRAPHICS)
 - Make suggestions for dialogue improvements in Column 2, action/scene improvements in Column 1, and notes/music/graphics in Column 3
 - The user expects suggestions across ALL columns, not just TIME/SCENE/ACTION`
-          : `\n**SCRIPT FORMAT: PLAIN TEXT** - This script uses standard plain text format.`;
-        
-        scriptContentSection = `🔥🔥🔥 CRITICAL - THE ACTUAL SCRIPT CONTENT IS BELOW - DO NOT ASK FOR MORE INFORMATION 🔥🔥🔥
+            : `\n**SCRIPT FORMAT: PLAIN TEXT** - This script uses standard plain text format.`;
+
+          scriptContentSection = `🔥🔥🔥 CRITICAL - THE ACTUAL SCRIPT CONTENT IS BELOW - DO NOT ASK FOR MORE INFORMATION 🔥🔥🔥
 
 ═══════════════════════════════════════════════════════════════════════════════
 SCRIPT TITLE: "${scriptTitle}"
@@ -948,17 +948,17 @@ ${scriptFormat === 'table' ? `10. **FOR TABLE FORMAT - CRITICAL**:
    - When creating suggestions, extract targetText from the specific column (the text after | separator), not the entire row
    - The system will automatically match it to the correct table cell
    - DO NOT only suggest changes to Column 1 - analyze and suggest improvements for Columns 2 and 3 as well` : ''}`;
-      } else {
-        scriptContentSection = `**⚠️ NO SCRIPT CONTENT AVAILABLE YET**
+        } else {
+          scriptContentSection = `**⚠️ NO SCRIPT CONTENT AVAILABLE YET**
 
 The user may be starting a new script. There is no current script content to analyze.`;
-      }
-      
-      // Add selected text context if available
-      let selectedTextSection = '';
-      if (context?.selectedText && context.selectedText.trim().length > 0) {
-        const selectedText = context.selectedText.trim();
-        selectedTextSection = `
+        }
+
+        // Add selected text context if available
+        let selectedTextSection = '';
+        if (context?.selectedText && context.selectedText.trim().length > 0) {
+          const selectedText = context.selectedText.trim();
+          selectedTextSection = `
 🎯🎯🎯 USER HAS SELECTED SPECIFIC TEXT - FOCUS YOUR RESPONSE ON THIS 🎯🎯🎯
 
 The user has highlighted the following EXACT text in the script editor (${selectedText.length} characters):
@@ -978,11 +978,11 @@ ${selectedText}
 - Be precise and specific in your suggestion for this selection
 
 `;
-      }
-      
-      // Build specialized system prompt for script writing
-      // CRITICAL: Put script content FIRST so AI sees it immediately
-      systemPrompt = `You are Clipsy, an AI assistant specialized in helping writers create scripts for TV production shows.
+        }
+
+        // Build specialized system prompt for script writing
+        // CRITICAL: Put script content FIRST so AI sees it immediately
+        systemPrompt = `You are Clipsy, an AI assistant specialized in helping writers create scripts for TV production shows.
 
 ${selectedTextSection}${scriptContentSection}
 
@@ -1013,58 +1013,58 @@ ${scriptContext.story?.producerNotes ? `- Producer Notes: ${scriptContext.story.
 ${scriptContext.pitch?.comments?.length ? `- Team Comments: ${scriptContext.pitch.comments.length} comments available` : ''}
 
 VIDEO TRANSCRIPTS:
-${scriptContext.videoTranscripts?.length > 0 
-  ? scriptContext.videoTranscripts.map((t: any, i: number) => `
+${scriptContext.videoTranscripts?.length > 0
+            ? scriptContext.videoTranscripts.map((t: any, i: number) => `
 ${i + 1}. ${t.videoUrl}
    Platform: ${t.platform || 'Unknown'}
    Transcript: ${t.fullText?.substring(0, 500) || 'No transcript'}${t.fullText?.length > 500 ? '...' : ''} [${t.fullText?.length || 0} characters total]
 `).join('')
-  : '- No video transcripts available'}
+            : '- No video transcripts available'}
 
 VIDEO NOTES (timestamped notes from video player - USE THESE TO ENHANCE THE SCRIPT):
 ${scriptContext.story?.videoNotes && Array.isArray(scriptContext.story.videoNotes) && scriptContext.story.videoNotes.length > 0
-  ? scriptContext.story.videoNotes.map((videoNoteGroup: any, i: number) => {
-      const notes = videoNoteGroup.notes || [];
-      if (notes.length === 0) return '';
-      return `
+            ? scriptContext.story.videoNotes.map((videoNoteGroup: any, i: number) => {
+              const notes = videoNoteGroup.notes || [];
+              if (notes.length === 0) return '';
+              return `
 Video ${i + 1}: ${videoNoteGroup.videoUrl || 'Unknown URL'}
 ${notes.map((note: any) => {
-  const startTime = formatTimestamp(note.timestamp);
-  const endTime = note.endTimestamp ? formatTimestamp(note.endTimestamp) : '';
-  return `  [${startTime}${endTime ? ` - ${endTime}` : ''}] ${note.note || 'No note text'}`;
-}).join('\n')}
+                const startTime = formatTimestamp(note.timestamp);
+                const endTime = note.endTimestamp ? formatTimestamp(note.endTimestamp) : '';
+                return `  [${startTime}${endTime ? ` - ${endTime}` : ''}] ${note.note || 'No note text'}`;
+              }).join('\n')}
 `;
-    }).join('\n')
-  : '- No video notes available'}
+            }).join('\n')
+            : '- No video notes available'}
 
 AUDIO NOTES (timestamped notes from audio player - USE THESE TO ENHANCE THE SCRIPT):
 ${scriptContext.story?.voAudioFiles && Array.isArray(scriptContext.story.voAudioFiles) && scriptContext.story.voAudioFiles.length > 0
-  ? scriptContext.story.voAudioFiles.map((audioFile: any, i: number) => {
-      const notes = audioFile.notes || [];
-      if (notes.length === 0) return '';
-      return `
+            ? scriptContext.story.voAudioFiles.map((audioFile: any, i: number) => {
+              const notes = audioFile.notes || [];
+              if (notes.length === 0) return '';
+              return `
 Audio File ${i + 1}: ${audioFile.fileName || 'Unknown file'}
 ${notes.map((note: any) => {
-  const startTime = formatTimestamp(note.timestamp);
-  const endTime = note.endTimestamp ? formatTimestamp(note.endTimestamp) : '';
-  return `  [${startTime}${endTime ? ` - ${endTime}` : ''}] ${note.note || 'No note text'}`;
-}).join('\n')}
+                const startTime = formatTimestamp(note.timestamp);
+                const endTime = note.endTimestamp ? formatTimestamp(note.endTimestamp) : '';
+                return `  [${startTime}${endTime ? ` - ${endTime}` : ''}] ${note.note || 'No note text'}`;
+              }).join('\n')}
 `;
-    }).join('\n')
-  : '- No audio notes available'}
+            }).join('\n')
+            : '- No audio notes available'}
 
 EXAMPLE SCRIPTS FROM THIS SHOW (for pattern learning):
 ${scriptContext.show?.exampleScripts?.length > 0
-  ? scriptContext.show.exampleScripts.slice(0, 3).map((s: any, i: number) => `
+            ? scriptContext.show.exampleScripts.slice(0, 3).map((s: any, i: number) => `
 Example ${i + 1}: "${s.title || 'Untitled'}"
 ${s.content?.substring(0, 300) || 'No content'}${s.content?.length > 300 ? '...' : ''}
 `).join('')
-  : '- No example scripts available for pattern learning'}
+            : '- No example scripts available for pattern learning'}
 
 INDEXED VIDEO FILES:
 ${scriptContext.indexedVideoFiles?.length > 0
-  ? scriptContext.indexedVideoFiles.slice(0, 5).map((f: any) => `- ${f.name || 'Unknown'} (${f.cloudProvider || 'local'})`).join('\n')
-  : '- No indexed video files available'}
+            ? scriptContext.indexedVideoFiles.slice(0, 5).map((f: any) => `- ${f.name || 'Unknown'} (${f.cloudProvider || 'local'})`).join('\n')
+            : '- No indexed video files available'}
 
 ${scriptContext.writingKnowledge?.techniques ? `
 ═══════════════════════════════════════════════════════════════════════════════
@@ -1097,9 +1097,14 @@ YOUR ROLE AND RESPONSIBILITIES
      * Do NOT give generic workflow information - be specific to their script
    - **If the user asks "suggest improvements" or similar, IMMEDIATELY analyze the script at the top - DO NOT ask for more information**
    - **If you cannot find the script content at the top, STOP and report an error - do not make up generic advice or ask for more information**
-2. **CRITICAL**: When enhancing or expanding scripts, you MUST incorporate ALL video and audio notes from the "VIDEO NOTES" and "AUDIO NOTES" sections above. These notes contain specific timestamps and observations that should be integrated into the script to make it more robust and detailed.
-3. Help write scripts that match the show's style and format
-4. Use video transcripts to understand source material and create accurate script content
+2. **MANDATORY ITERATIVE DEVELOPMENT RULES**:
+    - **CONTINUE, DON'T RESTART**: If the user asks to "continue", "add a scene", or "expand", look at the LAST TIMESTAMP in the existing script at the top. Continue your new content FROM THAT POINT. DO NOT restart at 0:00 unless explicitly asked for a full rewrite.
+    - **MATCH EXISTING STYLE**: Observe the formatting, tone, and level of detail in the existing rows. Your new content should feel like it was written by the same author.
+    - **REFERENCE RECENT ACTIONS**: If the script has recently been "Approved" or moved to "Needs Revision", tailor your support to that phase.
+    - **DYNAMIC SUGGESTIONS**: Always offer to take the next logical step (e.g., "Would you like me to add a music cue for this scene?" or "Shall I expand the dialogue in the next row?").
+3. **CRITICAL**: When enhancing or expanding scripts, you MUST incorporate ALL video and audio notes from the "VIDEO NOTES" and "AUDIO NOTES" sections above. These notes contain specific timestamps and observations that should be integrated into the script to make it more robust and detailed.
+4. Help write scripts that match the show's style and format
+5. Use video transcripts to understand source material and create accurate script content
 5. Reference research notes, clearance info, and team comments to inform script content
 6. Follow the show's writing patterns (learned from example scripts)
 7. Ensure scripts meet formatting standards
@@ -1465,20 +1470,20 @@ If the script uses a 3-column table format (TIME/SCENE | CHARACTER | NOTES), you
 Note: targetText should be ONLY the content from the specific column you want to change, not the entire row.
 
 **REMEMBER: Include suggestions in JSON format at the end of your response when the user asks for improvements!**`;
-      
-      // Log final system prompt details for debugging
-      console.log('[aiChatAssistant] System prompt built with script context:', {
-        systemPromptLength: systemPrompt.length,
-        scriptContentIncluded: hasValidScriptContent,
-        scriptContentLength: hasValidScriptContent ? currentScriptTrimmed.length : 0,
-        scriptContentPreview: hasValidScriptContent ? currentScriptTrimmed.substring(0, 500) + '...' : 'N/A',
-        promptStartsWithScript: systemPrompt.includes('CRITICAL - READ THIS FIRST'),
-        scriptTitleInPrompt: systemPrompt.includes(scriptContext.story?.clipTitle || 'Unknown')
-      });
-    } else if (!hasScriptContext) {
-      // Only use standard prompt if NO script context is available
-      // Standard system prompt for general assistance
-      systemPrompt = `You are an AI assistant for Clip Show Pro, a production management system for television shows.
+
+        // Log final system prompt details for debugging
+        console.log('[aiChatAssistant] System prompt built with script context:', {
+          systemPromptLength: systemPrompt.length,
+          scriptContentIncluded: hasValidScriptContent,
+          scriptContentLength: hasValidScriptContent ? currentScriptTrimmed.length : 0,
+          scriptContentPreview: hasValidScriptContent ? currentScriptTrimmed.substring(0, 500) + '...' : 'N/A',
+          promptStartsWithScript: systemPrompt.includes('CRITICAL - READ THIS FIRST'),
+          scriptTitleInPrompt: systemPrompt.includes(scriptContext.story?.clipTitle || 'Unknown')
+        });
+      } else if (!hasScriptContext) {
+        // Only use standard prompt if NO script context is available
+        // Standard system prompt for general assistance
+        systemPrompt = `You are an AI assistant for Clip Show Pro, a production management system for television shows.
 
 **CRITICAL: You have comprehensive knowledge about Clip Show Pro workflow, terminology, and processes. Use this knowledge along with the real data provided to give accurate, helpful answers.**
 
@@ -1845,31 +1850,31 @@ When helping with alerts, you understand:
 - You can suggest actions to resolve alerts (status updates, reassignments, deadline extensions, notifications)
 
 ${contextPrompt}`;
-    }
+      }
 
-    // Enhance user message when script context is available
-    // ALWAYS enhance when script context exists (not just for specific keywords)
-    let enhancedMessage = message;
-    if (hasScriptContext) {
-      const scriptContext = context.scriptContext;
-      const currentScript = scriptContext.story?.currentScript || '';
-      const currentScriptTrimmed = currentScript.trim();
-      const hasValidScriptContent = currentScriptTrimmed.length > 0;
-      
-      // Determine query type for better context
-      const isEnhancementQuery = message.toLowerCase().includes('robust') || 
-                                 message.toLowerCase().includes('longer') || 
-                                 message.toLowerCase().includes('expand') ||
-                                 message.toLowerCase().includes('more detailed') ||
-                                 message.toLowerCase().includes('enhance');
-      
-      const queryType = message.toLowerCase().includes('structure') ? 'structure' :
-                       message.toLowerCase().includes('improve') ? 'improvements' : 
-                       isEnhancementQuery ? 'enhancement' : 'analysis';
-      
-      if (hasValidScriptContent) {
-        // ALWAYS remind AI about script content location and requirements
-        enhancedMessage = `${message}
+      // Enhance user message when script context is available
+      // ALWAYS enhance when script context exists (not just for specific keywords)
+      let enhancedMessage = message;
+      if (hasScriptContext) {
+        const scriptContext = context.scriptContext;
+        const currentScript = scriptContext.story?.currentScript || '';
+        const currentScriptTrimmed = currentScript.trim();
+        const hasValidScriptContent = currentScriptTrimmed.length > 0;
+
+        // Determine query type for better context
+        const isEnhancementQuery = message.toLowerCase().includes('robust') ||
+          message.toLowerCase().includes('longer') ||
+          message.toLowerCase().includes('expand') ||
+          message.toLowerCase().includes('more detailed') ||
+          message.toLowerCase().includes('enhance');
+
+        const queryType = message.toLowerCase().includes('structure') ? 'structure' :
+          message.toLowerCase().includes('improve') ? 'improvements' :
+            isEnhancementQuery ? 'enhancement' : 'analysis';
+
+        if (hasValidScriptContent) {
+          // ALWAYS remind AI about script content location and requirements
+          enhancedMessage = `${message}
 
 ═══════════════════════════════════════════════════════════════════════════════
 CRITICAL REMINDER: YOU HAVE THE ACTUAL SCRIPT CONTENT IN THE SYSTEM MESSAGE
@@ -1915,298 +1920,298 @@ Focus on:
 **REMEMBER**: The script content is in the system message above. Do NOT ask for more context or provide generic workflow information. You already have the script content${isEnhancementQuery ? ' and all the video/audio notes' : ''} - ${isEnhancementQuery ? 'enhance it by incorporating all the notes' : 'analyze it and provide specific recommendations based on what is actually written'}.
 
 **🔥 CRITICAL: If the user is asking for improvements, suggestions, or edits, you MUST include structured suggestions in JSON format at the END of your response. See the "SCRIPT SUGGESTIONS FORMAT" section in the system prompt for details.**`;
-      } else {
-        // Script context exists but no valid content yet
-        enhancedMessage = `${message}
+        } else {
+          // Script context exists but no valid content yet
+          enhancedMessage = `${message}
 
 **NOTE**: Script context is available but there is no current script content yet. The user may be starting a new script.`;
-      }
-      
-      console.log('[aiChatAssistant] Message enhanced with script context reminder:', {
-        originalMessageLength: message.length,
-        enhancedMessageLength: enhancedMessage.length,
-        hasValidScriptContent: hasValidScriptContent,
-        scriptContentLength: hasValidScriptContent ? currentScriptTrimmed.length : 0,
-        isEnhancementQuery: isEnhancementQuery,
-        queryType: queryType
-      });
-    }
+        }
 
-    const messages = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: enhancedMessage }
-    ];
-
-    // Final logging before sending to AI provider
-    const scriptContentInPrompt = hasScriptContext && systemPrompt.includes('START OF ACTUAL SCRIPT CONTENT');
-    const scriptContentLength = hasScriptContext ? (context.scriptContext?.story?.currentScript?.trim().length || 0) : 0;
-    
-    console.log('[aiChatAssistant] Final message preparation:', {
-      hasScriptContext: hasScriptContext,
-      systemPromptLength: systemPrompt.length,
-      userMessageLength: enhancedMessage.length,
-      totalMessageLength: systemPrompt.length + enhancedMessage.length,
-      scriptContentInSystemPrompt: scriptContentInPrompt,
-      scriptContentInUserMessage: hasScriptContext ? enhancedMessage.includes('CRITICAL REMINDER') : false,
-      scriptTitle: hasScriptContext ? context.scriptContext?.story?.clipTitle : 'N/A',
-      scriptContentLength: scriptContentLength,
-      systemPromptPreview: systemPrompt.substring(0, 1000) + (systemPrompt.length > 1000 ? '...' : ''),
-      systemPromptEndPreview: systemPrompt.length > 1000 ? '...' + systemPrompt.substring(systemPrompt.length - 500) : ''
-    });
-    
-    // CRITICAL VALIDATION: If script context exists but script content is not in prompt, log error
-    if (hasScriptContext && scriptContentLength > 0 && !scriptContentInPrompt) {
-      console.error('[aiChatAssistant] ⚠️⚠️⚠️ CRITICAL ERROR: Script context exists with content but script content NOT found in system prompt!', {
-        scriptContentLength: scriptContentLength,
-        systemPromptLength: systemPrompt.length,
-        systemPromptContainsScriptSection: systemPrompt.includes('SCRIPT CONTENT'),
-        systemPromptContainsCritical: systemPrompt.includes('CRITICAL'),
-        scriptTitle: context.scriptContext?.story?.clipTitle,
-        systemPromptFirst500: systemPrompt.substring(0, 500),
-        systemPromptLast500: systemPrompt.substring(Math.max(0, systemPrompt.length - 500))
-      });
-    }
-    
-    // Additional validation: Check if actual script text is in the prompt (not just markers)
-    if (hasScriptContext && scriptContentLength > 0) {
-      const actualScriptText = context.scriptContext?.story?.currentScript?.trim().substring(0, 100) || '';
-      const scriptTextInPrompt = actualScriptText.length > 0 && systemPrompt.includes(actualScriptText);
-      
-      if (!scriptTextInPrompt && actualScriptText.length > 0) {
-        console.warn('[aiChatAssistant] ⚠️ Script text preview not found in system prompt!', {
-          scriptTextPreview: actualScriptText,
-          systemPromptContainsPreview: scriptTextInPrompt,
-          systemPromptLength: systemPrompt.length
+        console.log('[aiChatAssistant] Message enhanced with script context reminder:', {
+          originalMessageLength: message.length,
+          enhancedMessageLength: enhancedMessage.length,
+          hasValidScriptContent: hasValidScriptContent,
+          scriptContentLength: hasValidScriptContent ? currentScriptTrimmed.length : 0,
+          isEnhancementQuery: isEnhancementQuery,
+          queryType: queryType
         });
-      } else if (scriptTextInPrompt) {
-        console.log('[aiChatAssistant] ✅ Script content verified in system prompt - actual script text found!');
       }
-    }
 
-    // Call AI provider
-    // Determine if API key is user-owned or Backbone backend
-    // Check if the API key is stored in organization's aiApiKeys collection
-    // If it's in the organization collection and not a user override, it's Backbone backend
-    const orgKeyDoc = await db
-      .collection('organizations')
-      .doc(organizationId)
-      .collection('aiApiKeys')
-      .doc(provider)
-      .get();
-    
-    const isBackboneBackend = orgKeyDoc.exists && 
-      orgKeyDoc.data()?.enabled && 
-      !orgKeyDoc.data()?.overrideOrgKey;
+      const messages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: enhancedMessage }
+      ];
 
-    const aiResponse = await callAIProvider(
-      provider, 
-      apiKeyData.apiKey, 
-      apiKeyData.model, 
-      messages,
-      {
-        organizationId,
-        userId,
-        apiKeySource: isBackboneBackend ? 'backbone' : 'user',
-        feature: 'chat-assistant'
-      }
-    );
+      // Final logging before sending to AI provider
+      const scriptContentInPrompt = hasScriptContext && systemPrompt.includes('START OF ACTUAL SCRIPT CONTENT');
+      const scriptContentLength = hasScriptContext ? (context.scriptContext?.story?.currentScript?.trim().length || 0) : 0;
 
-    // Skip view intent parsing if message is in suggestions mode
-    // Suggestions mode messages should only generate script suggestions, not trigger navigation
-    const isSuggestionsMode = message.trim().startsWith('[SUGGESTIONS MODE]') || 
-                              message.toLowerCase().includes('===selected_text===') ||
-                              message.toLowerCase().includes('generate one script suggestion');
-    
-    if (isSuggestionsMode) {
-      console.log('[aiChatAssistant] Suggestions mode detected - skipping ALL entity parsing', {
-        messagePreview: message.substring(0, 100)
+      console.log('[aiChatAssistant] Final message preparation:', {
+        hasScriptContext: hasScriptContext,
+        systemPromptLength: systemPrompt.length,
+        userMessageLength: enhancedMessage.length,
+        totalMessageLength: systemPrompt.length + enhancedMessage.length,
+        scriptContentInSystemPrompt: scriptContentInPrompt,
+        scriptContentInUserMessage: hasScriptContext ? enhancedMessage.includes('CRITICAL REMINDER') : false,
+        scriptTitle: hasScriptContext ? context.scriptContext?.story?.clipTitle : 'N/A',
+        scriptContentLength: scriptContentLength,
+        systemPromptPreview: systemPrompt.substring(0, 1000) + (systemPrompt.length > 1000 ? '...' : ''),
+        systemPromptEndPreview: systemPrompt.length > 1000 ? '...' + systemPrompt.substring(systemPrompt.length - 500) : ''
       });
-    }
-    
-    // Try to parse view/open/show intent first (higher priority for user experience)
-    // But skip if in suggestions mode to avoid false positives
-    const viewIntent = !isSuggestionsMode ? parseViewIntent(aiResponse, message, context, aiContext) : null;
-    
-    if (viewIntent && !isSuggestionsMode) {
-      // Resolve entity reference to actual entity ID
-      // Extract context info safely
-      const contextInfo: any = {};
-      if (aiContext?.pageContext) {
-        if (aiContext.pageContext.currentShow) {
-          contextInfo.currentShow = typeof aiContext.pageContext.currentShow === 'string' 
-            ? aiContext.pageContext.currentShow 
-            : aiContext.pageContext.currentShow.name;
-        }
-        if (aiContext.pageContext.currentSeason) {
-          contextInfo.currentSeason = aiContext.pageContext.currentSeason;
-        }
-        if (aiContext.pageContext.currentProject) {
-          contextInfo.currentProjectId = typeof aiContext.pageContext.currentProject === 'string'
-            ? aiContext.pageContext.currentProject
-            : aiContext.pageContext.currentProject.id;
-        }
-      }
-      
-      const resolvedEntity = await resolveEntity(
-        organizationId,
-        viewIntent.entityType,
-        viewIntent.entityReference || context?.entityId || '',
-        contextInfo
-      );
 
-      if (resolvedEntity && resolvedEntity.entityId) {
-        return {
-          success: true,
-          response: viewIntent.responseMessage || `Opening ${resolvedEntity.entityName || viewIntent.entityType}...`,
-          viewAction: {
-            entityType: viewIntent.entityType,
-            entityId: resolvedEntity.entityId,
-            entityName: resolvedEntity.entityName,
-            action: viewIntent.action
-          },
-          suggestions: [{
-            action: 'navigate',
-            description: `View ${resolvedEntity.entityName || viewIntent.entityType}`,
-            data: {
-              entityType: viewIntent.entityType,
-              entityId: resolvedEntity.entityId
-            }
-          }]
-        };
-      } else {
-        // Entity not found - provide helpful error
-        return {
-          success: false,
-          response: `I couldn't find a ${viewIntent.entityType} matching "${viewIntent.entityReference}". Would you like me to search for it, or create a new one?`,
-          error: `Entity not found: ${viewIntent.entityReference}`
-        };
-      }
-    }
-
-    // Try to parse create intent from response
-    const createIntent = parseCreateIntent(aiResponse);
-    
-    if (createIntent) {
-      // If missing fields, return confirmation request
-      if (createIntent.missingFields && createIntent.missingFields.length > 0) {
-        return {
-          success: true,
-          response: createIntent.responseMessage || aiResponse,
-          requiresConfirmation: true,
-          missingFields: createIntent.missingFields,
-          extractedData: createIntent.extractedData
-        };
+      // CRITICAL VALIDATION: If script context exists but script content is not in prompt, log error
+      if (hasScriptContext && scriptContentLength > 0 && !scriptContentInPrompt) {
+        console.error('[aiChatAssistant] ⚠️⚠️⚠️ CRITICAL ERROR: Script context exists with content but script content NOT found in system prompt!', {
+          scriptContentLength: scriptContentLength,
+          systemPromptLength: systemPrompt.length,
+          systemPromptContainsScriptSection: systemPrompt.includes('SCRIPT CONTENT'),
+          systemPromptContainsCritical: systemPrompt.includes('CRITICAL'),
+          scriptTitle: context.scriptContext?.story?.clipTitle,
+          systemPromptFirst500: systemPrompt.substring(0, 500),
+          systemPromptLast500: systemPrompt.substring(Math.max(0, systemPrompt.length - 500))
+        });
       }
 
-      // Execute create operation
-      try {
-        const createRequest: CreateOperationRequest = {
-          entityType: createIntent.entityType,
-          data: createIntent.extractedData,
+      // Additional validation: Check if actual script text is in the prompt (not just markers)
+      if (hasScriptContext && scriptContentLength > 0) {
+        const actualScriptText = context.scriptContext?.story?.currentScript?.trim().substring(0, 100) || '';
+        const scriptTextInPrompt = actualScriptText.length > 0 && systemPrompt.includes(actualScriptText);
+
+        if (!scriptTextInPrompt && actualScriptText.length > 0) {
+          console.warn('[aiChatAssistant] ⚠️ Script text preview not found in system prompt!', {
+            scriptTextPreview: actualScriptText,
+            systemPromptContainsPreview: scriptTextInPrompt,
+            systemPromptLength: systemPrompt.length
+          });
+        } else if (scriptTextInPrompt) {
+          console.log('[aiChatAssistant] ✅ Script content verified in system prompt - actual script text found!');
+        }
+      }
+
+      // Call AI provider
+      // Determine if API key is user-owned or Backbone backend
+      // Check if the API key is stored in organization's aiApiKeys collection
+      // If it's in the organization collection and not a user override, it's Backbone backend
+      const orgKeyDoc = await db
+        .collection('organizations')
+        .doc(organizationId)
+        .collection('aiApiKeys')
+        .doc(provider)
+        .get();
+
+      const isBackboneBackend = orgKeyDoc.exists &&
+        orgKeyDoc.data()?.enabled &&
+        !orgKeyDoc.data()?.overrideOrgKey;
+
+      const aiResponse = await callAIProvider(
+        provider,
+        apiKeyData.apiKey,
+        apiKeyData.model,
+        messages,
+        {
           organizationId,
           userId,
-          context: {
-            projectId: typeof aiContext.pageContext?.currentProject === 'object' 
-              ? aiContext.pageContext.currentProject.id 
-              : aiContext.pageContext?.currentProject,
-            show: typeof aiContext.pageContext?.currentShow === 'object' 
-              ? aiContext.pageContext.currentShow.name 
-              : aiContext.pageContext?.currentShow,
-            season: aiContext.pageContext?.currentSeason,
-            pitchId: context?.entityType === 'pitch' ? context.entityId : undefined
+          apiKeySource: isBackboneBackend ? 'backbone' : 'user',
+          feature: 'chat-assistant'
+        }
+      );
+
+      // Skip view intent parsing if message is in suggestions mode
+      // Suggestions mode messages should only generate script suggestions, not trigger navigation
+      const isSuggestionsMode = message.trim().startsWith('[SUGGESTIONS MODE]') ||
+        message.toLowerCase().includes('===selected_text===') ||
+        message.toLowerCase().includes('generate one script suggestion');
+
+      if (isSuggestionsMode) {
+        console.log('[aiChatAssistant] Suggestions mode detected - skipping ALL entity parsing', {
+          messagePreview: message.substring(0, 100)
+        });
+      }
+
+      // Try to parse view/open/show intent first (higher priority for user experience)
+      // But skip if in suggestions mode to avoid false positives
+      const viewIntent = !isSuggestionsMode ? parseViewIntent(aiResponse, message, context, aiContext) : null;
+
+      if (viewIntent && !isSuggestionsMode) {
+        // Resolve entity reference to actual entity ID
+        // Extract context info safely
+        const contextInfo: any = {};
+        if (aiContext?.pageContext) {
+          if (aiContext.pageContext.currentShow) {
+            contextInfo.currentShow = typeof aiContext.pageContext.currentShow === 'string'
+              ? aiContext.pageContext.currentShow
+              : aiContext.pageContext.currentShow.name;
           }
-        };
+          if (aiContext.pageContext.currentSeason) {
+            contextInfo.currentSeason = aiContext.pageContext.currentSeason;
+          }
+          if (aiContext.pageContext.currentProject) {
+            contextInfo.currentProjectId = typeof aiContext.pageContext.currentProject === 'string'
+              ? aiContext.pageContext.currentProject
+              : aiContext.pageContext.currentProject.id;
+          }
+        }
 
-        const createResult = await executeCreateOperation(createRequest);
+        const resolvedEntity = await resolveEntity(
+          organizationId,
+          viewIntent.entityType,
+          viewIntent.entityReference || context?.entityId || '',
+          contextInfo
+        );
 
-        if (createResult.success && createResult.entityId) {
-          // Generate entity summary
-          const entitySummary = generateEntitySummary(createIntent.entityType, createResult.entity);
-
+        if (resolvedEntity && resolvedEntity.entityId) {
           return {
             success: true,
-            response: createIntent.responseMessage || `✅ Successfully created ${createIntent.entityType}!`,
-            createdEntity: {
-              type: createIntent.entityType,
-              id: createResult.entityId,
-              title: getEntityTitle(createIntent.entityType, createResult.entity),
-              summary: entitySummary
+            response: viewIntent.responseMessage || `Opening ${resolvedEntity.entityName || viewIntent.entityType}...`,
+            viewAction: {
+              entityType: viewIntent.entityType,
+              entityId: resolvedEntity.entityId,
+              entityName: resolvedEntity.entityName,
+              action: viewIntent.action
             },
             suggestions: [{
               action: 'navigate',
-              description: `View ${createIntent.entityType}`,
+              description: `View ${resolvedEntity.entityName || viewIntent.entityType}`,
               data: {
-                entityType: createIntent.entityType,
-                entityId: createResult.entityId
+                entityType: viewIntent.entityType,
+                entityId: resolvedEntity.entityId
               }
             }]
           };
         } else {
-          // Create failed, return error
+          // Entity not found - provide helpful error
           return {
             success: false,
-            response: createResult.error || `Failed to create ${createIntent.entityType}`,
-            error: createResult.error,
-            missingFields: createResult.missingFields
+            response: `I couldn't find a ${viewIntent.entityType} matching "${viewIntent.entityReference}". Would you like me to search for it, or create a new one?`,
+            error: `Entity not found: ${viewIntent.entityReference}`
           };
         }
-      } catch (createError) {
-        console.error('Error executing create operation:', createError);
-        return {
-          success: false,
-          response: `Failed to create ${createIntent.entityType}: ${createError instanceof Error ? createError.message : 'Unknown error'}`,
-          error: createError instanceof Error ? createError.message : 'Unknown error'
-        };
       }
-    }
 
-    // Check for structured script suggestions first (for script writing context)
-    const scriptContent = context?.scriptContext?.story?.currentScript || '';
-    const scriptFormat = context?.scriptContext?.scriptFormat || 'plain';
-    const selectedText = context?.selectedText?.trim();
-    const scriptSuggestions = context?.scriptContext ? parseScriptSuggestions(aiResponse, scriptContent, scriptFormat, selectedText) : null;
-    
-    // Log suggestion parsing for debugging
-    console.log('[aiChatAssistant] Suggestion parsing:', {
-      hasScriptContext: !!context?.scriptContext,
-      scriptFormat: scriptFormat || 'unknown',
-      scriptSuggestionsFound: !!scriptSuggestions,
-      scriptSuggestionsCount: scriptSuggestions?.length || 0,
-      scriptSuggestions: scriptSuggestions,
-      aiResponseLength: aiResponse.length,
-      aiResponsePreview: aiResponse.substring(0, 500) + (aiResponse.length > 500 ? '...' : ''),
-      aiResponseEnd: aiResponse.length > 500 ? '...' + aiResponse.substring(aiResponse.length - 500) : ''
-    });
-    
-    // Generate generic suggestions for non-create operations (if no script suggestions found)
-    const genericSuggestions = scriptSuggestions ? [] : generateSuggestions(aiContext, aiResponse);
-    
-    // Combine suggestions (prioritize script suggestions)
-    const allSuggestions = scriptSuggestions || (genericSuggestions.length > 0 ? genericSuggestions : undefined);
-    
-    // Log final suggestions being returned
-    console.log('[aiChatAssistant] Final suggestions being returned:', {
-      hasSuggestions: !!allSuggestions,
-      suggestionsCount: allSuggestions?.length || 0,
-      suggestions: allSuggestions,
-      isScriptSuggestions: !!scriptSuggestions,
-      isGenericSuggestions: !scriptSuggestions && genericSuggestions.length > 0
-    });
+      // Try to parse create intent from response
+      const createIntent = parseCreateIntent(aiResponse);
 
-    return {
-      success: true,
-      response: aiResponse,
-      suggestions: allSuggestions
-    };
-  } catch (error) {
-    console.error('AI Chat Assistant error:', error);
-    if (error instanceof HttpsError) {
-      throw error;
+      if (createIntent) {
+        // If missing fields, return confirmation request
+        if (createIntent.missingFields && createIntent.missingFields.length > 0) {
+          return {
+            success: true,
+            response: createIntent.responseMessage || aiResponse,
+            requiresConfirmation: true,
+            missingFields: createIntent.missingFields,
+            extractedData: createIntent.extractedData
+          };
+        }
+
+        // Execute create operation
+        try {
+          const createRequest: CreateOperationRequest = {
+            entityType: createIntent.entityType,
+            data: createIntent.extractedData,
+            organizationId,
+            userId,
+            context: {
+              projectId: typeof aiContext.pageContext?.currentProject === 'object'
+                ? aiContext.pageContext.currentProject.id
+                : aiContext.pageContext?.currentProject,
+              show: typeof aiContext.pageContext?.currentShow === 'object'
+                ? aiContext.pageContext.currentShow.name
+                : aiContext.pageContext?.currentShow,
+              season: aiContext.pageContext?.currentSeason,
+              pitchId: context?.entityType === 'pitch' ? context.entityId : undefined
+            }
+          };
+
+          const createResult = await executeCreateOperation(createRequest);
+
+          if (createResult.success && createResult.entityId) {
+            // Generate entity summary
+            const entitySummary = generateEntitySummary(createIntent.entityType, createResult.entity);
+
+            return {
+              success: true,
+              response: createIntent.responseMessage || `✅ Successfully created ${createIntent.entityType}!`,
+              createdEntity: {
+                type: createIntent.entityType,
+                id: createResult.entityId,
+                title: getEntityTitle(createIntent.entityType, createResult.entity),
+                summary: entitySummary
+              },
+              suggestions: [{
+                action: 'navigate',
+                description: `View ${createIntent.entityType}`,
+                data: {
+                  entityType: createIntent.entityType,
+                  entityId: createResult.entityId
+                }
+              }]
+            };
+          } else {
+            // Create failed, return error
+            return {
+              success: false,
+              response: createResult.error || `Failed to create ${createIntent.entityType}`,
+              error: createResult.error,
+              missingFields: createResult.missingFields
+            };
+          }
+        } catch (createError) {
+          console.error('Error executing create operation:', createError);
+          return {
+            success: false,
+            response: `Failed to create ${createIntent.entityType}: ${createError instanceof Error ? createError.message : 'Unknown error'}`,
+            error: createError instanceof Error ? createError.message : 'Unknown error'
+          };
+        }
+      }
+
+      // Check for structured script suggestions first (for script writing context)
+      const scriptContent = context?.scriptContext?.story?.currentScript || '';
+      const scriptFormat = context?.scriptContext?.scriptFormat || 'plain';
+      const selectedText = context?.selectedText?.trim();
+      const scriptSuggestions = context?.scriptContext ? parseScriptSuggestions(aiResponse, scriptContent, scriptFormat, selectedText) : null;
+
+      // Log suggestion parsing for debugging
+      console.log('[aiChatAssistant] Suggestion parsing:', {
+        hasScriptContext: !!context?.scriptContext,
+        scriptFormat: scriptFormat || 'unknown',
+        scriptSuggestionsFound: !!scriptSuggestions,
+        scriptSuggestionsCount: scriptSuggestions?.length || 0,
+        scriptSuggestions: scriptSuggestions,
+        aiResponseLength: aiResponse.length,
+        aiResponsePreview: aiResponse.substring(0, 500) + (aiResponse.length > 500 ? '...' : ''),
+        aiResponseEnd: aiResponse.length > 500 ? '...' + aiResponse.substring(aiResponse.length - 500) : ''
+      });
+
+      // Generate generic suggestions for non-create operations (if no script suggestions found)
+      const genericSuggestions = scriptSuggestions ? [] : generateSuggestions(aiContext, aiResponse);
+
+      // Combine suggestions (prioritize script suggestions)
+      const allSuggestions = scriptSuggestions || (genericSuggestions.length > 0 ? genericSuggestions : undefined);
+
+      // Log final suggestions being returned
+      console.log('[aiChatAssistant] Final suggestions being returned:', {
+        hasSuggestions: !!allSuggestions,
+        suggestionsCount: allSuggestions?.length || 0,
+        suggestions: allSuggestions,
+        isScriptSuggestions: !!scriptSuggestions,
+        isGenericSuggestions: !scriptSuggestions && genericSuggestions.length > 0
+      });
+
+      return {
+        success: true,
+        response: aiResponse,
+        suggestions: allSuggestions
+      };
+    } catch (error) {
+      console.error('AI Chat Assistant error:', error);
+      if (error instanceof HttpsError) {
+        throw error;
+      }
+      throw new HttpsError(
+        'internal',
+        `Failed to process chat request: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
-    throw new HttpsError(
-      'internal',
-      `Failed to process chat request: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
-  }
-});
+  });
 
