@@ -91,20 +91,122 @@ EXAMPLE MULTI-APP PLANS:
 6. Link items to workflow tasks using link_to_task
 7. Set up approval workflow using create_workflow_review"
 
+ITERATION CAPABILITIES:
+
+**Form for Multi-Step Workflow Planning:**
+When planning cross-app workflows, use 'responseForm' to gather initial requirements:
+{
+    "responseForm": {
+        "title": "Multi-App Workflow Setup",
+        "questions": [
+            {"id": "workflowType", "type": "select", "label": "Workflow Type",
+             "options": [
+                 {"label": "New Production Setup", "value": "production_setup"},
+                 {"label": "Session-Based Workflow", "value": "session_workflow"},
+                 {"label": "Media Delivery Workflow", "value": "media_delivery"},
+                 {"label": "Inventory & Production", "value": "inventory_production"},
+                 {"label": "Time Tracking & Approval", "value": "time_tracking"}
+             ]},
+            {"id": "projectName", "type": "text", "label": "Project Name (if new)"},
+            {"id": "description", "type": "textarea", "label": "Workflow Description"}
+        ],
+        "submitLabel": "Plan Workflow"
+    }
+}
+
+**Approval Flow for Multi-App Workflows:**
+Multi-step workflows MUST use requiresApproval: true:
+{
+    "requiresApproval": true,
+    "planMarkdown": "## Multi-App Workflow Plan\n\n1. Create project 'Show Name'\n2. Assign team members\n3. Create call sheet\n4. Create budget\n5. Check inventory",
+    "actions": [
+        {"type": "create_project", "params": {...}, "dependsOn": []},
+        {"type": "assign_team_member", "params": {...}, "dependsOn": ["create_project"]},
+        {"type": "create_call_sheet", "params": {...}, "dependsOn": ["create_project"]},
+        {"type": "create_budget", "params": {...}, "dependsOn": ["create_project"]}
+    ],
+    "suggestedActions": ["Approve Plan", "Request Modifications", "Execute Step by Step"]
+}
+
+**Multiple Choice for App Selection:**
+When user wants to work across multiple apps, use 'multipleChoiceQuestion':
+{
+    "multipleChoiceQuestion": {
+        "id": "app_selection",
+        "question": "Which apps should be involved?",
+        "options": [
+            {"id": "pws", "label": "Production Workflow", "value": "pws"},
+            {"id": "callsheet", "label": "Call Sheet", "value": "callsheet"},
+            {"id": "inventory", "label": "Inventory", "value": "inventory"},
+            {"id": "timecard", "label": "Timecard", "value": "timecard"},
+            {"id": "deliverables", "label": "Deliverables", "value": "deliverables"}
+        ],
+        "allowMultiple": true,
+        "context": "app_selection"
+    }
+}
+
 OUTPUT FORMAT FOR MULTI-APP ACTIONS:
-When planning cross-app workflows, structure actions with clear dependencies:
+When planning cross-app workflows, structure actions with clear dependencies.
+**CRITICAL**: Use variable references ($projectId, $sessionId, etc.) to reference IDs from previous actions.
+
+**Variable Reference Format**:
+- Use `$projectId` to reference the projectId from a previous `create_project` action
+- Use `$sessionId` to reference the sessionId from a previous `create_session` action
+- Use `$create_project_id` to reference the ID from a specific action type
+- The system automatically resolves these variables when executing actions
+
+**Example with Variable References**:
 {
     "actions": [
         {
             "type": "create_project",
-            "params": { ... },
+            "params": { "name": "Summer Documentary", "description": "..." },
             "dependsOn": []
         },
         {
+            "type": "create_session",
+            "params": { 
+                "title": "Day 1 Shoot",
+                "projectId": "$projectId"  // ✅ Automatically resolved from create_project result
+            },
+            "dependsOn": ["create_project"]
+        },
+        {
             "type": "assign_team_member",
-            "params": { "projectId": "[FROM_PREVIOUS_ACTION]" },
+            "params": { 
+                "projectId": "$projectId",  // ✅ From create_project
+                "userId": "user-id-123"
+            },
+            "dependsOn": ["create_project"]
+        },
+        {
+            "type": "create_call_sheet",
+            "params": { 
+                "title": "Day 1 Call Sheet",
+                "projectId": "$projectId",  // ✅ From create_project
+                "date": "2024-01-20"
+            },
             "dependsOn": ["create_project"]
         }
     ]
 }
-`;
+
+**Available Variable Names**:
+- `$projectId` - From create_project
+- `$sessionId` - From create_session
+- `$callSheetId` - From create_call_sheet
+- `$storyId` - From create_script_package
+- `$workflowId` - From create_workflow
+- `$packageId` - From create_delivery_package
+- `$budgetId` - From create_budget
+- `$create_project_id` - Explicit reference to create_project result ID
+- `$create_session_id` - Explicit reference to create_session result ID
+
+PLANNING RULES FOR MULTI-APP WORKFLOWS:
+- Always use requiresApproval: true for multi-step workflows
+- Use responseForm to gather initial workflow requirements
+- Plan dependencies between actions clearly
+- Present complete plan before execution
+- Allow user to approve or request modifications
+- Support step-by-step execution option

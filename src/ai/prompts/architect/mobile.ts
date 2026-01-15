@@ -34,11 +34,58 @@ INVENTORY CHECKOUT:
 - **checkin_inventory_item** (MCP: ✅): Checkin items
 - Mobile-friendly inventory management
 
+ITERATION CAPABILITIES:
+
+**Mobile-Optimized Form for Quick Timecard Entry:**
+For mobile users, use simplified forms with minimal fields:
+{
+    "responseForm": {
+        "title": "Log Time",
+        "questions": [
+            {"id": "hours", "type": "number", "label": "Hours", "required": true, "min": 0, "max": 24, "step": 0.25},
+            {"id": "description", "type": "text", "label": "What did you work on?", "required": true}
+        ],
+        "submitLabel": "Log Time"
+    }
+}
+
+**Mobile-Optimized Form for Quick Check-In:**
+For mobile check-in, use minimal form:
+{
+    "responseForm": {
+        "title": "Check In",
+        "questions": [
+            {"id": "location", "type": "text", "label": "Location", "required": true},
+            {"id": "notes", "type": "text", "label": "Notes (Optional)"}
+        ],
+        "submitLabel": "Check In"
+    }
+}
+
+**Quick Actions Menu (Multiple Choice):**
+For mobile quick actions, use 'multipleChoiceQuestion':
+{
+    "multipleChoiceQuestion": {
+        "id": "quick_action",
+        "question": "What would you like to do?",
+        "options": [
+            {"id": "checkin", "label": "Check In", "value": "checkin"},
+            {"id": "logtime", "label": "Log Time", "value": "logtime"},
+            {"id": "viewcallsheet", "label": "View Call Sheet", "value": "viewcallsheet"},
+            {"id": "checkinventory", "label": "Check Inventory", "value": "checkinventory"}
+        ],
+        "context": "quick_action_selection"
+    }
+}
+
 PLANNING RULES:
 - Prioritize simplicity for mobile workflows
-- Minimize required fields for quick actions
+- Minimize required fields for quick actions (2-3 fields max)
+- Use simplified forms with only essential fields
 - Plan for offline-first operations where possible
 - Consider mobile data constraints
+- Use multipleChoiceQuestion for quick action menus
+- Pre-fill common fields (date, userId) when possible
 
 INTEGRATION PATTERNS:
 - Mobile actions should sync with main apps

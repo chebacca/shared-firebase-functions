@@ -112,13 +112,67 @@ INTEGRATION WITH OTHER APPS:
 - Connect to project deliverables tracking
 - Link items to tasks for workflow integration
 
+ITERATION CAPABILITIES:
+
+**Form for Delivery Package Creation:**
+When creating a delivery package, use 'responseForm' to gather requirements:
+{
+    "responseForm": {
+        "title": "Create Delivery Package",
+        "questions": [
+            {"id": "name", "type": "text", "label": "Package Name", "required": true},
+            {"id": "projectId", "type": "select", "label": "Project", "required": true,
+             "options": [...]}, // Populated from available projects
+            {"id": "deliveryFormat", "type": "select", "label": "Delivery Format",
+             "options": [
+                 {"label": "Standard", "value": "Standard"},
+                 {"label": "Broadcast", "value": "Broadcast"},
+                 {"label": "Web", "value": "Web"},
+                 {"label": "Archive", "value": "Archive"}
+             ]},
+            {"id": "recipientEmail", "type": "email", "label": "Recipient Email"},
+            {"id": "items", "type": "textarea", "label": "Items (comma-separated or one per line)"}
+        ],
+        "submitLabel": "Create Package"
+    }
+}
+
+**Multiple Choice for Delivery Format:**
+If user doesn't specify format, use 'multipleChoiceQuestion':
+{
+    "multipleChoiceQuestion": {
+        "id": "delivery_format",
+        "question": "Select delivery format:",
+        "options": [
+            {"id": "standard", "label": "Standard", "value": "Standard"},
+            {"id": "broadcast", "label": "Broadcast", "value": "Broadcast"},
+            {"id": "web", "label": "Web", "value": "Web"},
+            {"id": "archive", "label": "Archive", "value": "Archive"}
+        ],
+        "context": "delivery_format_selection"
+    }
+}
+
+**Approval Flow:**
+When creating delivery packages with multiple items, set requiresApproval: true:
+{
+    "requiresApproval": true,
+    "planMarkdown": "## Delivery Package Plan\n\nCreate package 'Final Deliverables' with 5 items...",
+    "actions": [
+        {"type": "create_delivery_package", "params": {...}}
+    ],
+    "suggestedActions": ["Approve Plan", "Request Modifications"]
+}
+
 PLANNING RULES:
 - Always verify project context before creating delivery package
+- Use responseForm to gather package name, format, and recipient in one step
 - Ask about delivery format and recipient requirements
 - Suggest standard delivery formats based on project type
 - Plan for package status tracking (DRAFT, READY, DELIVERED)
 - Use AI parsing for uploaded files to extract metadata automatically
 - Link deliverables to tasks for workflow tracking
+- For complex packages with multiple items, set requiresApproval: true
 
 OUTPUT FORMAT FOR EXECUTION:
 When isComplete: true, include the following actions:

@@ -5,6 +5,16 @@
  * Add exports incrementally as needed
  */
 
+// Initialize telemetry before any other code
+import { initializeTelemetry } from './observability/telemetry';
+// Sentry is optional - uncomment to enable when needed
+// import { initializeSentry } from './observability/sentry';
+
+// Initialize observability stack (Google Cloud Monitoring via OpenTelemetry)
+initializeTelemetry();
+// Sentry is disabled by default - uncomment to enable when needed
+// initializeSentry();
+
 // Export email notification functions (both callable and HTTP)
 export {
   sendNotificationEmail,
@@ -346,6 +356,11 @@ export {
   getAIAgentHealth,
   getUserPreferences
 } from './aiAgent';
+
+// Export orchestration functions
+export {
+  executeOrchestrationWorkflow
+} from './orchestration/functions';
 
 // Export WebRTC functions (callable version only - HTTP version removed to reduce CPU quota)
 export {

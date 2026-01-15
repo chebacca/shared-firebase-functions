@@ -95,13 +95,37 @@ export class GeminiService extends CoreGeminiService {
     const { ARCHITECT_SYSTEM_PROMPT } = require('./prompts/ArchitectPrompts');
 
     // Build context information for the Architect
+    // CRITICAL: This context is rebuilt on EVERY iteration, so projectId must be included every time
     let contextInfo = '';
 
     // Add current user and organization context explicitly to prevent hallucination
-    contextInfo += `\n\nCURRENT USER & ORG CONTEXT:\n`;
+    contextInfo += `\n\nCURRENT USER & ORG CONTEXT (PERSISTS ACROSS ALL ITERATIONS):\n`;
     contextInfo += `- organizationId: "${globalContext.organizationId}"\n`;
     contextInfo += `- userId: "${globalContext.userId || 'N/A'}"\n`;
     contextInfo += `- timestamp: "${globalContext.timestamp}"\n`;
+    
+    // CRITICAL: Add current project context (user's selected project from Hub)
+    // This MUST be included in EVERY iteration to maintain context throughout planning
+    const currentProjectId = (globalContext as any).currentProjectId;
+    if (currentProjectId) {
+      contextInfo += `- currentProjectId: "${currentProjectId}"\n`;
+      contextInfo += `\n**CRITICAL - REMEMBER THIS ACROSS ALL ITERATIONS**: `;
+      contextInfo += `The user is currently working in project "${currentProjectId}". `;
+      contextInfo += `This projectId persists throughout the entire planning conversation. `;
+      contextInfo += `When creating sessions, tasks, call sheets, timecards, or other project-related items, `;
+      contextInfo += `ALWAYS use this projectId automatically unless the user explicitly specifies a different project.\n`;
+      contextInfo += `Do NOT ask for projectId - it is already known: "${currentProjectId}".\n`;
+      
+      // Try to get project name from dashboard context
+      const dashboardProjects = globalContext.dashboard?.projects || [];
+      const currentProject = dashboardProjects.find((p: any) => p.id === currentProjectId);
+      if (currentProject) {
+        contextInfo += `- Current Project Name: "${currentProject.name}"\n`;
+        contextInfo += `- Remember: All project-related actions should use projectId "${currentProjectId}" (${currentProject.name})\n`;
+      }
+    } else {
+      contextInfo += `\n**NOTE**: No current project context available. User may need to select a project.\n`;
+    }
 
     if (globalContext.availableShows && globalContext.availableShows.shows.length > 0) {
       contextInfo = '\n\nAVAILABLE SHOWS AND SEASONS:\n';

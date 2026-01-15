@@ -8,6 +8,8 @@ import { getAuth } from 'firebase-admin/auth';
 import { createSuccessResponse, createErrorResponse } from '../shared/utils';
 import { gatherGlobalContext, gatherMinimalContextForGraph } from '../ai/contextAggregation/GlobalContextService';
 import { createGeminiService, geminiApiKey } from '../ai/GeminiService';
+import { traceFunction, addSpanAttribute } from '../observability/tracer';
+import { captureException, setUserContext } from '../observability/sentry';
 
 const auth = getAuth();
 
@@ -84,17 +86,22 @@ export const callAIAgent = onCall(
     secrets: [geminiApiKey], // Add Gemini API key as required secret
   },
   async (request) => {
-    try {
-      console.log('🦄 UNICORN DEBUG: Real Gemini Service Active - Build Verified');
-      console.log('🔐 [AI AGENT] Auth check:', {
-        hasAuth: !!request.auth,
-        uid: request.auth?.uid,
-        email: request.auth?.token?.email,
-        hasToken: !!request.auth?.token
-      });
+    return traceFunction('callAIAgent', async () => {
+      try {
+        console.log('🦄 UNICORN DEBUG: Real Gemini Service Active - Build Verified');
+        console.log('🔐 [AI AGENT] Auth check:', {
+          hasAuth: !!request.auth,
+          uid: request.auth?.uid,
+          email: request.auth?.token?.email,
+          hasToken: !!request.auth?.token
+        });
 
-      const { agentId, message, context } = request.data;
-      const uid = request.auth?.uid;
+        const { agentId, message, context } = request.data;
+        const uid = request.auth?.uid;
+        
+        addSpanAttribute('agent.id', agentId);
+        addSpanAttribute('user.id', uid);
+        addSpanAttribute('message.length', message?.length || 0);
 
       if (!uid) {
         console.error('❌ [AI AGENT] No authenticated user found in request');
@@ -112,11 +119,13 @@ export const callAIAgent = onCall(
       const userRecord = await auth.getUser(uid);
       const organizationId = userRecord.customClaims?.organizationId as string;
 
-
-
       if (!organizationId) {
         throw new HttpsError('failed-precondition', 'User does not belong to an organization');
       }
+      
+      // Set user context for Sentry
+      setUserContext(uid, userRecord.email, organizationId);
+      addSpanAttribute('organization.id', organizationId);
 
       // 2. Quick Intent Detection (Optimization)
       const quickIntent = detectQuickIntent(message);
@@ -157,6 +166,14 @@ export const callAIAgent = onCall(
       const currentMode = context?.activeMode || 'none';
       (globalContext as any).activeMode = currentMode;
       console.log(`🎯 [AI AGENT] Active mode set to: ${currentMode}`);
+      
+      // NEW: Pass current projectId from Hub context (user's selected project after login)
+      const currentProjectId = context?.projectId || null;
+      if (currentProjectId) {
+        (globalContext as any).currentProjectId = currentProjectId;
+        console.log(`📁 [AI AGENT] Current project context: ${currentProjectId}`);
+      }
+      
       console.log(`🎯 [AI AGENT] Context received:`, JSON.stringify(context, null, 2));
 
       // 4. Generate Intelligent Response using Gemini
@@ -225,25 +242,38 @@ export const callAIAgent = onCall(
 
 
 
-      return createSuccessResponse(response, 'AI agent called successfully');
+        return createSuccessResponse(response, 'AI agent called successfully');
 
-    } catch (error: any) {
-      const errorAgentId = request.data?.agentId;
-      const errorOrgId = request.auth ? (await auth.getUser(request.auth.uid).catch(() => null))?.customClaims?.organizationId : null;
-      console.error('❌ [AI AGENT] Error calling agent:', error);
-      console.error('❌ [AI AGENT] Error stack:', error.stack);
-      console.error('❌ [AI AGENT] Error details:', {
-        message: error.message,
-        name: error.name,
-        code: error.code,
-        agentId: errorAgentId,
-        organizationId: errorOrgId,
-        hasContext: !!request.data?.context
-      });
-      return createErrorResponse(
-        error.message || 'Failed to call AI agent',
-        error.stack
-      );
-    }
+      } catch (error: any) {
+        const errorAgentId = request.data?.agentId;
+        const errorOrgId = request.auth ? (await auth.getUser(request.auth.uid).catch(() => null))?.customClaims?.organizationId : null;
+        
+        // Capture error in Sentry
+        captureException(error, {
+          function: 'callAIAgent',
+          agentId: errorAgentId,
+          organizationId: errorOrgId,
+          hasContext: !!request.data?.context
+        });
+        
+        console.error('❌ [AI AGENT] Error calling agent:', error);
+        console.error('❌ [AI AGENT] Error stack:', error.stack);
+        console.error('❌ [AI AGENT] Error details:', {
+          message: error.message,
+          name: error.name,
+          code: error.code,
+          agentId: errorAgentId,
+          organizationId: errorOrgId,
+          hasContext: !!request.data?.context
+        });
+        return createErrorResponse(
+          error.message || 'Failed to call AI agent',
+          error.stack
+        );
+      }
+    }, {
+      'function.name': 'callAIAgent',
+      'function.type': 'ai-agent'
+    });
   }
 );

@@ -66,9 +66,97 @@ TOOL USAGE GUIDELINES:
   - MCP: ✅ = Available via MCP server
   - DTE: ✅ = Available via DataToolExecutor  
   - Both = Available in both systems
+- **Tool Routing**: Tools are automatically routed to the correct executor:
+  - Data Tools → DataToolExecutor (create_project, create_session, etc.)
+  - Workflow Tools → WorkflowFunctionExecutor (create_workflow, validate_workflow, etc.)
+  - MCP Tools → MCP Server (deliverables, timecard, security desk, etc.)
 - **Required Parameters**: All required parameters must be included in action plans
 - **Optional Parameters**: Include optional parameters when relevant to the user's request
 - **Action Types**: When creating action plans, use the exact tool name as the "type" field
 - **Parameter Mapping**: Map user requirements to tool parameters accurately
 - **Error Prevention**: Verify all required IDs (organizationId, projectId, userId) are included before setting isComplete: true
+
+**CRITICAL: Variable References for Multi-Step Workflows**
+When creating multi-step workflows, use variable references to pass IDs from previous actions:
+- **Format**: Use `$variableName` in action params (e.g., `"projectId": "$projectId"`)
+- **Available Variables**:
+  - `$projectId` - From create_project action
+  - `$sessionId` - From create_session action
+  - `$callSheetId` - From create_call_sheet action
+  - `$storyId` - From create_script_package action
+  - `$workflowId` - From create_workflow action
+  - `$packageId` - From create_delivery_package action
+  - `$budgetId` - From create_budget action
+  - `$create_project_id` - Explicit reference to create_project result ID
+- **Example**: 
+  ```json
+  {
+    "actions": [
+      {"type": "create_project", "params": {"name": "Summer Doc"}},
+      {"type": "create_session", "params": {"title": "Day 1", "projectId": "$projectId"}}
+    ]
+  }
+  ```
+- **Important**: organizationId and userId are ALWAYS automatically set - never include them in action params
+- **Important**: The system automatically resolves variables when executing actions
+
+ITERATION EXAMPLES:
+
+**Example 1: Form with Pre-filled Values**
+User: "Create a project called 'Summer Documentary'"
+{
+    "responseForm": {
+        "title": "Create Project",
+        "questions": [
+            {"id": "name", "type": "text", "label": "Project Name", "defaultValue": "Summer Documentary"},
+            {"id": "type", "type": "select", "label": "Project Type",
+             "options": [
+                 {"label": "Documentary", "value": "DOCUMENTARY"},
+                 {"label": "Scripted", "value": "SCRIPTED"}
+             ]},
+            {"id": "description", "type": "textarea", "label": "Description"}
+        ]
+    }
+}
+
+**Example 2: Multiple Choice with Context**
+User: "I want to assign a team member"
+{
+    "multipleChoiceQuestion": {
+        "id": "user_selection",
+        "question": "Select a team member:",
+        "options": [
+            {"id": "u1", "label": "John Doe", "value": "user-id-1"},
+            {"id": "u2", "label": "Jane Smith", "value": "user-id-2"}
+        ],
+        "context": "team_member_selection"
+    }
+}
+
+**Example 3: Approval Flow**
+When plan is ready:
+{
+    "requiresApproval": true,
+    "planMarkdown": "## Plan\n\n1. Create project 'Summer Documentary'\n2. Assign 3 team members\n3. Create initial session",
+    "actions": [
+        {"type": "create_project", "params": {...}},
+        {"type": "assign_team_member", "params": {...}},
+        {"type": "assign_team_member", "params": {...}},
+        {"type": "assign_team_member", "params": {...}},
+        {"type": "create_session", "params": {...}}
+    ],
+    "suggestedActions": ["Approve Plan", "Request Modifications"]
+}
+
+**Example 4: Suggested Actions**
+After completing a task:
+{
+    "response": "Project created successfully!",
+    "suggestedActions": [
+        "Create Session",
+        "Assign Team Members",
+        "Create Call Sheet",
+        "View Project"
+    ]
+}
 `;
