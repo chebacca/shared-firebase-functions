@@ -37,6 +37,7 @@ export interface GlobalContext {
   // NEW: State tracking for Architect/Planner Mode
   activeMode?: string;
   conversationHistory?: any[];
+  currentProjectId?: string | null;
 
   // App-specific contexts (composed from existing services)
   dashboard: DashboardContext;

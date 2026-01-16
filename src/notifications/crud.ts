@@ -6,13 +6,14 @@
  */
 
 import { onRequest } from 'firebase-functions/v2/https';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 
 const db = getFirestore();
 const auth = getAuth();
 
-// Notification interface
+// Import unified types (if available, otherwise use local interface)
+// For server-side, we'll use a compatible interface
 interface Notification {
   id?: string;
   category: string;
@@ -23,7 +24,13 @@ interface Notification {
   read: boolean;
   userId: string;
   organizationId: string;
-  metadata?: any;
+  projectId?: string;
+  sourceApp?: string;  // NEW: Which app generated this
+  metadata?: {
+    actionUrl?: string;
+    sourceAppRoute?: string;
+    [key: string]: any;
+  };
   createdAt?: string;
   updatedAt?: string;
 }
@@ -196,24 +203,42 @@ export const createNotification = onRequest(async (request, response) => {
       return;
     }
 
+    // Use Firestore Timestamp for proper Firestore compatibility
+    const now = Timestamp.now();
+    const nowISO = now.toDate().toISOString();
+    
     const notification: Notification = {
       ...notificationData,
       userId: uid,
       organizationId,
       read: false,
-      timestamp: new Date().toISOString(),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      timestamp: nowISO, // ISO string for client compatibility
+      createdAt: nowISO, // Will be converted to Timestamp by Firestore
+      updatedAt: nowISO, // Will be converted to Timestamp by Firestore
+      // Ensure sourceApp is set (default to 'hub' if not provided)
+      sourceApp: notificationData.sourceApp || 'hub'
+    };
+    
+    // Convert to Firestore document format with Timestamps
+    const firestoreNotification = {
+      ...notification,
+      createdAt: now, // Firestore Timestamp
+      updatedAt: now  // Firestore Timestamp
     };
 
-    const docRef = await db.collection('notifications').add(notification);
+    const docRef = await db.collection('notifications').add(firestoreNotification);
+    
+    // Convert Timestamps back to ISO strings for response
+    const responseData = {
+      id: docRef.id,
+      ...notification,
+      createdAt: nowISO,
+      updatedAt: nowISO
+    };
     
     response.json({
       success: true,
-      data: {
-        id: docRef.id,
-        ...notification
-      }
+      data: responseData
     });
   } catch (error) {
     console.error('Error creating notification:', error);
@@ -260,20 +285,27 @@ export const updateNotification = onRequest(async (request, response) => {
       return;
     }
 
+    const now = Timestamp.now();
+    const nowISO = now.toDate().toISOString();
+    
     const updatedData = {
       ...updateData,
-      updatedAt: new Date().toISOString()
+      updatedAt: now // Firestore Timestamp
     };
 
     await notificationRef.update(updatedData);
 
+    // Convert Timestamp to ISO string for response
+    const responseData = {
+      id,
+      ...notificationData,
+      ...updateData,
+      updatedAt: nowISO
+    };
+    
     response.json({
       success: true,
-      data: {
-        id,
-        ...notificationData,
-        ...updatedData
-      }
+      data: responseData
     });
   } catch (error) {
     console.error('Error updating notification:', error);
@@ -319,9 +351,12 @@ export const markNotificationAsRead = onRequest(async (request, response) => {
       return;
     }
 
+    const now = Timestamp.now();
+    const nowISO = now.toDate().toISOString();
+    
     await notificationRef.update({
       read: true,
-      updatedAt: new Date().toISOString()
+      updatedAt: now // Firestore Timestamp
     });
 
     response.json({
@@ -330,7 +365,7 @@ export const markNotificationAsRead = onRequest(async (request, response) => {
         id,
         ...notificationData,
         read: true,
-        updatedAt: new Date().toISOString()
+        updatedAt: nowISO
       }
     });
   } catch (error) {
@@ -357,10 +392,12 @@ export const markAllNotificationsAsRead = onRequest(async (request, response) =>
     const snapshot = await query.get();
     const batch = db.batch();
 
+    const now = Timestamp.now();
+    
     snapshot.docs.forEach(doc => {
       batch.update(doc.ref, {
         read: true,
-        updatedAt: new Date().toISOString()
+        updatedAt: now // Firestore Timestamp
       });
     });
 
@@ -540,16 +577,19 @@ export const updateNotificationSettings = onRequest(async (request, response) =>
 
     const snapshot = await query.get();
     
+    const now = Timestamp.now();
+    const nowISO = now.toDate().toISOString();
+    
     const updatedSettings = {
       ...settingsData,
       userId: uid,
       organizationId,
-      updatedAt: new Date().toISOString()
+      updatedAt: now // Firestore Timestamp
     };
 
     if (snapshot.empty) {
       // Create new settings document
-      updatedSettings.createdAt = new Date().toISOString();
+      updatedSettings.createdAt = now; // Firestore Timestamp
       await settingsRef.add(updatedSettings);
     } else {
       // Update existing settings document
@@ -557,9 +597,16 @@ export const updateNotificationSettings = onRequest(async (request, response) =>
       await docRef.update(updatedSettings);
     }
 
+    // Convert Timestamps to ISO strings for response
+    const responseData = {
+      ...updatedSettings,
+      createdAt: snapshot.empty ? nowISO : (updatedSettings.createdAt?.toDate?.()?.toISOString() || nowISO),
+      updatedAt: nowISO
+    };
+    
     response.json({
       success: true,
-      data: updatedSettings
+      data: responseData
     });
   } catch (error) {
     console.error('Error updating notification settings:', error);

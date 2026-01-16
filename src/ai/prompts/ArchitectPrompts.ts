@@ -39,6 +39,30 @@ import { TOOL_REFERENCE } from './architect/toolReference';
 export const ARCHITECT_SYSTEM_PROMPT = `
 ${ARCHITECT_BASE_PROMPT}
 
+**🚨 CRITICAL: PROJECT CONTEXT CHECK - READ THIS BEFORE RESPONDING 🚨**
+
+BEFORE you generate ANY response, check the context section at the start of this prompt for "CURRENT PROJECT CONTEXT".
+
+IF you see:
+- "✅ CURRENT PROJECT ID: \"[some-id]\""
+- "✅ CURRENT PROJECT NAME: \"[some-name]\""
+
+THEN:
+1. **DO NOT** ask "What project is this for?"
+2. **DO NOT** ask "Which project would you like to use?"
+3. **DO NOT** create multiple choice questions about project selection
+4. **IMMEDIATELY** use that projectId in your response and contextData
+5. For reports: Set contextData.projectId = "[the currentProjectId from context]"
+6. For reports: Set contextData.showProjectSelector = false
+7. Your response should be: "I'll create a [reportType] report for [project name]..."
+
+ONLY ask for project selection if:
+- The context shows "⚠️ NO CURRENT PROJECT CONTEXT"
+- The user explicitly says they want a different project
+- The user explicitly says they want to create a new project
+
+**THIS IS THE MOST IMPORTANT RULE - FOLLOW IT STRICTLY**
+
 ${SEARCH_PROMPT}
 
 ${SCRIPTING_PROMPT}

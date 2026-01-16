@@ -91,6 +91,28 @@ export class GeminiService extends CoreGeminiService {
   ): Promise<AgentResponse> {
     console.log('🏛️ [Gemini Service] Starting ARCHITECT SESSION...');
 
+    /**
+     * PROJECT CONTEXT FLOW (Dynamic, NOT Hardcoded):
+     * 1. Frontend: localStorage.getItem('hub-project-id') → currentProjectId
+     * 2. Frontend: Passes in context: { projectId: currentProjectId }
+     * 3. Backend (callAgent.ts): context?.projectId → globalContext.currentProjectId
+     * 4. Here: globalContext.currentProjectId → currentProjectId (this variable)
+     * 5. Used throughout: All references use this dynamic value
+     * 
+     * This ensures the project context is always fresh from the user's Hub selection,
+     * not hardcoded or cached incorrectly.
+     */
+    const currentProjectId = (globalContext as any).currentProjectId;
+    console.log(`📁 [Gemini Service] currentProjectId in globalContext: ${currentProjectId || 'NULL/MISSING'}`);
+    console.log(`📁 [Gemini Service] Source: Frontend localStorage → context.projectId → globalContext.currentProjectId`);
+    if (!currentProjectId) {
+      console.warn('⚠️ [Gemini Service] WARNING: currentProjectId is missing from globalContext!');
+      console.warn('⚠️ [Gemini Service] This means the project context from Hub localStorage is not being passed correctly.');
+      console.warn('⚠️ [Gemini Service] Check: Frontend should read localStorage and pass in context.projectId');
+    } else {
+      console.log(`✅ [Gemini Service] Project context successfully gathered: ${currentProjectId}`);
+    }
+
     // Import the prompt dynamically (or moved to import at top)
     const { ARCHITECT_SYSTEM_PROMPT } = require('./prompts/ArchitectPrompts');
 
@@ -98,34 +120,50 @@ export class GeminiService extends CoreGeminiService {
     // CRITICAL: This context is rebuilt on EVERY iteration, so projectId must be included every time
     let contextInfo = '';
 
-    // Add current user and organization context explicitly to prevent hallucination
-    contextInfo += `\n\nCURRENT USER & ORG CONTEXT (PERSISTS ACROSS ALL ITERATIONS):\n`;
-    contextInfo += `- organizationId: "${globalContext.organizationId}"\n`;
-    contextInfo += `- userId: "${globalContext.userId || 'N/A'}"\n`;
-    contextInfo += `- timestamp: "${globalContext.timestamp}"\n`;
-
-    // CRITICAL: Add current project context (user's selected project from Hub)
+    // CRITICAL: Add current project context FIRST (user's selected project from Hub)
     // This MUST be included in EVERY iteration to maintain context throughout planning
-    const currentProjectId = (globalContext as any).currentProjectId;
-    if (currentProjectId) {
-      contextInfo += `- currentProjectId: "${currentProjectId}"\n`;
-      contextInfo += `\n**CRITICAL - REMEMBER THIS ACROSS ALL ITERATIONS**: `;
-      contextInfo += `The user is currently working in project "${currentProjectId}". `;
-      contextInfo += `This projectId persists throughout the entire planning conversation. `;
-      contextInfo += `When creating sessions, tasks, call sheets, timecards, or other project-related items, `;
-      contextInfo += `ALWAYS use this projectId automatically unless the user explicitly specifies a different project.\n`;
-      contextInfo += `Do NOT ask for projectId - it is already known: "${currentProjectId}".\n`;
+    // Note: currentProjectId was already extracted and logged at the start of this function
+    // This value comes from: Frontend localStorage → context.projectId → globalContext.currentProjectId
 
-      // Try to get project name from dashboard context
+    // Make project context VERY prominent at the top
+    contextInfo += `\n\n═══════════════════════════════════════════════════════════════════════════════\n`;
+    contextInfo += `🎯 CURRENT PROJECT CONTEXT (READ THIS FIRST - CRITICAL FOR ALL ACTIONS)\n`;
+    contextInfo += `═══════════════════════════════════════════════════════════════════════════════\n`;
+    contextInfo += `📝 NOTE: This project context is gathered dynamically from the user's Hub selection.\n`;
+    contextInfo += `📝 It is NOT hardcoded - it comes from localStorage (hub-project-id) → backend context → globalContext.\n\n`;
+
+    if (currentProjectId) {
+      contextInfo += `✅ CURRENT PROJECT ID: "${currentProjectId}" (dynamically gathered from user's Hub selection)\n`;
+
+      // Try to get project name from dashboard context (also dynamic, not hardcoded)
       const dashboardProjects = globalContext.dashboard?.projects || [];
       const currentProject = dashboardProjects.find((p: any) => p.id === currentProjectId);
       if (currentProject) {
-        contextInfo += `- Current Project Name: "${currentProject.name}"\n`;
-        contextInfo += `- Remember: All project-related actions should use projectId "${currentProjectId}" (${currentProject.name})\n`;
+        contextInfo += `✅ CURRENT PROJECT NAME: "${currentProject.name}" (from dashboard context)\n`;
+      } else {
+        contextInfo += `⚠️ Project name not found in dashboard context, using ID: "${currentProjectId}"\n`;
       }
+
+      contextInfo += `\n🚨 CRITICAL RULES FOR THIS PROJECT CONTEXT:\n`;
+      contextInfo += `1. The user is currently working in project "${currentProjectId}"\n`;
+      contextInfo += `2. This projectId persists throughout the ENTIRE planning conversation\n`;
+      contextInfo += `3. When user requests reports, sessions, tasks, call sheets, timecards, or ANY project-related items:\n`;
+      contextInfo += `   → ALWAYS use projectId "${currentProjectId}" AUTOMATICALLY\n`;
+      contextInfo += `   → DO NOT ask "What project is this for?" - it's already known\n`;
+      contextInfo += `   → DO NOT create multiple choice questions about project selection\n`;
+      contextInfo += `   → IMMEDIATELY use this projectId in your response and contextData\n`;
+      contextInfo += `4. Only ask for project selection if user EXPLICITLY wants a different project\n`;
+      contextInfo += `\n═══════════════════════════════════════════════════════════════════════════════\n\n`;
     } else {
-      contextInfo += `\n**NOTE**: No current project context available. User may need to select a project.\n`;
+      contextInfo += `⚠️ NO CURRENT PROJECT CONTEXT - User may need to select a project\n`;
+      contextInfo += `═══════════════════════════════════════════════════════════════════════════════\n\n`;
     }
+
+    // Add current user and organization context explicitly to prevent hallucination
+    contextInfo += `CURRENT USER & ORG CONTEXT:\n`;
+    contextInfo += `- organizationId: "${globalContext.organizationId}"\n`;
+    contextInfo += `- userId: "${globalContext.userId || 'N/A'}"\n`;
+    contextInfo += `- timestamp: "${globalContext.timestamp}"\n\n`;
 
     if (globalContext.availableShows && globalContext.availableShows.shows.length > 0) {
       contextInfo = '\n\nAVAILABLE SHOWS AND SEASONS:\n';
@@ -161,13 +199,68 @@ export class GeminiService extends CoreGeminiService {
       }
     });
 
+    // CRITICAL: If this is a report request and we have currentProjectId, inject explicit override
+    const messageLower = message.toLowerCase();
+    const isReportRequest = messageLower.includes('report') ||
+      messageLower.includes('financial') ||
+      messageLower.includes('executive') ||
+      messageLower.includes('detailed') ||
+      messageLower.includes('production');
+
+    let finalMessage = message;
+    if (isReportRequest && currentProjectId) {
+      console.log('🚨 [Gemini Service] REPORT REQUEST DETECTED with currentProjectId - injecting override');
+
+      // Determine report type
+      let reportType = 'executive';
+      if (messageLower.includes('financial')) reportType = 'financial';
+      else if (messageLower.includes('detailed')) reportType = 'detailed';
+      else if (messageLower.includes('production')) reportType = 'production';
+
+      // Get project name
+      const dashboardProjects = globalContext.dashboard?.projects || [];
+      const currentProject = dashboardProjects.find((p: any) => p.id === currentProjectId);
+      const projectName = currentProject?.name || currentProjectId;
+
+      // Inject explicit override instruction
+      finalMessage = `${message}
+
+🚨 CRITICAL OVERRIDE - READ THIS IMMEDIATELY:
+- User's current project: "${projectName}" (ID: "${currentProjectId}")
+- User wants a ${reportType} report for THIS project
+- DO NOT ask "What project is this for?" - it's already known
+- DO NOT create multiple choice questions about project selection
+- IMMEDIATELY respond with a plan that uses generate_report action
+- Your response MUST include a contextData object with isPlan: true and a single action:
+  {
+    "response": "I'll generate a ${reportType} report for ${projectName}.",
+    "suggestedContext": "reports",
+    "contextData": {
+      "isPlan": true,
+      "markdown": "### Preparing ${reportType.charAt(0).toUpperCase() + reportType.slice(1)} Report for ${projectName}\n\nI have gathered the financial context for **${projectName}** and I'm ready to generate the comprehensive report.",
+      "isComplete": false,
+      "requiresApproval": true,
+      "actions": [{
+        "type": "generate_report",
+        "params": {
+          "projectId": "${currentProjectId}",
+          "reportType": "${reportType}",
+          "options": {}
+        }
+      }]
+    }
+  }
+- **ABSOLUTELY NO responseForm**. Do not include a 'responseForm' object.
+- FOLLOW THIS STRUCTURE EXACTLY - NO DEVIATIONS`;
+    }
+
     // Send user message
     // If parts has images, we need to restructure the message
     let result;
     if (parts.length > 0) {
-      result = await chat.sendMessage([...parts, { text: message }]);
+      result = await chat.sendMessage([...parts, { text: finalMessage }]);
     } else {
-      result = await chat.sendMessage(message);
+      result = await chat.sendMessage(finalMessage);
     }
 
     const responseText = result.response.text();
@@ -176,8 +269,179 @@ export class GeminiService extends CoreGeminiService {
 
     const parsed = this.parseArchitectResponse(responseText);
     console.log('🏛️ [Gemini Service] Architect parsed response:', JSON.stringify(parsed, null, 2));
+
+    // CRITICAL FIX: ALWAYS populate project options in forms if they exist
+    // This runs for ANY response that has a form with a project selector, regardless of report type
+    if (parsed.contextData?.responseForm && currentProjectId) {
+      console.log(`🔧 [Gemini Service] ========== FORM PROJECT OPTIONS FIX ==========`);
+      console.log(`🔧 [Gemini Service] Checking for project selector in form...`);
+      console.log(`📁 [Gemini Service] currentProjectId: ${currentProjectId}`);
+
+      const form = parsed.contextData.responseForm;
+      const dashboardProjects = globalContext.dashboard?.projects || [];
+
+      console.log(`📊 [Gemini Service] Dashboard projects count: ${dashboardProjects.length}`);
+      console.log(`📊 [Gemini Service] Dashboard projects:`, JSON.stringify(dashboardProjects.map((p: any) => ({ id: p.id, name: p.name })), null, 2));
+      console.log(`📋 [Gemini Service] Form title: ${form.title}`);
+      console.log(`📋 [Gemini Service] Form questions count: ${form.questions?.length || 0}`);
+      console.log(`📋 [Gemini Service] Form questions:`, JSON.stringify(form.questions?.map((q: any) => ({
+        id: q.id,
+        type: q.type,
+        label: q.label,
+        hasOptions: !!q.options,
+        optionsCount: q.options?.length || 0,
+        currentOptions: q.options || []
+      })), null, 2));
+
+      const projectQuestion = form.questions?.find((q: any) =>
+        q.id === 'projectId' ||
+        q.label?.toLowerCase().includes('project') ||
+        (q.type === 'select' && q.label?.toLowerCase().includes('project'))
+      );
+
+      if (projectQuestion) {
+        console.log(`✅ [Gemini Service] FOUND project question!`);
+        console.log(`   - id: ${projectQuestion.id}`);
+        console.log(`   - label: ${projectQuestion.label}`);
+        console.log(`   - type: ${projectQuestion.type}`);
+        console.log(`   - Current options:`, projectQuestion.options);
+        console.log(`   - Current options count: ${projectQuestion.options?.length || 0}`);
+
+        if (dashboardProjects.length > 0) {
+          const newOptions = dashboardProjects.map((p: any) => ({
+            label: p.name || p.id,
+            value: p.id
+          }));
+
+          console.log(`🔧 [Gemini Service] POPULATING options with ${newOptions.length} projects...`);
+          projectQuestion.options = newOptions;
+          projectQuestion.defaultValue = currentProjectId;
+
+          console.log(`✅ [Gemini Service] SUCCESS! Populated project options:`);
+          console.log(`   - Options:`, JSON.stringify(newOptions, null, 2));
+          console.log(`   - Pre-selected: ${currentProjectId}`);
+          console.log(`   - Updated question:`, JSON.stringify(projectQuestion, null, 2));
+          console.log(`   - Updated form:`, JSON.stringify(form, null, 2));
+        } else {
+          console.error(`❌ [Gemini Service] ERROR: Dashboard projects array is EMPTY!`);
+          console.error(`❌ [Gemini Service] globalContext.dashboard:`, JSON.stringify(globalContext.dashboard, null, 2));
+          console.error(`❌ [Gemini Service] globalContext keys:`, Object.keys(globalContext));
+        }
+      } else {
+        console.warn(`⚠️ [Gemini Service] No project question found in form!`);
+        console.warn(`⚠️ [Gemini Service] Searched for: id='projectId' OR label contains 'project'`);
+        console.warn(`⚠️ [Gemini Service] Available questions:`, form.questions?.map((q: any) => `${q.id} (${q.label})`).join(', '));
+      }
+      console.log(`🔧 [Gemini Service] ========== END FORM FIX ==========`);
+    } else {
+      if (!parsed.contextData?.responseForm) {
+        console.log(`ℹ️ [Gemini Service] No responseForm in contextData - skipping form fix`);
+      }
+      if (!currentProjectId) {
+        console.log(`ℹ️ [Gemini Service] No currentProjectId - skipping form fix`);
+      }
+    }
+
+    // CRITICAL FIX: If currentProjectId exists and user is requesting a report,
+    // automatically populate contextData with projectId even if AI didn't do it
+    const parsedMessageLower = message.toLowerCase();
+    const parsedIsReportRequest = parsedMessageLower.includes('report') ||
+      parsedMessageLower.includes('financial') ||
+      parsedMessageLower.includes('executive') ||
+      parsedMessageLower.includes('detailed') ||
+      parsedMessageLower.includes('production');
+
+    // ALWAYS replace test values in actions if currentProjectId exists (for any request type)
+    if (currentProjectId && parsed.contextData?.actions && Array.isArray(parsed.contextData.actions)) {
+      parsed.contextData.actions.forEach((action: any) => {
+        if (action.params) {
+          // Replace test projectId values
+          if (action.params.projectId === 'test-project-id' ||
+            action.params.projectId === '$currentProjectId' ||
+            action.params.projectId === 'current-project-id' ||
+            action.params.projectId === 'test' ||
+            action.params.projectId === 'a-new-project-id' ||
+            !action.params.projectId) {
+            console.log(`🔧 [Gemini Service] Replacing test/invalid projectId in action: ${action.params.projectId} → ${currentProjectId}`);
+            action.params.projectId = currentProjectId;
+          }
+          // Replace test organizationId
+          const orgId = globalContext.organizationId;
+          if (orgId && (action.params.organizationId === 'test-organization-id' ||
+            action.params.organizationId === 'test' ||
+            action.params.organizationId === 'a-new-organization-id' ||
+            !action.params.organizationId)) {
+            console.log(`🔧 [Gemini Service] Replacing test/invalid organizationId in action: ${action.params.organizationId} → ${orgId}`);
+            action.params.organizationId = orgId;
+          }
+        }
+      });
+    }
+
+    if (currentProjectId && parsedIsReportRequest) {
+      console.log(`🔧 [Gemini Service] UNIFIED REPORT FLOW: Reconstructing ContextData`);
+
+      const dashboardProjects = globalContext.dashboard?.projects || [];
+      const currentProject = dashboardProjects.find((p: any) => p.id === currentProjectId);
+      const projectName = currentProject?.name || currentProjectId;
+
+      // Determine report type
+      let reportType = 'executive';
+      if (parsedMessageLower.includes('financial')) reportType = 'financial';
+      else if (parsedMessageLower.includes('detailed')) reportType = 'detailed';
+      else if (parsedMessageLower.includes('production')) reportType = 'production';
+
+      // 🚨 AGGRESSIVE RECONSTRUCTION: Destroy current contextData and rebuild it 🚨
+      // This prevents the AI from leaking ANY interactive forms or hallucinated fields.
+      const existingActions = parsed.contextData?.actions || [];
+      const hasProperAction = existingActions.some((a: any) => a.type === 'generate_report');
+
+      const actions = hasProperAction ? existingActions : [
+        {
+          type: 'generate_report',
+          params: {
+            projectId: currentProjectId,
+            reportType: reportType,
+            options: {}
+          }
+        }
+      ];
+
+      // Fix action params if they were hallucinated/incorrect
+      actions.forEach((a: any) => {
+        if (a.type === 'generate_report' && a.params) {
+          a.params.projectId = currentProjectId;
+          a.params.reportType = a.params.reportType || reportType;
+          a.params.organizationId = globalContext.organizationId;
+        }
+      });
+
+      // REBUILD contextData from scratch - ABSOLUTELY NO responseForm allowed here
+      parsed.contextData = {
+        isPlan: true,
+        requiresApproval: true,
+        isComplete: false,
+        markdown: `### Preparing ${reportType.charAt(0).toUpperCase() + reportType.slice(1)} Report for ${projectName}\n\nI have gathered the financial context for **${projectName}** and I'm ready to generate the comprehensive report.`,
+        actions: actions,
+        projectId: currentProjectId,
+        projectName: projectName,
+        reportType: reportType,
+        showProjectSelector: false
+      };
+
+      // Ensure suggestedContext is set to reports for Hot Container highlighting
+      parsed.suggestedContext = 'reports';
+
+      // Override response to be direct and authoritative
+      parsed.response = `I'll create a ${reportType} report for ${projectName}. ` +
+        `Would you like to specify a date range or include any specific insights?`;
+
+      console.log(`✅ [Gemini Service] Successfully unified report plan: ${reportType} for ${projectName}`);
+    }
+
     return parsed;
   }
+
 
   private parseArchitectResponse(text: string): AgentResponse {
     try {
@@ -1302,6 +1566,7 @@ RULES:
     return `
         CONTEXT SUMMARY:
         - Organization: ${globalContext.organizationId || 'Unknown'}
+        - Current Active Project (from Hub): ${(globalContext as any).currentProjectId || 'None'}
         - Dashboard Projects: ${globalContext.dashboard?.activeProjects || 0}
         - Active Licenses: ${globalContext.licensing?.activeLicenses || 0}
         - Team Members: ${globalContext.team?.activeMembers || 0}

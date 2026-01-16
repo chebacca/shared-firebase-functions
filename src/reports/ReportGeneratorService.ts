@@ -38,16 +38,16 @@ export class ReportGeneratorService {
     async generateReport(
         projectId: string,
         reportType: 'executive' | 'detailed' | 'financial' | 'production' = 'executive',
-        options: ReportOptions = {}
+        options: ReportOptions = {},
+        organizationId?: string
     ): Promise<ReportResult> {
 
         // 1. Determine Organization ID (needed for data collection)
-        // If projectId is 'all-projects' or similar, we might need organizationId passed in options
-        // For now, assume projectId is a valid project ID and fetch its org
-        const organizationId = await this.resolveOrganizationId(projectId);
+        // If passed explicitly, use it. Otherwise resolve from project.
+        const rOrganizationId = organizationId || await this.resolveOrganizationId(projectId);
 
         // 2. Collect Project Data
-        const projectData = await this.dataCollectionService.collectData(organizationId, projectId);
+        const projectData = await this.dataCollectionService.collectData(rOrganizationId, projectId);
 
         // 3. Analyze with Gemini
         const insights = await this.analysisService.analyzeProject(projectData, {

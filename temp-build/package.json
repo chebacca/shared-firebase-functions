@@ -14,7 +14,7 @@
   "dependencies": {
     "@google-cloud/aiplatform": "^3.0.0",
     "@google-cloud/functions-framework": "^4.0.0",
-    "axios": "^1.6.0",
+    "axios": "catalog:default",
     "box-node-sdk": "^3.0.0",
     "crypto": "^1.0.1",
     "firebase-admin": "^12.0.0",
@@ -26,7 +26,7 @@
   "devDependencies": {
     "@types/node": "^20.10.5",
     "@types/nodemailer": "^6.4.0",
-    "typescript": "^5.3.3"
+    "typescript": "catalog:default"
   },
   "keywords": [
     "firebase",

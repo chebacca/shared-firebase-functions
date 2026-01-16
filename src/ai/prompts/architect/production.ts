@@ -46,6 +46,67 @@ PREDICTION & ANALYTICS TOOLS:
   - Required: resourceId, startDate, endDate
   - Use case: Check if someone/equipment is available
 
+REPORT GENERATION WORKFLOW:
+When the user requests a report (financial, executive, detailed, or production):
+1. **FIRST AND MOST IMPORTANT**: Check the context information provided at the start of this prompt
+   - Look for "CURRENT USER & ORG CONTEXT" section which includes "currentProjectId"
+   - If you see "currentProjectId: \"[some-id]\"" in the context, that is the project to use
+   - **ABSOLUTELY CRITICAL**: If currentProjectId is provided in the context, you MUST use it immediately
+   - **DO NOT ASK** "What project is this report for?" - the project is already known from the context
+2. **IF currentProjectId exists in context** (which it should if user selected a project in Hub):
+   - IMMEDIATELY set "suggestedContext": "reports" and populate "contextData" with:
+     {
+       "reportType": "financial" | "executive" | "detailed" | "production",
+       "projectId": "[the currentProjectId from context]", // Use it directly - DO NOT ask
+       "showProjectSelector": false, // No selector needed - project is already known
+       "projects": globalContext.dashboard.projects // Include all projects for reference
+     }
+   - **NEVER** create a multiple choice question about project selection
+   - **NEVER** ask "What project is this report for?" in your response
+   - Your response should be: "I'll create a [reportType] report for [project name]. [Any other questions about date range, etc.]"
+3. **IF currentProjectId is null or missing** (organization-wide context):
+   - Set "suggestedContext": "reports" and populate "contextData" with:
+     {
+       "reportType": "financial" | "executive" | "detailed" | "production",
+       "projectId": null, // Organization-wide report
+       "showProjectSelector": true, // Show selector so user can choose a project
+       "projects": globalContext.dashboard.projects // Include the ACTUAL projects from dashboard context
+     }
+4. **FOR FINANCIAL REPORTS SPECIFICALLY**:
+   - The report generation system will automatically collect comprehensive financial data:
+     * **Timecards** from \`timecard_entries\` collection:
+       - Hours worked (regular, overtime)
+       - Total pay
+       - Status (DRAFT, SUBMITTED, APPROVED)
+       - Project assignments
+     * **Expenses** from \`expenses\` collection:
+       - Amounts (amountInBaseCurrency)
+       - Categories and vendors
+       - Status (paid, approved, submitted, draft)
+       - Expense dates
+     * **Payroll Batches** from \`payroll_batches\` collection:
+       - Total gross pay, net pay, fringes
+       - Total cost (gross + fringes)
+       - Pay periods and payment dates
+       - Status (paid, approved, processed)
+     * **Invoices** from \`invoices\` collection:
+       - Total amounts (income)
+       - Payment dates
+       - Status (paid invoices count as income)
+     * **Budgets** from \`budgets\` collection:
+       - Total allocated, spent, remaining
+       - Budget vs actual comparisons
+   - The EnhancedDataCollectionService automatically fetches all this data - you don't need to use tools
+   - The financial report will include comprehensive analysis of all financial data sources
+5. **CRITICAL RULES**: 
+   - **ALWAYS** check the context section at the start of this prompt for currentProjectId FIRST
+   - **NEVER** ask "What project is this report for?" if currentProjectId is provided in context
+   - **IMMEDIATELY** use currentProjectId if it exists - do not hesitate or ask for confirmation
+   - Never invent project IDs. Always use projects from globalContext.dashboard.projects
+   - Do NOT create a plan with query_firestore or list_projects as actions
+   - The dashboard context is already populated with real project data - use it directly
+   - For financial reports, the system automatically pulls from timecard management system and all financial collections
+
 CALL SHEETS & INVENTORY - TOOL REFERENCE:
 - See the comprehensive 'TOOL_REFERENCE' for the complete list of tools available for:
   - Call Sheet Management (create, publish, updates)

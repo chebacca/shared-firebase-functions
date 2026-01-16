@@ -1218,6 +1218,13 @@ REPORTS & ANALYTICS TOOLS (3 Tools)
   - Generate a comprehensive PDF report for a project with AI insights and data visualizations. Use this when the user asks to create, generate, or download a report.
   - Required: organizationId, projectId, reportType (executive| detailed| financial| production)
   - Optional: dateRange, includeInsights, includeCharts
+  - **For financial reports**: Automatically collects data from:
+    * Timecard Management System: timecard_entries (hours, pay, status)
+    * Expenses: expenses collection (amounts, categories, vendors, status)
+    * Payroll: payroll_batches collection (gross pay, net pay, fringes, total cost)
+    * Income: invoices collection (total amounts, payment dates, status)
+    * Budgets: budgets collection (allocated, spent, remaining)
+  - The EnhancedDataCollectionService automatically fetches all financial data - no need to use tools separately
 
 - **analyze_project**
   - Analyze project data and generate AI insights without creating a PDF file. Use this when the user asks questions about project status, risks, budget health, or needs a quick summary.

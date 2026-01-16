@@ -37,7 +37,9 @@ export interface ActionExecutionResult {
 export const executeAIAction = onCall(
   {
     cors: true,
-    region: 'us-central1'
+    region: 'us-central1',
+    memory: '1GiB',
+    timeoutSeconds: 300
   },
   async (request): Promise<ActionExecutionResult> => {
     const { actionType, actionData, alertId, organizationId } = request.data;

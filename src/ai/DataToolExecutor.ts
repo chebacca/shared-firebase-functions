@@ -997,7 +997,8 @@ export class DataToolExecutor {
             const result = await generator.generateReport(
                 args.projectId || 'current',
                 args.reportType || 'executive',
-                args.options || {}
+                args.options || {},
+                organizationId
             );
 
             return {

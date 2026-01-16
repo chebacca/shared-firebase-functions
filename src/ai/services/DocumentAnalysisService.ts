@@ -84,9 +84,9 @@ export class DocumentAnalysisService {
     private genAI: GoogleGenerativeAI;
 
     constructor() {
-        const apiKey = process.env.GOOGLE_API_KEY;
+        const apiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
         if (!apiKey) {
-            throw new Error('GOOGLE_API_KEY environment variable is not set');
+            throw new Error('GOOGLE_API_KEY or GEMINI_API_KEY environment variable is not set');
         }
         this.genAI = new GoogleGenerativeAI(apiKey);
     }
@@ -96,18 +96,73 @@ export class DocumentAnalysisService {
             model: process.env.GEMINI_REPORT_MODEL || 'gemini-2.0-flash'
         });
 
+        // Build financial data section if this is a financial report
+        let financialDataSection = '';
+        if (options.reportType === 'financial' && projectData.timecards) {
+            const timecards = projectData.timecards || [];
+            const expenses = projectData.expenses || [];
+            const payrollBatches = projectData.payrollBatches || [];
+            const invoices = projectData.invoices || [];
+            const summary = projectData.financialSummary || {};
+
+            financialDataSection = `
+      
+      FINANCIAL DATA ANALYSIS (CRITICAL FOR FINANCIAL REPORTS):
+      
+      Timecard Data:
+      - Total timecards: ${timecards.length}
+      - Total hours: ${summary.totalTimecardHours || 0}
+      - Total timecard pay: $${(summary.totalTimecardPay || 0).toLocaleString()}
+      - Timecard breakdown: ${JSON.stringify(timecards.slice(0, 10), null, 2)} (showing first 10)
+      
+      Expenses:
+      - Total expenses: ${expenses.length}
+      - Total expense amount: $${(summary.totalExpenses || 0).toLocaleString()}
+      - Paid/Approved expenses: ${expenses.filter((e: any) => e.status === 'paid' || e.status === 'approved').length}
+      - Expense breakdown: ${JSON.stringify(expenses.slice(0, 10), null, 2)} (showing first 10)
+      
+      Payroll Batches:
+      - Total payroll batches: ${payrollBatches.length}
+      - Total payroll cost: $${(summary.totalPayroll || 0).toLocaleString()}
+      - Paid/Approved batches: ${payrollBatches.filter((p: any) => p.status === 'paid' || p.status === 'approved').length}
+      - Payroll breakdown: ${JSON.stringify(payrollBatches.slice(0, 10), null, 2)} (showing first 10)
+      
+      Invoices (Income):
+      - Total invoices: ${invoices.length}
+      - Total income (paid invoices): $${(summary.totalIncome || 0).toLocaleString()}
+      - Paid invoices: ${invoices.filter((i: any) => i.status === 'paid').length}
+      - Invoice breakdown: ${JSON.stringify(invoices.slice(0, 10), null, 2)} (showing first 10)
+      
+      Financial Summary:
+      - Net Cash Flow: $${(summary.netCashFlow || 0).toLocaleString()} (Income - Expenses - Payroll)
+      - Total Income: $${(summary.totalIncome || 0).toLocaleString()}
+      - Total Expenses: $${(summary.totalExpenses || 0).toLocaleString()}
+      - Total Payroll: $${(summary.totalPayroll || 0).toLocaleString()}
+      
+      **CRITICAL**: For financial reports, analyze:
+      1. Cash flow trends (income vs expenses vs payroll over time)
+      2. Budget health (allocated vs spent)
+      3. Payroll efficiency (hours vs cost)
+      4. Expense patterns (categories, vendors, timing)
+      5. Financial risks (overspending, cash flow issues, budget variances)
+      6. Recommendations for financial optimization
+      `;
+        }
+
         const prompt = `
       Analyze the following project data and generate comprehensive insights for a ${options.reportType} report.
       
       Project Data:
       ${JSON.stringify(projectData, null, 2)}
+      ${financialDataSection}
       
       Constraints:
-      1. Focus specifically on ${options.focusAreas?.join(', ') || 'overall project health, budget, and timeline'}.
+      1. Focus specifically on ${options.focusAreas?.join(', ') || (options.reportType === 'financial' ? 'financial performance, cash flow, budget health, and cost analysis' : 'overall project health, budget, and timeline')}.
       2. Keep the executive summary professional and concise (2-3 paragraphs).
       3. Identify at least 3-5 risks with mitigation strategies if possible.
       4. Provide actionable recommendations.
       5. Extract key performance metrics.
+      ${options.reportType === 'financial' ? '6. **CRITICAL**: Include detailed financial analysis using the timecard, expense, payroll, and invoice data provided above.' : ''}
       
       Output Format (JSON):
       {
@@ -120,7 +175,7 @@ export class DocumentAnalysisService {
           "spent": "string",
           "completionPercentage": number,
           "activeTasks": number,
-          "teamUtilization": "string"
+          "teamUtilization": "string"${options.reportType === 'financial' ? ',\n          "netCashFlow": "string",\n          "totalIncome": "string",\n          "totalExpenses": "string",\n          "totalPayroll": "string",\n          "budgetVariance": "string"' : ''}
         }
       }
     `;
