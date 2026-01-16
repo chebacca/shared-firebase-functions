@@ -2,7 +2,7 @@
 import { Router } from 'express';
 import * as admin from 'firebase-admin';
 
-const router = Router();
+const router: Router = Router();
 const db = admin.firestore();
 const COLLECTION_NAME = 'workflowDiagrams';
 const TEMPLATES_COLLECTION_NAME = 'workflow-templates'; // Also check workflow-templates collection

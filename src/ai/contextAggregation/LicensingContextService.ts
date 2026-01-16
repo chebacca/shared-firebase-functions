@@ -7,7 +7,8 @@
 
 import { getFirestore } from 'firebase-admin/firestore';
 
-const db = getFirestore();
+// Initialize getDb() lazily
+const getDb = () => getFirestore();
 
 export interface LicensingContext {
   activeLicenses: number;
@@ -30,8 +31,8 @@ export async function gatherLicensingContext(
   organizationId: string
 ): Promise<LicensingContext> {
   // Query licenses using the same pattern as Licensing functions
-  // Pattern: db.collection('licenses').where('organizationId', '==', organizationId)
-  const licensesSnapshot = await db
+  // Pattern: getDb().collection('licenses').where('organizationId', '==', organizationId)
+  const licensesSnapshot = await getDb()
     .collection('licenses')
     .where('organizationId', '==', organizationId)
     .get();

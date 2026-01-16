@@ -7,7 +7,8 @@
 
 import { getFirestore } from 'firebase-admin/firestore';
 
-const db = getFirestore();
+// Initialize getDb() lazily
+const getDb = () => getFirestore();
 
 export interface TeamContext {
     totalMembers: number;
@@ -30,7 +31,7 @@ export async function gatherTeamContext(
 ): Promise<TeamContext> {
     try {
         // Query teamMembers collection
-        const teamMembersRef = db.collection('teamMembers');
+        const teamMembersRef = getDb().collection('teamMembers');
         const snapshot = await teamMembersRef
             .where('organizationId', '==', organizationId)
             .get();

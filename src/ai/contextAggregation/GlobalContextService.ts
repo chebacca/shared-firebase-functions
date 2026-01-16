@@ -26,7 +26,8 @@ import { gatherBudgetContext, BudgetContext } from './BudgetContextService';
 import { gatherInventoryContext, InventoryContext } from './InventoryContextService';
 import { getFirestore } from 'firebase-admin/firestore';
 
-const db = getFirestore();
+// Initialize getDb() lazily to avoid initialization errors during deployment
+const getDb = () => getFirestore();
 
 export interface GlobalContext {
   organizationId: string;
@@ -49,7 +50,7 @@ export interface GlobalContext {
   sessions: SessionContext; // Session context for workflow creation
   budgets: BudgetContext;
   inventory: InventoryContext;
-  
+
   // Available shows and seasons for script creation planning
   availableShows?: {
     shows: Array<{
@@ -83,12 +84,12 @@ async function fetchAvailableShows(organizationId: string): Promise<{
   }>;
 }> {
   try {
-    const showsSnap = await db
+    const showsSnap = await getDb()
       .collection('clipShowShows')
       .where('organizationId', '==', organizationId)
       .limit(20)
       .get();
-    
+
     const shows = await Promise.all(
       showsSnap.docs.map(async (showDoc) => {
         const showData = showDoc.data();
@@ -99,7 +100,7 @@ async function fetchAvailableShows(organizationId: string): Promise<{
           name: season.name || `Season ${season.seasonNumber || 0}`,
           status: season.status || 'Active'
         }));
-        
+
         return {
           id: showDoc.id,
           name: showData.name || 'Unnamed Show',
@@ -108,7 +109,7 @@ async function fetchAvailableShows(organizationId: string): Promise<{
         };
       })
     );
-    
+
     return { shows };
   } catch (error) {
     console.error('❌ [GlobalContext] Error fetching available shows:', error);

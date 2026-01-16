@@ -6,7 +6,8 @@
 
 import { getFirestore } from 'firebase-admin/firestore';
 
-const db = getFirestore();
+// Initialize getDb() lazily
+const getDb = () => getFirestore();
 
 export interface InventoryContext {
     totalItems: number;
@@ -29,7 +30,7 @@ export interface InventoryContext {
 export async function gatherInventoryContext(
     organizationId: string
 ): Promise<InventoryContext> {
-    const inventorySnapshot = await db
+    const inventorySnapshot = await getDb()
         .collection('inventory')
         .where('organizationId', '==', organizationId)
         .get();

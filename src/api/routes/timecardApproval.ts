@@ -1,4 +1,4 @@
-import express from 'express';
+import { Router, Request, Response } from 'express';
 import { authenticateToken } from '../../shared/middleware';
 import {
     handlePendingApprovals,
@@ -9,10 +9,10 @@ import {
     handleSubmitTimecard
 } from '../../timecards/timecardApprovalApiHandlers';
 
-const router = express.Router();
+const router: Router = Router();
 
 // Timecard approval endpoints
-router.get('/pending', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.get('/pending', authenticateToken, async (req: Request, res: Response) => {
     try {
         const userId = req.user?.uid;
         const userOrgId = req.user?.organizationId;
@@ -27,7 +27,7 @@ router.get('/pending', authenticateToken, async (req: express.Request, res: expr
     }
 });
 
-router.get('/my-submissions', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.get('/my-submissions', authenticateToken, async (req: Request, res: Response) => {
     try {
         const userId = req.user?.uid;
         const userOrgId = req.user?.organizationId;
@@ -42,7 +42,7 @@ router.get('/my-submissions', authenticateToken, async (req: express.Request, re
     }
 });
 
-router.get('/history', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.get('/history', authenticateToken, async (req: Request, res: Response) => {
     try {
         const userId = req.user?.uid;
         const userOrgId = req.user?.organizationId;
@@ -57,7 +57,7 @@ router.get('/history', authenticateToken, async (req: express.Request, res: expr
     }
 });
 
-router.get('/direct-reports', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.get('/direct-reports', authenticateToken, async (req: Request, res: Response) => {
     try {
         const userId = req.user?.uid;
         const userOrgId = req.user?.organizationId;
@@ -73,7 +73,7 @@ router.get('/direct-reports', authenticateToken, async (req: express.Request, re
 });
 
 // Handle /direct-reports/all endpoint (alias for /direct-reports)
-router.get('/direct-reports/all', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.get('/direct-reports/all', authenticateToken, async (req: Request, res: Response) => {
     try {
         const userId = req.user?.uid;
         const userOrgId = req.user?.organizationId;
@@ -88,7 +88,7 @@ router.get('/direct-reports/all', authenticateToken, async (req: express.Request
     }
 });
 
-router.get('/my-manager', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.get('/my-manager', authenticateToken, async (req: Request, res: Response) => {
     try {
         const userId = req.user?.uid;
         const userOrgId = req.user?.organizationId;
@@ -114,7 +114,7 @@ router.get('/my-manager', authenticateToken, async (req: express.Request, res: e
 });
 
 // Submit timecard for approval
-router.post('/:timecardId/submit', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.post('/:timecardId/submit', authenticateToken, async (req: Request, res: Response) => {
     try {
         const userId = req.user?.uid;
         const userOrgId = req.user?.organizationId;
@@ -131,7 +131,7 @@ router.post('/:timecardId/submit', authenticateToken, async (req: express.Reques
         }
 
         console.log(`⏰ [TIMECARD APPROVAL API] POST /${timecardId}/submit called for user: ${userId}, org: ${userOrgId}`);
-        await handleSubmitTimecard(req, res, userOrgId, userId, timecardId);
+        await handleSubmitTimecard(req, res, userOrgId, userId, timecardId as string);
     } catch (error: any) {
         console.error('❌ [TIMECARD APPROVAL API] Error in /:timecardId/submit route:', {
             error: error.message,

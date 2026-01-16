@@ -15,7 +15,7 @@ import { db } from '../../shared/utils';
 // DYNAMIC ROLES API ROUTES
 // ============================================================================
 
-const router = Router();
+const router: Router = Router();
 
 // Handle OPTIONS preflight requests for CORS
 router.use((req, res, next) => {
@@ -40,7 +40,7 @@ router.use(enhancedAuthMiddleware);
  * GET /organizations/:orgId/roles
  * Get all roles for an organization
  */
-router.get('/organizations/:orgId/roles', 
+router.get('/organizations/:orgId/roles',
   requirePermission('userManagement', 'view_user_activity'),
   async (req, res) => {
     console.log('🔍 [dynamicRoles] GET /organizations/:orgId/roles hit', { orgId: req.params.orgId, path: req.path, originalUrl: req.originalUrl });
@@ -52,10 +52,10 @@ router.get('/organizations/:orgId/roles',
     }
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
-    
+
     try {
       const { orgId } = req.params;
-      
+
       // Verify user belongs to this organization
       if (req.user?.organizationId !== orgId) {
         return res.status(403).json({
@@ -63,9 +63,9 @@ router.get('/organizations/:orgId/roles',
           error: 'Access denied to this organization'
         });
       }
-      
-      const roles = await dynamicRoleService.getRoles(orgId);
-      
+
+      const roles = await dynamicRoleService.getRoles(orgId as string);
+
       return res.json({
         success: true,
         data: roles
@@ -96,11 +96,11 @@ router.post('/organizations/:orgId/roles',
     }
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
-    
+
     try {
       const { orgId } = req.params;
       const { name, displayName, description, category, hierarchy, permissions, appRoles } = req.body;
-      
+
       // Verify user belongs to this organization
       if (req.user?.organizationId !== orgId) {
         return res.status(403).json({
@@ -108,7 +108,7 @@ router.post('/organizations/:orgId/roles',
           error: 'Access denied to this organization'
         });
       }
-      
+
       // Validate required fields (hierarchy is now optional)
       if (!name || !displayName || !category) {
         return res.status(400).json({
@@ -116,7 +116,7 @@ router.post('/organizations/:orgId/roles',
           error: 'Missing required fields: name, displayName, and category are required'
         });
       }
-      
+
       const roleData = {
         name,
         description: description || '',
@@ -126,9 +126,9 @@ router.post('/organizations/:orgId/roles',
         organizationId: orgId,
         appRoles: appRoles || {} // NEW: App-specific role mappings
       };
-      
+
       const newRole = await dynamicRoleService.createRole(roleData, req.user?.uid || 'system');
-      
+
       return res.status(201).json({
         success: true,
         data: newRole,
@@ -155,7 +155,7 @@ router.put('/organizations/:orgId/roles/:roleId',
     try {
       const { orgId, roleId } = req.params;
       const updates = req.body;
-      
+
       // Verify user belongs to this organization
       if (req.user?.organizationId !== orgId) {
         return res.status(403).json({
@@ -163,9 +163,9 @@ router.put('/organizations/:orgId/roles/:roleId',
           error: 'Access denied to this organization'
         });
       }
-      
-      const updatedRole = await dynamicRoleService.updateRole(roleId, updates);
-      
+
+      const updatedRole = await dynamicRoleService.updateRole(roleId as string, updates);
+
       return res.json({
         success: true,
         data: updatedRole,
@@ -191,7 +191,7 @@ router.delete('/organizations/:orgId/roles/:roleId',
   async (req, res) => {
     try {
       const { orgId, roleId } = req.params;
-      
+
       // Verify user belongs to this organization
       if (req.user?.organizationId !== orgId) {
         return res.status(403).json({
@@ -199,14 +199,14 @@ router.delete('/organizations/:orgId/roles/:roleId',
           error: 'Access denied to this organization'
         });
       }
-      
+
       // Soft delete by marking as inactive
-      const success = await dynamicRoleService.deleteRole(roleId);
+      const success = await dynamicRoleService.deleteRole(roleId as string);
       if (!success) {
         throw new Error('Failed to delete role');
       }
-      const updatedRole = await dynamicRoleService.getRoleById(roleId);
-      
+      const updatedRole = await dynamicRoleService.getRoleById(roleId as string);
+
       return res.json({
         success: true,
         data: updatedRole,
@@ -231,16 +231,16 @@ router.get('/roles/:roleId/permissions', async (req, res) => {
   try {
     const { roleId } = req.params;
     const userTier = (req.user as any)?.tier || 'BASIC';
-    
-    const role = await dynamicRoleService.getRoleWithTierFiltering(roleId, userTier);
-    
+
+    const role = await dynamicRoleService.getRoleWithTierFiltering(roleId as string, userTier);
+
     if (!role) {
       return res.status(404).json({
         success: false,
         error: 'Role not found'
       });
     }
-    
+
     return res.json({
       success: true,
       data: {
@@ -270,24 +270,24 @@ router.put('/projects/:projectId/team-members/:teamMemberId/role',
     try {
       const { projectId, teamMemberId } = req.params;
       const { roleId, appRoles } = req.body; // appRoles can override role's default appRoles
-      
+
       if (!roleId) {
         return res.status(400).json({
           success: false,
           error: 'Role ID is required'
         });
       }
-      
+
       // Get the role to verify it exists and belongs to the organization
-      const role = await dynamicRoleService.getRoleWithTierFiltering(roleId, (req.user as any)?.tier || 'BASIC');
-      
+      const role = await dynamicRoleService.getRoleWithTierFiltering(roleId as string, (req.user as any)?.tier || 'BASIC');
+
       if (!role) {
         return res.status(404).json({
           success: false,
           error: 'Role not found or access denied'
         });
       }
-      
+
       // Verify role belongs to user's organization
       if (role.organizationId !== req.user?.organizationId) {
         return res.status(403).json({
@@ -295,17 +295,17 @@ router.put('/projects/:projectId/team-members/:teamMemberId/role',
           error: 'Role does not belong to your organization'
         });
       }
-      
+
       // Use provided appRoles if available, otherwise use role's default appRoles
-      const finalAppRoles = appRoles && Object.keys(appRoles).length > 0 
-        ? appRoles 
+      const finalAppRoles = appRoles && Object.keys(appRoles).length > 0
+        ? appRoles
         : (role.appRoles || {});
-      
+
       // Update team member's role assignment
       const assignmentData = {
-        teamMemberId,
-        projectId,
-        roleId,
+        teamMemberId: teamMemberId as string,
+        projectId: projectId as string,
+        roleId: roleId as string,
         roleName: role.name,
         hierarchy: role.hierarchy, // Optional - for backward compatibility
         permissions: role.permissions,
@@ -314,11 +314,11 @@ router.put('/projects/:projectId/team-members/:teamMemberId/role',
         assignedBy: req.user?.uid,
         organizationId: req.user?.organizationId
       };
-      
+
       // Update or create project team member assignment
       const assignmentRef = db.collection('projectTeamMembers').doc(`${projectId}_${teamMemberId}`);
       await assignmentRef.set(assignmentData, { merge: true });
-      
+
       // Update team member's custom claims for immediate effect
       try {
         const customClaims: any = {
@@ -328,20 +328,20 @@ router.put('/projects/:projectId/team-members/:teamMemberId/role',
           roleName: role.name,
           permissions: role.permissions,
           projectAssignments: {
-            [projectId]: {
+            [projectId as string]: {
               roleId,
               roleName: role.name,
               assignedAt: new Date().toISOString()
             }
           }
         };
-        
+
         // Include hierarchy only if it exists (backward compatibility)
         if (role.hierarchy !== undefined) {
           customClaims.hierarchy = role.hierarchy;
-          customClaims.projectAssignments[projectId].hierarchy = role.hierarchy;
+          customClaims.projectAssignments[projectId as string].hierarchy = role.hierarchy;
         }
-        
+
         // Include app roles (use finalAppRoles which may be overridden)
         if (finalAppRoles) {
           if (finalAppRoles.dashboardRole) {
@@ -357,14 +357,14 @@ router.put('/projects/:projectId/team-members/:teamMemberId/role',
             customClaims.cuesheetRole = finalAppRoles.cuesheetRole;
           }
         }
-        
-        await admin.auth().setCustomUserClaims(teamMemberId, customClaims);
+
+        await admin.auth().setCustomUserClaims(teamMemberId as string, customClaims);
         console.log(`✅ Updated custom claims for team member: ${teamMemberId}`);
       } catch (claimsError) {
         console.warn('Failed to update custom claims:', claimsError);
         // Don't fail the request if claims update fails
       }
-      
+
       return res.json({
         success: true,
         data: assignmentData,
@@ -391,7 +391,7 @@ router.post('/organizations/:orgId/roles/default',
   async (req, res) => {
     try {
       const { orgId } = req.params;
-      
+
       // Verify user belongs to this organization
       if (req.user?.organizationId !== orgId) {
         return res.status(403).json({
@@ -399,20 +399,20 @@ router.post('/organizations/:orgId/roles/default',
           error: 'Access denied to this organization'
         });
       }
-      
+
       // Check if organization already has roles
-      const existingRoles = await dynamicRoleService.getRoles(orgId);
+      const existingRoles = await dynamicRoleService.getRoles(orgId as string);
       if (existingRoles.length > 0) {
         return res.status(409).json({
           success: false,
           error: 'Organization already has roles defined'
         });
       }
-      
+
       // Create default roles manually since the service doesn't have createDefaultRoles method
       // Note: Default roles now use appRoles instead of hierarchy
-      const defaultRoles = await createDefaultRolesForOrganization(orgId, req.user?.uid || 'system');
-      
+      const defaultRoles = await createDefaultRolesForOrganization(orgId as string, req.user?.uid || 'system');
+
       return res.status(201).json({
         success: true,
         data: defaultRoles,
@@ -437,9 +437,9 @@ router.get('/feature-access/:feature', async (req, res) => {
   try {
     const { feature } = req.params;
     const userTier = (req.user as any)?.tier || 'BASIC';
-    
+
     const hasAccess = dynamicRoleService.hasFeatureAccess(userTier, feature);
-    
+
     return res.json({
       success: true,
       data: {
@@ -468,10 +468,10 @@ router.get('/permission-check/:feature/:action', async (req, res) => {
     const { feature, action } = req.params;
     const userTier = (req.user as any)?.tier || 'BASIC';
     const userPermissions = (req.user as any)?.permissions || {};
-    
+
     const hasPermission = dynamicRoleService.hasPermission(userPermissions, action);
     const hasFeatureAccess = dynamicRoleService.hasFeatureAccess(userTier, feature);
-    
+
     return res.json({
       success: true,
       data: {

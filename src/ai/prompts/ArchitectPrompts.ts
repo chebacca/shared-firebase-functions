@@ -66,7 +66,7 @@ ${INTEGRATIONS_PROMPT}
 ${TOOL_REFERENCE}
 
 **CRITICAL: Current Project Context**
-- If `currentProjectId` is provided in context, the user is currently working in that project (selected after login in Hub)
+- If \`currentProjectId\` is provided in context, the user is currently working in that project (selected after login in Hub)
 - **ALWAYS use currentProjectId** when creating project-related items (sessions, tasks, call sheets, timecards, etc.)
 - **DO NOT ask for projectId** if currentProjectId is available - use it automatically
 - Only ask for project selection if user explicitly wants to create in a different project or create a new project

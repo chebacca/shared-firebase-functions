@@ -1,9 +1,9 @@
-import express from 'express';
+import { Router, Request, Response } from 'express';
 
-const router = express.Router();
+const router: Router = Router();
 
 // Health check endpoint - explicitly handle CORS for public access
-router.options('/', (req: express.Request, res: express.Response) => {
+router.options('/', (req: Request, res: Response) => {
     const origin = req.headers.origin;
     const allowedOrigins = [
         'https://backbone-logic.web.app',
@@ -28,7 +28,7 @@ router.options('/', (req: express.Request, res: express.Response) => {
     res.status(200).send('');
 });
 
-router.get('/', (req: express.Request, res: express.Response) => {
+router.get('/', (req: Request, res: Response) => {
     const origin = req.headers.origin;
     const allowedOrigins = [
         'https://backbone-logic.web.app',

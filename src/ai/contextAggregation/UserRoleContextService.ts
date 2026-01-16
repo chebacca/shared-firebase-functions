@@ -8,7 +8,8 @@
 
 import { getFirestore } from 'firebase-admin/firestore';
 
-const db = getFirestore();
+// Initialize getDb() lazily
+const getDb = () => getFirestore();
 
 export interface UserRoleContext {
   // Role to responsibility mapping
@@ -145,7 +146,7 @@ export async function gatherUserRoleContext(
   });
 
   // Fetch all contacts for the organization
-  const contactsSnapshot = await db
+  const contactsSnapshot = await getDb()
     .collection('clipShowContacts')
     .where('organizationId', '==', organizationId)
     .get();
@@ -158,11 +159,11 @@ export async function gatherUserRoleContext(
 
   // Fetch all pitches and stories
   const [pitchesSnapshot, storiesSnapshot] = await Promise.all([
-    db
+    getDb()
       .collection('clipShowPitches')
       .where('organizationId', '==', organizationId)
       .get(),
-    db
+    getDb()
       .collection('clipShowStories')
       .where('organizationId', '==', organizationId)
       .get()
@@ -171,11 +172,11 @@ export async function gatherUserRoleContext(
   const pitches: any[] = [];
   const stories: any[] = [];
 
-  pitchesSnapshot.forEach(doc => {
+  pitchesSnapshot.forEach((doc: any) => {
     pitches.push({ id: doc.id, ...doc.data() });
   });
 
-  storiesSnapshot.forEach(doc => {
+  storiesSnapshot.forEach((doc: any) => {
     stories.push({ id: doc.id, ...doc.data() });
   });
 
@@ -250,7 +251,7 @@ export async function gatherUserRoleContext(
   if (userId) {
     workloadsToProcess = workloadsToProcess.filter(workload => workload.userId === userId);
   }
-  
+
   const userWorkloads: UserRoleContext['userWorkloads'] = workloadsToProcess.map(workload => ({
     userId: workload.userId,
     userName: workload.userName,
@@ -275,7 +276,7 @@ export async function gatherUserRoleContext(
       if (userId && workload.userId !== userId) {
         return;
       }
-      
+
       if (workload.totalItems > 5) {
         // User has many items assigned
         const nonCompleteCount = Array.from(workload.itemsByStatus.entries())

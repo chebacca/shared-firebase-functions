@@ -57,7 +57,7 @@ const authenticateFirebaseToken = async (req: express.Request, res: express.Resp
 
     const token = authHeader.split('Bearer ')[1];
     const admin = await import('firebase-admin');
-    
+
     if (!admin.apps.length) {
       admin.initializeApp();
     }
@@ -68,7 +68,7 @@ const authenticateFirebaseToken = async (req: express.Request, res: express.Resp
       email: decodedToken.email,
       organizationId: decodedToken.organizationId
     };
-    
+
     next();
   } catch (error: any) {
     console.error('Authentication error:', error);
@@ -107,7 +107,7 @@ app.get('/organizations/:orgId/app-roles/:appName', authenticateFirebaseToken, a
         admin.initializeApp();
       }
       const db = admin.firestore();
-      
+
       const teamMemberQuery = await db.collection('teamMembers')
         .where('userId', '==', user.uid)
         .where('organizationId', '==', orgId)
@@ -122,8 +122,8 @@ app.get('/organizations/:orgId/app-roles/:appName', authenticateFirebaseToken, a
       }
     }
 
-    const roles = await appRoleDefinitionService.getAvailableAppRoles(orgId, appName as AppNameType);
-    
+    const roles = await appRoleDefinitionService.getAvailableAppRoles(orgId as string, appName as AppNameType);
+
     return res.json({
       success: true,
       data: roles
@@ -155,8 +155,8 @@ app.get('/app-roles/system-defaults/:appName', async (req, res) => {
       });
     }
 
-    const roles = await appRoleDefinitionService.getSystemDefaults(appName as AppNameType);
-    
+    const roles = await appRoleDefinitionService.getSystemDefaults(appName as string as AppNameType);
+
     return res.json({
       success: true,
       data: roles
@@ -207,8 +207,8 @@ app.post('/organizations/:orgId/app-roles/:appName', authenticateFirebaseToken, 
     }
 
     const newRole = await appRoleDefinitionService.createCustomAppRole(
-      orgId,
-      appName as AppNameType,
+      orgId as string,
+      appName as string as AppNameType,
       {
         roleValue,
         displayName,
@@ -219,7 +219,7 @@ app.post('/organizations/:orgId/app-roles/:appName', authenticateFirebaseToken, 
       },
       user.uid || 'system'
     );
-    
+
     return res.status(201).json({
       success: true,
       data: newRole,
@@ -263,12 +263,12 @@ app.put('/organizations/:orgId/app-roles/:appName/:roleId', authenticateFirebase
     }
 
     const updatedRole = await appRoleDefinitionService.updateCustomAppRole(
-      orgId,
-      appName as AppNameType,
-      roleId,
+      orgId as string,
+      appName as string as AppNameType,
+      roleId as string,
       updates
     );
-    
+
     return res.json({
       success: true,
       data: updatedRole,
@@ -311,11 +311,11 @@ app.delete('/organizations/:orgId/app-roles/:appName/:roleId', authenticateFireb
     }
 
     await appRoleDefinitionService.deleteCustomAppRole(
-      orgId,
-      appName as AppNameType,
-      roleId
+      orgId as string,
+      appName as string as AppNameType,
+      roleId as string
     );
-    
+
     return res.json({
       success: true,
       message: 'Custom app role deleted successfully'
@@ -365,11 +365,11 @@ app.post('/organizations/:orgId/app-roles/:appName/validate', authenticateFireba
     }
 
     const validation = await appRoleDefinitionService.validateAppRole(
-      orgId,
-      appName as AppNameType,
+      orgId as string,
+      appName as string as AppNameType,
       roleValue
     );
-    
+
     return res.json({
       success: true,
       data: validation

@@ -128,8 +128,8 @@ When user wants to set up a complete production:
 5. Check inventory for required equipment (use query_firestore or list_inventory_items)
 
 **CRITICAL**: When creating multi-step workflows, use variable references in action params:
-- `"projectId": "$projectId"` - References the projectId from the create_project action
-- `"sessionId": "$sessionId"` - References the sessionId from the create_session action
+- \`"projectId": "$projectId"\` - References the projectId from the create_project action
+- \`"sessionId": "$sessionId"\` - References the sessionId from the create_session action
 - The system automatically resolves these variables when executing the plan
 
 **Example 2: Session-Based Production Day**
@@ -155,7 +155,7 @@ When a multi-step workflow plan is complete, set requiresApproval: true:
 }
 
 PLANNING RULES:
-- **CRITICAL**: If `currentProjectId` is available in context, use it automatically for all project-related actions
+- **CRITICAL**: If \`currentProjectId\` is available in context, use it automatically for all project-related actions
 - **DO NOT ask for projectId** if currentProjectId is available - use it automatically
 - Always verify project context before creating sessions or call sheets
 - Use check_schedule before creating sessions to avoid conflicts

@@ -27,18 +27,29 @@ You must respond with a JSON object containing:
     "requiresApproval": boolean, // Set to true when plan is complete and needs user approval before execution
     "actions": [...], // Array of execution actions (only when isComplete: true)
     "suggestedActions": ["Action 1", "Action 2"], // Quick replies for the user
-    "suggestedContext": "none", // Optional: Switch context to help user select items (e.g., "users", "projects")
-    "multipleChoiceQuestion": { ... }, // Optional: Multiple choice question for interactive selection
-    "responseForm": { // Optional: Structured form for gathering multiple inputs at once
-         "title": "Form Title",
-         "questions": [
-             { "id": "q1", "type": "text", "label": "Questions?", "defaultValue": "Pre-filled value" },
-             { "id": "q2", "type": "select", "label": "Select one", "options": [{"label": "A", "value": "a"}], "defaultValue": "a" }
-         ],
-         "submitLabel": "Submit Response"
-    },
-    "contextData": { ...data... }
+    "suggestedContext": "none" | "reports" | "briefing" | "projects" | "tasks" | "media",
+    "multipleChoiceQuestion": { ... }, // Optional
+    "responseForm": { ... }, // Optional: Use to gather missing data
+    "contextData": { ...data... } // Populate for 'reports'
 }
+
+**INTELLIGENCE REPORTS & DATA ANALYSIS:**
+When you have gathered data to provide an "Analysis", "Outlook", or "Audit", set "suggestedContext": "reports" and populate "contextData" with:
+{
+    "title": "Deep Analysis: [Topic]",
+    "date": "Month Year",
+    "executiveSummary": "High-level summary of findings.",
+    "sections": [
+        {
+            "title": "Topic Insights",
+            "content": "Refined analysis text.",
+            "metrics": [{ "label": "KPI", "value": "100", "percent": 100, "trend": "up" }]
+        }
+    ],
+    "outlook": "Speculative analysis and recommendations."
+}
+
+**CRITICAL:** Always use discovery tools (query_firestore, semantic_search) to find REAL DATA before finalizing a report.
 
 **IMPORTANT:**
 - Output ONLY the JSON object, no markdown formatting, no code blocks
@@ -78,25 +89,25 @@ TOOL USAGE GUIDELINES:
 
 **CRITICAL: Variable References for Multi-Step Workflows**
 When creating multi-step workflows, use variable references to pass IDs from previous actions:
-- **Format**: Use `$variableName` in action params (e.g., `"projectId": "$projectId"`)
+- **Format**: Use \`$variableName\` in action params (e.g., \`"projectId": "$projectId"\`)
 - **Available Variables**:
-  - `$projectId` - From create_project action
-  - `$sessionId` - From create_session action
-  - `$callSheetId` - From create_call_sheet action
-  - `$storyId` - From create_script_package action
-  - `$workflowId` - From create_workflow action
-  - `$packageId` - From create_delivery_package action
-  - `$budgetId` - From create_budget action
-  - `$create_project_id` - Explicit reference to create_project result ID
+  - \`$projectId\` - From create_project action
+  - \`$sessionId\` - From create_session action
+  - \`$callSheetId\` - From create_call_sheet action
+  - \`$storyId\` - From create_script_package action
+  - \`$workflowId\` - From create_workflow action
+  - \`$packageId\` - From create_delivery_package action
+  - \`$budgetId\` - From create_budget action
+  - \`$create_project_id\` - Explicit reference to create_project result ID
 - **Example**: 
-  ```json
-  {
+  \`\`\`json
+{
     "actions": [
-      {"type": "create_project", "params": {"name": "Summer Doc"}},
-      {"type": "create_session", "params": {"title": "Day 1", "projectId": "$projectId"}}
+        { "type": "create_project", "params": { "name": "Summer Doc" } },
+        { "type": "create_session", "params": { "title": "Day 1", "projectId": "$projectId" } }
     ]
-  }
-  ```
+}
+\`\`\`
 - **Important**: organizationId and userId are ALWAYS automatically set - never include them in action params
 - **Important**: The system automatically resolves variables when executing actions
 

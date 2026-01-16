@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono&display=swap');
+
+    :root {
+      --primary: #4f46e5;
+      --secondary: #ec4899;
+      --accent: #8b5cf6;
+      --dark: #1e293b;
+      --light: #f8fafc;
+      --border: #e2e8f0;
+      --text: #334155;
+      --text-light: #94a3b8;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      color: var(--text);
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      background: white;
+    }
+
+    /* Cover Page */
+    .cover-page {
+      height: 100vh;
+      width: 100%;
+      background: linear-gradient(135deg, var(--dark) 0%, #0f172a 100%);
+      color: white;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 100px;
+      page-break-after: always;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .cover-page::before {
+      content: "";
+      position: absolute;
+      top: -50%;
+      right: -50%;
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(circle, rgba(79, 70, 229, 0.2) 0%, transparent 70%);
+      transform: rotate(-15deg);
+    }
+
+    .cover-title {
+      font-size: 64px;
+      font-weight: 700;
+      margin-bottom: 24px;
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+    }
+
+    .cover-subtitle {
+      font-size: 32px;
+      opacity: 0.8;
+      font-weight: 400;
+      color: var(--accent);
+    }
+
+    .cover-meta {
+      margin-top: 80px;
+      font-size: 18px;
+      opacity: 0.6;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      padding-top: 32px;
+      max-width: 500px;
+    }
+
+    .cover-meta div {
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* Content Pages */
+    .page {
+      padding: 80px;
+      page-break-after: always;
+      min-height: 100vh;
+      position: relative;
+    }
+
+    .page:last-child {
+      page-break-after: avoid;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 24px;
+      margin-bottom: 48px;
+    }
+
+    .header-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--primary);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .header-meta {
+      color: var(--text-light);
+      font-size: 12px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    h1 {
+      font-size: 36px;
+      font-weight: 700;
+      margin-bottom: 24px;
+      color: var(--dark);
+      letter-spacing: -0.01em;
+    }
+
+    h2 {
+      font-size: 24px;
+      font-weight: 600;
+      margin: 48px 0 24px;
+      color: var(--dark);
+      display: flex;
+      align-items: center;
+    }
+
+    h2::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+      margin-left: 20px;
+    }
+
+    p {
+      font-size: 16px;
+      line-height: 1.7;
+      color: var(--text);
+      margin-bottom: 20px;
+    }
+
+    /* Performance Grid */
+    .perf-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 32px;
+      margin: 40px 0;
+    }
+
+    .perf-card {
+      background: var(--light);
+      border-radius: 16px;
+      padding: 32px;
+      border: 1px solid var(--border);
+    }
+
+    .perf-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-light);
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .perf-value {
+      font-size: 40px;
+      font-weight: 700;
+      color: var(--dark);
+      margin-bottom: 16px;
+    }
+
+    .perf-desc {
+      font-size: 14px;
+      color: var(--text);
+    }
+
+    /* Tables */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 24px 0;
+      font-size: 14px;
+    }
+
+    .data-table th {
+      text-align: left;
+      padding: 16px;
+      background: var(--light);
+      color: var(--dark);
+      font-weight: 600;
+      border-bottom: 2px solid var(--border);
+    }
+
+    .data-table td {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+    }
+
+    .data-table tr:hover {
+      background: #f1f5f9;
+    }
+
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Status Tags */
+    .tag {
+      padding: 4px 12px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .tag-high {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .tag-med {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .tag-low {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    /* Charts */
+    .chart-container {
+      margin: 40px 0;
+      background: white;
+      padding: 32px;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      text-align: center;
+    }
+
+    .chart-container img {
+      max-width: 100%;
+      height: auto;
+    }
+
+    /* Footer */
+    .footer {
+      position: absolute;
+      bottom: 40px;
+      left: 80px;
+      right: 80px;
+      border-top: 1px solid var(--border);
+      padding-top: 24px;
+      display: flex;
+      justify-content: space-between;
+      color: var(--text-light);
+      font-size: 11px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- COVER PAGE -->
+  <div class="cover-page">
+    <div class="cover-title">{{projectName}}</div>
+    <div class="cover-subtitle">Detailed Project Intelligence Report</div>
+    <div class="cover-meta">
+      <div><span>Report Type</span> <span>Detailed Analysis</span></div>
+      <div><span>Source</span> <span>Backbone Ecosystem</span></div>
+      <div><span>Analysis Duration</span> <span>{{dateRange}}</span></div>
+      <div><span>Generated On</span> <span>{{generatedAt}}</span></div>
+      <div><span>Project ID</span> <span class="mono">{{projectId}}</span></div>
+    </div>
+  </div>
+
+  <!-- EXECUTIVE STRATEGY -->
+  <div class="page">
+    <div class="header">
+      <div class="header-title">Executive Strategy</div>
+      <div class="header-meta">SEC: 01 // PAGE: 02</div>
+    </div>
+
+    <h1>Intelligence Summary</h1>
+    <p>{{executiveSummary}}</p>
+
+    <div class="perf-grid">
+      <div class="perf-card">
+        <div class="perf-label">Operational Efficiency</div>
+        <div class="perf-value">{{metrics.completionPercentage}}%</div>
+        <div class="perf-desc">Overall milestone completion rate across all active workflows and delivery packages.
+        </div>
+      </div>
+      <div class="perf-card">
+        <div class="perf-label">Resource Utilization</div>
+        <div class="perf-value">{{metrics.teamUtilization}}</div>
+        <div class="perf-desc">Average bandwidth allocation for core production team members and external contractors.
+        </div>
+      </div>
+    </div>
+
+    <h2>Strategic Highlights</h2>
+    <ul style="list-style: none;">
+      {{#each insights.keyHighlights}}
+      <li
+        style="padding: 16px; border-left: 4px solid var(--accent); background: var(--light); margin-bottom: 12px; border-radius: 0 8px 8px 0;">
+        {{this}}
+      </li>
+      {{/each}}
+    </ul>
+  </div>
+
+  <!-- OPERATIONAL DATA -->
+  <div class="page">
+    <div class="header">
+      <div class="header-title">Operational Analysis</div>
+      <div class="header-meta">SEC: 02 // PAGE: 03</div>
+    </div>
+
+    <h1>Production Velocity</h1>
+    <div class="chart-container">
+      {{#if charts.timeline}}
+      <img src="{{charts.timeline}}" alt="Project Velocity" />
+      {{else}}
+      <p>Telemetry data insufficient for velocity mapping.</p>
+      {{/if}}
+    </div>
+
+    <h2>Active Sessions (Recent)</h2>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Session ID</th>
+          <th>Resource/Location</th>
+          <th>Status</th>
+          <th>Duration</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each sessions}}
+        <tr>
+          <td class="mono">{{id}}</td>
+          <td>{{name}}</td>
+          <td>{{status}}</td>
+          <td class="mono">--:--</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- RISK & MITIGATION -->
+  <div class="page">
+    <div class="header">
+      <div class="header-title">Risk Assessment</div>
+      <div class="header-meta">SEC: 03 // PAGE: 04</div>
+    </div>
+
+    <h1>Critical Risk Analysis</h1>
+    <p>Comprehensive evaluation of architectural, financial, and operational risks identified via ecosystem pattern
+      matching.</p>
+
+    {{#each insights.risks}}
+    <div style="margin-bottom: 32px; padding: 24px; border: 1px solid var(--border); border-radius: 12px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h3 style="color: var(--dark);">{{category}}</h3>
+        <span class="tag tag-{{severity}}">{{severity}}</span>
+      </div>
+      <p style="font-size: 14px; color: var(--text); margin-bottom: 16px;">{{description}}</p>
+      <div style="background: #f1f5f9; padding: 16px; border-radius: 8px; font-size: 13px;">
+        <strong style="color: var(--dark);">MITIGATION STRATEGY:</strong><br>
+        {{mitigation}}
+      </div>
+    </div>
+    {{/each}}
+
+    <h2>Recommendations</h2>
+    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;">
+      {{#each insights.recommendations}}
+      <div
+        style="padding: 16px; background: white; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; line-height: 1.5;">
+        <strong>REC {{add @index 1}}:</strong> {{this}}
+      </div>
+      {{/each}}
+    </div>
+
+    <div class="footer">
+      <div>AUTHENTICATED SYSTEM GENERATED REPORT</div>
+      <div>CONFIDENTIAL // BACKBONE INTELLIGENCE</div>
+    </div>
+  </div>
+
+</body>
+
+</html>

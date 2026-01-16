@@ -1,15 +1,15 @@
-import express from 'express';
+import { Router, Request, Response } from 'express';
 import { db } from '../../shared/utils';
 import { authenticateToken } from '../../shared/middleware';
 
-const router = express.Router();
+const router: Router = Router();
 
 // ====================
 // Network IP API
 // ====================
 
 // Handle OPTIONS for network-ip
-router.options('/ip-assignments', (req: express.Request, res: express.Response) => {
+router.options('/ip-assignments', (req: Request, res: Response) => {
     res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
     res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
     res.set('Access-Control-Max-Age', '3600');
@@ -17,7 +17,7 @@ router.options('/ip-assignments', (req: express.Request, res: express.Response) 
 });
 
 // Get all network IP assignments
-router.get('/ip-assignments', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.get('/ip-assignments', authenticateToken, async (req: Request, res: Response) => {
     try {
         console.log('🌐 [NETWORK IP API] Fetching all network IP assignments...');
         const organizationId = req.user?.organizationId;
@@ -60,14 +60,14 @@ router.get('/ip-assignments', authenticateToken, async (req: express.Request, re
 // Networks API
 // ====================
 
-router.options('/networks', (req: express.Request, res: express.Response) => {
+router.options('/networks', (req: Request, res: Response) => {
     res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
     res.set('Access-Control-Max-Age', '3600');
     res.status(200).send('');
 });
 
-router.get('/networks', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.get('/networks', authenticateToken, async (req: Request, res: Response) => {
     try {
         console.log('🌐 [NETWORKS API] Fetching all networks...');
         const organizationId = req.user?.organizationId;
@@ -110,14 +110,14 @@ router.get('/networks', authenticateToken, async (req: express.Request, res: exp
 // Inventory API
 // ====================
 
-router.options('/inventory', (req: express.Request, res: express.Response) => {
+router.options('/inventory', (req: Request, res: Response) => {
     res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
     res.set('Access-Control-Max-Age', '3600');
     res.status(200).send('');
 });
 
-router.get('/inventory', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.get('/inventory', authenticateToken, async (req: Request, res: Response) => {
     try {
         console.log('📦 [INVENTORY API] Fetching all inventory items...');
         const organizationId = req.user?.organizationId;
@@ -171,10 +171,10 @@ router.get('/inventory', authenticateToken, async (req: express.Request, res: ex
     }
 });
 
-router.get('/inventory/:id', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.get('/inventory/:id', authenticateToken, async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
-        const inventoryDoc = await db.collection('inventoryItems').doc(id).get();
+        const inventoryDoc = await db.collection('inventoryItems').doc(id as string).get();
 
         if (!inventoryDoc.exists) {
             return res.status(404).json({
@@ -206,14 +206,14 @@ router.get('/inventory/:id', authenticateToken, async (req: express.Request, res
 // Schemas API
 // ====================
 
-router.options('/schemas', (req: express.Request, res: express.Response) => {
+router.options('/schemas', (req: Request, res: Response) => {
     res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
     res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
     res.set('Access-Control-Max-Age', '3600');
     res.status(200).send('');
 });
 
-router.get('/schemas', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.get('/schemas', authenticateToken, async (req: Request, res: Response) => {
     try {
         console.log('📋 [SCHEMAS API] Fetching all schemas...');
         const organizationId = req.user?.organizationId;

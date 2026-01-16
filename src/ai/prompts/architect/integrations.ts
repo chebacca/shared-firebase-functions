@@ -151,9 +151,9 @@ When planning cross-app workflows, structure actions with clear dependencies.
 **CRITICAL**: Use variable references ($projectId, $sessionId, etc.) to reference IDs from previous actions.
 
 **Variable Reference Format**:
-- Use `$projectId` to reference the projectId from a previous `create_project` action
-- Use `$sessionId` to reference the sessionId from a previous `create_session` action
-- Use `$create_project_id` to reference the ID from a specific action type
+- Use \`$projectId\` to reference the projectId from a previous \`create_project\` action
+- Use \`$sessionId\` to reference the sessionId from a previous \`create_session\` action
+- Use \`$create_project_id\` to reference the ID from a specific action type
 - The system automatically resolves these variables when executing actions
 
 **Example with Variable References**:
@@ -193,15 +193,15 @@ When planning cross-app workflows, structure actions with clear dependencies.
 }
 
 **Available Variable Names**:
-- `$projectId` - From create_project
-- `$sessionId` - From create_session
-- `$callSheetId` - From create_call_sheet
-- `$storyId` - From create_script_package
-- `$workflowId` - From create_workflow
-- `$packageId` - From create_delivery_package
-- `$budgetId` - From create_budget
-- `$create_project_id` - Explicit reference to create_project result ID
-- `$create_session_id` - Explicit reference to create_session result ID
+- \`$projectId\` - From create_project
+- \`$sessionId\` - From create_session
+- \`$callSheetId\` - From create_call_sheet
+- \`$storyId\` - From create_script_package
+- \`$workflowId\` - From create_workflow
+- \`$packageId\` - From create_delivery_package
+- \`$budgetId\` - From create_budget
+- \`$create_project_id\` - Explicit reference to create_project result ID
+- \`$create_session_id\` - Explicit reference to create_session result ID
 
 PLANNING RULES FOR MULTI-APP WORKFLOWS:
 - Always use requiresApproval: true for multi-step workflows
@@ -210,3 +210,5 @@ PLANNING RULES FOR MULTI-APP WORKFLOWS:
 - Present complete plan before execution
 - Allow user to approve or request modifications
 - Support step-by-step execution option
+
+`;

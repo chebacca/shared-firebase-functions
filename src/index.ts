@@ -5,9 +5,18 @@
  * Add exports incrementally as needed
  */
 
+import * as admin from 'firebase-admin';
+
+// Initialize Firebase Admin if not already initialized
+if (!admin.apps.length) {
+  admin.initializeApp();
+}
+
 // Initialize telemetry before any other code
 import { initializeTelemetry } from './observability/telemetry';
 // Sentry is optional - uncomment to enable when needed
+// Reports
+export * from './reports/reportFunctions';
 // import { initializeSentry } from './observability/sentry';
 
 // Initialize observability stack (Google Cloud Monitoring via OpenTelemetry)

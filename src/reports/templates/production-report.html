@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      color: #1a1a1a;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    /* Cover Page */
+    .cover-page {
+      height: 100vh;
+      width: 100%;
+      background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+      color: white;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 80px;
+      page-break-after: always;
+    }
+
+    .cover-title {
+      font-size: 56px;
+      font-weight: 700;
+      margin-bottom: 24px;
+      line-height: 1.1;
+    }
+
+    .cover-subtitle {
+      font-size: 28px;
+      opacity: 0.9;
+      font-weight: 300;
+    }
+
+    .cover-meta {
+      margin-top: 60px;
+      font-size: 16px;
+      opacity: 0.8;
+      border-top: 1px solid rgba(255, 255, 255, 0.3);
+      padding-top: 24px;
+    }
+
+    .cover-meta div {
+      margin-bottom: 8px;
+    }
+
+    /* Content Pages */
+    .page {
+      padding: 60px;
+      page-break-after: always;
+      min-height: 100vh;
+      position: relative;
+    }
+
+    .page:last-child {
+      page-break-after: avoid;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      border-bottom: 2px solid #f0f0f0;
+      padding-bottom: 20px;
+      margin-bottom: 40px;
+    }
+
+    .header-title {
+      font-size: 24px;
+      font-weight: 700;
+      color: #d97706;
+    }
+
+    .header-meta {
+      color: #888;
+      font-size: 14px;
+    }
+
+    h1 {
+      font-size: 32px;
+      font-weight: 700;
+      margin-bottom: 30px;
+      color: #1a1a1a;
+    }
+
+    h2 {
+      font-size: 24px;
+      font-weight: 600;
+      margin: 40px 0 20px;
+      color: #2d3748;
+      border-left: 4px solid #fbbf24;
+      padding-left: 16px;
+    }
+
+    p {
+      font-size: 16px;
+      line-height: 1.6;
+      color: #4a5568;
+      margin-bottom: 16px;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 24px;
+      margin: 40px 0;
+    }
+
+    .metric-card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 24px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+    }
+
+    .metric-label {
+      font-size: 12px;
+      text-transform: uppercase;
+      color: #718096;
+      margin-bottom: 8px;
+    }
+
+    .metric-value {
+      font-size: 28px;
+      font-weight: 700;
+      color: #2d3748;
+    }
+
+    .chart-container {
+      margin: 40px 0;
+      text-align: center;
+      background: #fff;
+      padding: 24px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    }
+
+    .chart-container img {
+      max-width: 100%;
+      height: auto;
+    }
+
+    .badge {
+      padding: 4px 12px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .badge-success {
+      background: #def7ec;
+      color: #03543f;
+    }
+
+    .badge-warning {
+      background: #fdf6b2;
+      color: #723b13;
+    }
+
+    .footer {
+      position: absolute;
+      bottom: 40px;
+      left: 60px;
+      right: 60px;
+      border-top: 1px solid #f0f0f0;
+      padding-top: 16px;
+      display: flex;
+      justify-content: space-between;
+      color: #a0aec0;
+      font-size: 12px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="cover-page">
+    <div class="cover-title">{{projectName}}</div>
+    <div class="cover-subtitle">Production Status Report</div>
+    <div class="cover-meta">
+      <div><strong>Analysis Period:</strong> {{dateRange}}</div>
+      <div><strong>Generated On:</strong> {{generatedAt}}</div>
+      <div><strong>Project ID:</strong> {{projectId}}</div>
+    </div>
+  </div>
+
+  <div class="page">
+    <div class="header">
+      <div class="header-title">Production Overview</div>
+      <div class="header-meta">Page 02</div>
+    </div>
+    <h1>Timeline Performance</h1>
+    <div class="metric-grid">
+      <div class="metric-card">
+        <div class="metric-label">Completion</div>
+        <div class="metric-value">{{metrics.completionPercentage}}%</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Active Tasks</div>
+        <div class="metric-value">{{metrics.activeTasks}}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Milestones</div>
+        <div class="metric-value">{{metrics.milestones}}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Team Health</div>
+        <div class="metric-value">{{metrics.teamHealth}}</div>
+      </div>
+    </div>
+    <div class="chart-container">
+      {{#if charts.timeline}}
+      <img src="{{charts.timeline}}" alt="Project timeline" />
+      {{/if}}
+    </div>
+  </div>
+</body>
+
+</html>

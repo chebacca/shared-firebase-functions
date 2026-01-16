@@ -53,6 +53,8 @@ jspm_packages/
 
 # Output of 'npm pack'
 *.tgz
+!shared-backbone-intelligence-*.tgz
+!shared-firebase-models-*.tgz
 
 # Yarn Integrity file
 .yarn-integrity

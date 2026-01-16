@@ -6,7 +6,8 @@
 
 import { getFirestore } from 'firebase-admin/firestore';
 
-const db = getFirestore();
+// Initialize getDb() lazily
+const getDb = () => getFirestore();
 
 export interface BudgetContext {
     totalBudgets: number;
@@ -29,7 +30,7 @@ export interface BudgetContext {
 export async function gatherBudgetContext(
     organizationId: string
 ): Promise<BudgetContext> {
-    const budgetsSnapshot = await db
+    const budgetsSnapshot = await getDb()
         .collection('budgets')
         .where('organizationId', '==', organizationId)
         .get();

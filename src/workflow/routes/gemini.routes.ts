@@ -7,7 +7,7 @@
 import { Router } from 'express';
 import { getApiServiceConfig } from '../utils/environment';
 
-const router = Router();
+const router: Router = Router();
 
 // Real Gemini API call implementation
 async function callGeminiAPI(prompt: string, apiKey: string) {

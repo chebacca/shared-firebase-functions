@@ -1,17 +1,17 @@
-import express from 'express';
+import { Router, Request, Response } from 'express';
 import { db } from '../../shared/utils';
 import { authenticateToken } from '../../shared/middleware';
 
-const router = express.Router();
+const router: Router = Router();
 
-router.options('/', (req: express.Request, res: express.Response) => {
+router.options('/', (req: Request, res: Response) => {
     res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
     res.set('Access-Control-Max-Age', '3600');
     res.status(200).send('');
 });
 
-router.get('/', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.get('/', authenticateToken, async (req: Request, res: Response) => {
     try {
         console.log('👥 [CONTACTS API] Fetching all contacts...');
         const organizationId = req.user?.organizationId;
@@ -50,10 +50,10 @@ router.get('/', authenticateToken, async (req: express.Request, res: express.Res
     }
 });
 
-router.get('/:id', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.get('/:id', authenticateToken, async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
-        const contactDoc = await db.collection('contacts').doc(id).get();
+        const contactDoc = await db.collection('contacts').doc(id as string).get();
 
         if (!contactDoc.exists) {
             return res.status(404).json({

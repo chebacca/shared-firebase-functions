@@ -11,7 +11,8 @@
 import { getFirestore } from 'firebase-admin/firestore';
 import * as admin from 'firebase-admin';
 
-const db = getFirestore();
+// Initialize getDb() lazily
+const getDb = () => getFirestore();
 
 export interface HistoricalPatterns {
   // Average time spent in each status
@@ -74,11 +75,11 @@ export async function gatherHistoricalPatterns(
 
   // Fetch all pitches and stories with their history
   const [pitchesSnapshot, storiesSnapshot] = await Promise.all([
-    db
+    getDb()
       .collection('clipShowPitches')
       .where('organizationId', '==', organizationId)
       .get(),
-    db
+    getDb()
       .collection('clipShowStories')
       .where('organizationId', '==', organizationId)
       .get()
@@ -87,7 +88,7 @@ export async function gatherHistoricalPatterns(
   const pitches: any[] = [];
   const stories: any[] = [];
 
-  pitchesSnapshot.forEach(doc => {
+  pitchesSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => {
     const pitchData = doc.data();
     const pitch = { id: doc.id, ...pitchData };
     const createdAt = pitchData.createdAt?.toDate ? pitchData.createdAt.toDate() : new Date(pitchData.createdAt || 0);
@@ -96,7 +97,7 @@ export async function gatherHistoricalPatterns(
     }
   });
 
-  storiesSnapshot.forEach(doc => {
+  storiesSnapshot.forEach((doc: admin.firestore.QueryDocumentSnapshot) => {
     const storyData = doc.data();
     const story = { id: doc.id, ...storyData };
     const createdAt = storyData.createdAt?.toDate ? storyData.createdAt.toDate() : new Date(storyData.createdAt || 0);
@@ -146,7 +147,7 @@ export async function gatherHistoricalPatterns(
 
   // Calculate average time in status
   const averageTimeInStatus = new Map<string, number>();
-  
+
   pitchTimeInStatus.forEach((times, status) => {
     if (times.length >= minSamples) {
       const avg = times.reduce((sum, t) => sum + t, 0) / times.length;
@@ -233,7 +234,7 @@ export async function gatherHistoricalPatterns(
   averageTimeInStatus.forEach((avgTime, key) => {
     const [entityType, status] = key.split(':');
     const frequency = statusFrequency.get(key) || 0;
-    
+
     if (frequency >= minSamples && avgTime > 7 * 24 * 60 * 60) { // More than 7 days
       bottlenecks.push({
         status,

@@ -1,4 +1,4 @@
-import express from 'express';
+import { Router, Request, Response } from 'express';
 import { authenticateToken } from '../../shared/middleware';
 import { getFirestore } from 'firebase-admin/firestore';
 import * as admin from 'firebase-admin';
@@ -11,14 +11,14 @@ import {
   WrappedStatus
 } from '../../location/locationStatusService';
 
-const router = express.Router();
+const router: Router = Router();
 const db = getFirestore();
 
 /**
  * Clock in endpoint
  * POST /timecard/clock-in
  */
-router.post('/clock-in', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.post('/clock-in', authenticateToken, async (req: Request, res: Response) => {
   try {
     const userId = req.user?.uid;
     const userOrgId = req.user?.organizationId;
@@ -124,7 +124,7 @@ router.post('/clock-in', authenticateToken, async (req: express.Request, res: ex
  * Clock out endpoint
  * POST /timecard/clock-out
  */
-router.post('/clock-out', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.post('/clock-out', authenticateToken, async (req: Request, res: Response) => {
   try {
     const userId = req.user?.uid;
     const userOrgId = req.user?.organizationId;

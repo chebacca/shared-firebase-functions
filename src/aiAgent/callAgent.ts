@@ -84,6 +84,8 @@ export const callAIAgent = onCall(
     invoker: 'public', // Required for CORS preflight requests
     cors: true, // Set to true to bypass whitelist issues in production
     secrets: [geminiApiKey], // Add Gemini API key as required secret
+    memory: '1GiB', // Increased memory to handle report generation dependencies
+    timeoutSeconds: 300 // Match report generation timeout
   },
   async (request) => {
     return traceFunction('callAIAgent', async () => {
@@ -98,147 +100,147 @@ export const callAIAgent = onCall(
 
         const { agentId, message, context } = request.data;
         const uid = request.auth?.uid;
-        
+
         addSpanAttribute('agent.id', agentId);
         addSpanAttribute('user.id', uid);
         addSpanAttribute('message.length', message?.length || 0);
 
-      if (!uid) {
-        console.error('❌ [AI AGENT] No authenticated user found in request');
-        console.error('   request.auth:', request.auth);
-        throw new HttpsError('unauthenticated', 'User must be authenticated');
-      }
+        if (!uid) {
+          console.error('❌ [AI AGENT] No authenticated user found in request');
+          console.error('   request.auth:', request.auth);
+          throw new HttpsError('unauthenticated', 'User must be authenticated');
+        }
 
-      if (!agentId || !message) {
-        throw new HttpsError('invalid-argument', 'Agent ID and message are required');
-      }
+        if (!agentId || !message) {
+          throw new HttpsError('invalid-argument', 'Agent ID and message are required');
+        }
 
-      console.log(`🤖 [AI AGENT] Calling agent: ${agentId} for user: ${uid}`);
+        console.log(`🤖 [AI AGENT] Calling agent: ${agentId} for user: ${uid}`);
 
-      // 1. Get User's Organization ID
-      const userRecord = await auth.getUser(uid);
-      const organizationId = userRecord.customClaims?.organizationId as string;
+        // 1. Get User's Organization ID
+        const userRecord = await auth.getUser(uid);
+        const organizationId = userRecord.customClaims?.organizationId as string;
 
-      if (!organizationId) {
-        throw new HttpsError('failed-precondition', 'User does not belong to an organization');
-      }
-      
-      // Set user context for Sentry
-      setUserContext(uid, userRecord.email, organizationId);
-      addSpanAttribute('organization.id', organizationId);
+        if (!organizationId) {
+          throw new HttpsError('failed-precondition', 'User does not belong to an organization');
+        }
 
-      // 2. Quick Intent Detection (Optimization)
-      const quickIntent = detectQuickIntent(message);
-      console.log(`🎯 [AI AGENT] Quick intent detected: ${quickIntent}`);
+        // Set user context for Sentry
+        setUserContext(uid, userRecord.email, organizationId);
+        addSpanAttribute('organization.id', organizationId);
 
-      // 3. Gather Context (Optimized based on intent)
-      // Extract sessionId from context if provided (for workflow creation)
-      const sessionId = context?.sessionId || context?.session?.id;
+        // 2. Quick Intent Detection (Optimization)
+        const quickIntent = detectQuickIntent(message);
+        console.log(`🎯 [AI AGENT] Quick intent detected: ${quickIntent}`);
 
-      let globalContext;
-      if (quickIntent === 'graph') {
-        console.log(`⚡ [AI AGENT] Using minimal context for graph request (optimization)`);
-        globalContext = await gatherMinimalContextForGraph(organizationId, uid);
-      } else {
-        console.log(`📊 [AI AGENT] Gathering full global context for org: ${organizationId}${sessionId ? ` (session: ${sessionId})` : ''}`);
-        globalContext = await gatherGlobalContext(organizationId, uid, sessionId);
-      }
+        // 3. Gather Context (Optimized based on intent)
+        // Extract sessionId from context if provided (for workflow creation)
+        const sessionId = context?.sessionId || context?.session?.id;
 
-      // Ensure userId is set in globalContext
-      if (!globalContext.userId) {
-        globalContext.userId = uid;
-      }
+        let globalContext;
+        if (quickIntent === 'graph') {
+          console.log(`⚡ [AI AGENT] Using minimal context for graph request (optimization)`);
+          globalContext = await gatherMinimalContextForGraph(organizationId, uid);
+        } else {
+          console.log(`📊 [AI AGENT] Gathering full global context for org: ${organizationId}${sessionId ? ` (session: ${sessionId})` : ''}`);
+          globalContext = await gatherGlobalContext(organizationId, uid, sessionId);
+        }
 
-      // NEW: Pass explicit workflow action intent to global context
-      if (context?.workflowAction) {
-        (globalContext as any).workflowAction = context.workflowAction;
-      }
+        // Ensure userId is set in globalContext
+        if (!globalContext.userId) {
+          globalContext.userId = uid;
+        }
 
-      // NEW: Pass conversation history to globalContext for Architect mode
-      if (context?.conversationHistory && Array.isArray(context.conversationHistory)) {
-        (globalContext as any).conversationHistory = context.conversationHistory.map((msg: any) => ({
-          role: msg.role || (msg.sender === 'user' ? 'user' : 'assistant'),
-          content: msg.content || msg.text || msg.message
-        }));
-      }
+        // NEW: Pass explicit workflow action intent to global context
+        if (context?.workflowAction) {
+          (globalContext as any).workflowAction = context.workflowAction;
+        }
 
-      // NEW: Pass activeMode to globalContext for Architect mode routing
-      const currentMode = context?.activeMode || 'none';
-      (globalContext as any).activeMode = currentMode;
-      console.log(`🎯 [AI AGENT] Active mode set to: ${currentMode}`);
-      
-      // NEW: Pass current projectId from Hub context (user's selected project after login)
-      const currentProjectId = context?.projectId || null;
-      if (currentProjectId) {
-        (globalContext as any).currentProjectId = currentProjectId;
-        console.log(`📁 [AI AGENT] Current project context: ${currentProjectId}`);
-      }
-      
-      console.log(`🎯 [AI AGENT] Context received:`, JSON.stringify(context, null, 2));
+        // NEW: Pass conversation history to globalContext for Architect mode
+        if (context?.conversationHistory && Array.isArray(context.conversationHistory)) {
+          (globalContext as any).conversationHistory = context.conversationHistory.map((msg: any) => ({
+            role: msg.role || (msg.sender === 'user' ? 'user' : 'assistant'),
+            content: msg.content || msg.text || msg.message
+          }));
+        }
 
-      // 4. Generate Intelligent Response using Gemini
-      console.log(`🧠 [AI AGENT] Generating intelligent response with Gemini...`);
-      const geminiService = createGeminiService();
+        // NEW: Pass activeMode to globalContext for Architect mode routing
+        const currentMode = context?.activeMode || 'none';
+        (globalContext as any).activeMode = currentMode;
+        console.log(`🎯 [AI AGENT] Active mode set to: ${currentMode}`);
 
-      // Check if function calling mode is enabled for workflows
-      const useFunctionCalling = context?.useFunctionCalling === true && currentMode === 'workflows';
+        // NEW: Pass current projectId from Hub context (user's selected project after login)
+        const currentProjectId = context?.projectId || null;
+        if (currentProjectId) {
+          (globalContext as any).currentProjectId = currentProjectId;
+          console.log(`📁 [AI AGENT] Current project context: ${currentProjectId}`);
+        }
 
-      // Extract attachments
-      const attachments = [];
-      if (context?.attachmentUrl && context?.attachmentMimeType) {
-        attachments.push({
-          url: context.attachmentUrl,
-          mimeType: context.attachmentMimeType
-        });
-      }
+        console.log(`🎯 [AI AGENT] Context received:`, JSON.stringify(context, null, 2));
 
-      let agentResponse;
-      if (useFunctionCalling) {
-        console.log('🔧 [AI AGENT] Using function calling mode for workflow generation');
-        agentResponse = await geminiService.generateWorkflowResponseWithFunctions(
+        // 4. Generate Intelligent Response using Gemini
+        console.log(`🧠 [AI AGENT] Generating intelligent response with Gemini...`);
+        const geminiService = createGeminiService();
+
+        // Check if function calling mode is enabled for workflows
+        const useFunctionCalling = context?.useFunctionCalling === true && currentMode === 'workflows';
+
+        // Extract attachments
+        const attachments = [];
+        if (context?.attachmentUrl && context?.attachmentMimeType) {
+          attachments.push({
+            url: context.attachmentUrl,
+            mimeType: context.attachmentMimeType
+          });
+        }
+
+        let agentResponse;
+        if (useFunctionCalling) {
+          console.log('🔧 [AI AGENT] Using function calling mode for workflow generation');
+          agentResponse = await geminiService.generateWorkflowResponseWithFunctions(
+            message,
+            globalContext,
+            context?.conversationHistory || [],
+            context?.maxTurns || 5,
+            attachments
+          );
+        } else {
+          agentResponse = await geminiService.generateAgentResponse(
+            message,
+            globalContext,
+            currentMode,
+            attachments
+          );
+        }
+
+
+
+        console.log(`✅ [AI AGENT] Response generated. Suggested context: ${agentResponse.suggestedContext}`);
+
+        const response = {
+          agentId,
           message,
-          globalContext,
-          context?.conversationHistory || [],
-          context?.maxTurns || 5,
-          attachments
-        );
-      } else {
-        agentResponse = await geminiService.generateAgentResponse(
-          message,
-          globalContext,
-          currentMode,
-          attachments
-        );
-      }
-
-
-
-      console.log(`✅ [AI AGENT] Response generated. Suggested context: ${agentResponse.suggestedContext}`);
-
-      const response = {
-        agentId,
-        message,
-        response: agentResponse.response,
-        suggestedContext: agentResponse.suggestedContext,
-        contextData: agentResponse.contextData,
-        followUpSuggestions: agentResponse.followUpSuggestions,
-        reasoning: agentResponse.reasoning,
-        // NEW: Dialog system fields
-        intent: agentResponse.intent,
-        suggestedDialog: agentResponse.suggestedDialog,
-        prefillData: agentResponse.prefillData,
-        // NEW: Workflow generation fields
-        workflowData: agentResponse.workflowData || (agentResponse.contextData?.workflowData ? {
-          nodes: agentResponse.contextData.workflowData.nodes,
-          edges: agentResponse.contextData.workflowData.edges,
-          name: agentResponse.contextData.workflowData.name,
-          description: agentResponse.contextData.workflowData.description
-        } : undefined),
-        // NEW: Function calling results
-        functionResults: agentResponse.contextData?.functionResults,
-        data: globalContext, // Include full context for debugging
-        timestamp: new Date().toISOString()
-      };
+          response: agentResponse.response,
+          suggestedContext: agentResponse.suggestedContext,
+          contextData: agentResponse.contextData,
+          followUpSuggestions: agentResponse.followUpSuggestions,
+          reasoning: agentResponse.reasoning,
+          // NEW: Dialog system fields
+          intent: agentResponse.intent,
+          suggestedDialog: agentResponse.suggestedDialog,
+          prefillData: agentResponse.prefillData,
+          // NEW: Workflow generation fields
+          workflowData: agentResponse.workflowData || (agentResponse.contextData?.workflowData ? {
+            nodes: agentResponse.contextData.workflowData.nodes,
+            edges: agentResponse.contextData.workflowData.edges,
+            name: agentResponse.contextData.workflowData.name,
+            description: agentResponse.contextData.workflowData.description
+          } : undefined),
+          // NEW: Function calling results
+          functionResults: agentResponse.contextData?.functionResults,
+          data: globalContext, // Include full context for debugging
+          timestamp: new Date().toISOString()
+        };
 
 
 
@@ -247,7 +249,7 @@ export const callAIAgent = onCall(
       } catch (error: any) {
         const errorAgentId = request.data?.agentId;
         const errorOrgId = request.auth ? (await auth.getUser(request.auth.uid).catch(() => null))?.customClaims?.organizationId : null;
-        
+
         // Capture error in Sentry
         captureException(error, {
           function: 'callAIAgent',
@@ -255,7 +257,7 @@ export const callAIAgent = onCall(
           organizationId: errorOrgId,
           hasContext: !!request.data?.context
         });
-        
+
         console.error('❌ [AI AGENT] Error calling agent:', error);
         console.error('❌ [AI AGENT] Error stack:', error.stack);
         console.error('❌ [AI AGENT] Error details:', {

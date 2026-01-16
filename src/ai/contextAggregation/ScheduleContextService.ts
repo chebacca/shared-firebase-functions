@@ -8,7 +8,8 @@
 import { getFirestore } from 'firebase-admin/firestore';
 import * as admin from 'firebase-admin';
 
-const db = getFirestore();
+// Initialize getDb() lazily
+const getDb = () => getFirestore();
 
 export interface ScheduleContext {
   // Calendar events linked to pitches/stories
@@ -118,7 +119,7 @@ export async function gatherScheduleContext(
 
     try {
       try {
-        eventsSnapshot = await db
+        eventsSnapshot = await getDb()
           .collection('clipShowCalendarEvents')
           .where('organizationId', '==', organizationId)
           .limit(500)
@@ -126,7 +127,7 @@ export async function gatherScheduleContext(
           .catch((error: any) => {
             const errorCode = error?.code;
             const errorMessage = error?.message || '';
-            
+
             // Handle FAILED_PRECONDITION (missing index) gracefully
             if (errorCode === 9 || errorCode === '9' || errorCode === 'FAILED_PRECONDITION' || errorMessage.includes('FAILED_PRECONDITION')) {
               console.warn('⚠️ [ScheduleContext] Missing Firestore index for clipShowCalendarEvents. Query skipped:', {
@@ -137,7 +138,7 @@ export async function gatherScheduleContext(
               });
               return { empty: true, forEach: () => { }, docs: [] } as any;
             }
-            
+
             console.warn('⚠️ [ScheduleContext] Error fetching clipShowCalendarEvents:', {
               message: errorMessage,
               code: errorCode,
@@ -149,7 +150,7 @@ export async function gatherScheduleContext(
         // If empty, try legacy 'calendarEvents'
         if (eventsSnapshot && eventsSnapshot.empty) {
           try {
-            const legacySnapshot = await db
+            const legacySnapshot = await getDb()
               .collection('calendarEvents')
               .where('organizationId', '==', organizationId)
               .limit(500)
@@ -172,7 +173,7 @@ export async function gatherScheduleContext(
       } catch (error: any) {
         const errorCode = error?.code;
         const errorMessage = error?.message || '';
-        
+
         // Handle FAILED_PRECONDITION (missing index) gracefully
         if (errorCode === 9 || errorCode === '9' || errorCode === 'FAILED_PRECONDITION' || errorMessage.includes('FAILED_PRECONDITION')) {
           console.warn('⚠️ [ScheduleContext] Missing Firestore index detected in catch block. Query skipped:', {
@@ -186,7 +187,7 @@ export async function gatherScheduleContext(
           console.warn('⚠️ [ScheduleContext] Error in events query block:', errorMessage, errorCode);
           // Try fallback
           try {
-            eventsSnapshot = await db
+            eventsSnapshot = await getDb()
               .collection('calendarEvents')
               .where('organizationId', '==', organizationId)
               .get()
@@ -200,7 +201,7 @@ export async function gatherScheduleContext(
     } catch (error: any) {
       const errorCode = error?.code;
       const errorMessage = error?.message || '';
-      
+
       // Handle FAILED_PRECONDITION (missing index) gracefully
       if (errorCode === 9 || errorCode === '9' || errorCode === 'FAILED_PRECONDITION' || errorMessage.includes('FAILED_PRECONDITION')) {
         console.warn('⚠️ [ScheduleContext] Missing Firestore index detected in outer catch. Query skipped:', {
@@ -248,12 +249,12 @@ export async function gatherScheduleContext(
 
     try {
       const results = await Promise.allSettled([
-        db
+        getDb()
           .collection('clipShowPitches')
           .where('organizationId', '==', organizationId)
           .limit(500)
           .get(),
-        db
+        getDb()
           .collection('clipShowStories')
           .where('organizationId', '==', organizationId)
           .limit(500)

@@ -1,0 +1,141 @@
+import * as admin from 'firebase-admin';
+import { WebClient } from '@slack/web-api';
+import { google } from 'googleapis';
+import * as nodemailer from 'nodemailer';
+import { decryptToken } from '../integrations/unified-oauth/encryption';
+import axios from 'axios';
+
+export interface ExportDestination {
+    type: 'slack' | 'drive' | 'email';
+    recipient: string; // channel ID, folder ID, or email address
+}
+
+export class ReportExportService {
+    private db = admin.firestore();
+
+    async exportReport(
+        organizationId: string,
+        reportUrl: string,
+        destination: ExportDestination
+    ): Promise<{ success: boolean; message: string }> {
+
+        console.log(`🚀 Exporting report for org ${organizationId} to ${destination.type} (${destination.recipient})`);
+
+        // 1. Download the report buffer from the URL
+        const reportBuffer = await this.downloadReport(reportUrl);
+
+        try {
+            switch (destination.type) {
+                case 'slack':
+                    return await this.exportToSlack(organizationId, reportBuffer, destination.recipient);
+                case 'drive':
+                    return await this.exportToDrive(organizationId, reportBuffer, destination.recipient);
+                case 'email':
+                    return await this.exportToEmail(organizationId, reportBuffer, destination.recipient);
+                default:
+                    throw new Error(`Unsupported export destination: ${destination.type}`);
+            }
+        } catch (error: any) {
+            console.error(`❌ Export failed: ${error.message}`);
+            return { success: false, message: error.message };
+        }
+    }
+
+    private async downloadReport(url: string): Promise<Buffer> {
+        const response = await axios.get(url, { responseType: 'arraybuffer' });
+        return Buffer.from(response.data);
+    }
+
+    private async exportToSlack(organizationId: string, buffer: Buffer, channelId: string): Promise<{ success: boolean; message: string }> {
+        // Get Slack connection
+        const connectionDoc = await this.db
+            .collection('organizations')
+            .doc(organizationId)
+            .collection('cloudIntegrations')
+            .doc('slack')
+            .get();
+
+        if (!connectionDoc.exists) {
+            throw new Error('Slack integration not found for this organization');
+        }
+
+        const data = connectionDoc.data()!;
+        const accessToken = decryptToken(data.accessToken);
+        const client = new WebClient(accessToken);
+
+        const result = await client.files.uploadV2({
+            channel_id: channelId,
+            file: buffer,
+            filename: `Backbone_Report_${Date.now()}.pdf`,
+            initial_comment: 'Here is the generated report you requested.'
+        });
+
+        if (!result.ok) {
+            throw new Error(`Slack upload failed: ${result.error}`);
+        }
+
+        return { success: true, message: `Report exported to Slack channel ${channelId}` };
+    }
+
+    private async exportToDrive(organizationId: string, buffer: Buffer, folderId: string): Promise<{ success: boolean; message: string }> {
+        // Get Google connection
+        const connectionDoc = await this.db
+            .collection('organizations')
+            .doc(organizationId)
+            .collection('cloudIntegrations')
+            .doc('google')
+            .get();
+
+        if (!connectionDoc.exists) {
+            throw new Error('Google Drive integration not found for this organization');
+        }
+
+        const data = connectionDoc.data()!;
+        const accessToken = decryptToken(data.accessToken);
+
+        const auth = new google.auth.OAuth2();
+        auth.setCredentials({ access_token: accessToken });
+        const drive = google.drive({ version: 'v3', auth });
+
+        await drive.files.create({
+            requestBody: {
+                name: `Backbone_Report_${Date.now()}.pdf`,
+                parents: folderId ? [folderId] : undefined
+            },
+            media: {
+                mimeType: 'application/pdf',
+                body: buffer
+            } as any
+        });
+
+        return { success: true, message: `Report exported to Google Drive` };
+    }
+
+    private async exportToEmail(organizationId: string, buffer: Buffer, email: string): Promise<{ success: boolean; message: string }> {
+        // Use the same config as ClipShowPro but more generic
+        const transporter = nodemailer.createTransport({
+            host: 'smtp.gmail.com',
+            port: 587,
+            secure: false,
+            auth: {
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_PASS
+            }
+        });
+
+        await transporter.sendMail({
+            from: process.env.EMAIL_FROM || 'Backbone Intelligence <noreply@backbone.ai>',
+            to: email,
+            subject: 'AI-Generated Project Report',
+            text: 'Please find the attached project report generated by Backbone Intelligence.',
+            attachments: [
+                {
+                    filename: `Report_${Date.now()}.pdf`,
+                    content: buffer
+                }
+            ]
+        });
+
+        return { success: true, message: `Report sent to ${email}` };
+    }
+}

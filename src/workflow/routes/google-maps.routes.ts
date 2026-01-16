@@ -6,10 +6,10 @@
 
 import { Router } from 'express';
 import { getApiServiceConfig } from '../utils/environment';
-import * as admin from 'firebase-admin';
+import { db } from '../../shared/utils';
+import { FieldValue } from 'firebase-admin/firestore';
 
-const router = Router();
-const db = admin.firestore();
+const router: Router = Router();
 
 // Google Maps API configuration endpoint
 router.get('/config', async (req, res) => {
@@ -100,7 +100,7 @@ router.post('/locations', async (req, res) => {
       latitude,
       longitude,
       metadata: metadata || {},
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
       updatedBy: userId
     };
 
@@ -120,7 +120,7 @@ router.post('/locations', async (req, res) => {
       await locationDoc.ref.update(locationData);
     } else {
       // Create new location
-      locationData.createdAt = admin.firestore.FieldValue.serverTimestamp();
+      locationData.createdAt = FieldValue.serverTimestamp();
       locationData.createdBy = userId;
       locationDoc = await db.collection('entityLocations').add(locationData);
     }

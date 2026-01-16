@@ -7,7 +7,8 @@
 
 import { getFirestore } from 'firebase-admin/firestore';
 
-const db = getFirestore();
+// Initialize getDb() lazily
+const getDb = () => getFirestore();
 
 export interface SessionContext {
   // Current session information (if sessionId provided)
@@ -68,7 +69,7 @@ export async function gatherSessionContext(
       let sessionData: any = null;
       try {
         // Get session document
-        const sessionDoc = await db.collection('sessions')
+        const sessionDoc = await getDb().collection('sessions')
           .doc(sessionId)
           .get();
         
@@ -91,7 +92,7 @@ export async function gatherSessionContext(
       // Get existing workflow instances for this session (with error handling)
       let existingWorkflows: any[] = [];
       try {
-        const workflowInstancesSnapshot = await db.collection('workflowInstances')
+        const workflowInstancesSnapshot = await getDb().collection('workflowInstances')
           .where('sessionId', '==', sessionId)
           .get();
         
@@ -113,7 +114,7 @@ export async function gatherSessionContext(
       // Get team assignments for this session (with error handling)
       let teamMembers: any[] = [];
       try {
-        const assignmentsSnapshot = await db.collection('sessionAssignments')
+        const assignmentsSnapshot = await getDb().collection('sessionAssignments')
           .where('sessionId', '==', sessionId)
           .get();
         
@@ -133,7 +134,7 @@ export async function gatherSessionContext(
       // Get deliverables for this session (with error handling)
       let deliverables: any[] = [];
       try {
-        const deliverablesSnapshot = await db.collection('deliverables')
+        const deliverablesSnapshot = await getDb().collection('deliverables')
           .where('sessionId', '==', sessionId)
           .limit(20)
           .get();
@@ -192,7 +193,7 @@ export async function gatherSessionContext(
 
     // Otherwise, gather organization-wide statistics (with error handling)
     try {
-      const sessionsSnapshot = await db.collection('sessions')
+      const sessionsSnapshot = await getDb().collection('sessions')
         .where('organizationId', '==', organizationId)
         .limit(100)
         .get();
@@ -235,7 +236,7 @@ export async function gatherSessionContext(
 
     // Get active workflow instances count (with error handling)
     try {
-      const activeWorkflowsSnapshot = await db.collection('workflowInstances')
+      const activeWorkflowsSnapshot = await getDb().collection('workflowInstances')
         .where('organizationId', '==', organizationId)
         .where('status', 'in', ['ACTIVE', 'IN_PROGRESS', 'PENDING'])
         .limit(100)

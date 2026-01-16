@@ -1209,4 +1209,23 @@ WORKFLOW TOOLS (26 Tools)
   - Update the status of a workflow step. Can change status to any valid state (PENDING, IN_PROGRESS, COMPLETED, BLOCKED, PAUSED, SKIPPED).
   - Required: stepId, status (PENDING| IN_PROGRESS| COMPLETED| BLOCKED| PAUSED| SKIPPED), organizationId
   - Optional: notes, progress
+
+═══════════════════════════════════════════════════════════════════════════════
+REPORTS & ANALYTICS TOOLS (3 Tools)
+═══════════════════════════════════════════════════════════════════════════════
+
+- **generate_report**
+  - Generate a comprehensive PDF report for a project with AI insights and data visualizations. Use this when the user asks to create, generate, or download a report.
+  - Required: organizationId, projectId, reportType (executive| detailed| financial| production)
+  - Optional: dateRange, includeInsights, includeCharts
+
+- **analyze_project**
+  - Analyze project data and generate AI insights without creating a PDF file. Use this when the user asks questions about project status, risks, budget health, or needs a quick summary.
+  - Required: organizationId, projectId
+  - Optional: analysisType (executive| detailed| financial| production), focusAreas
+
+- **export_report**
+  - Export a generated report to an external destination (e.g., Email, Google Drive, Slack). Use this after generating a report if the user wants to share specific files.
+  - Required: organizationId, reportUrl, destination (email| drive| slack)
+  - Optional: recipient
 `;

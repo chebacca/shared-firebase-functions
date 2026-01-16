@@ -8,9 +8,9 @@ node_modules/
 !pnpm-lock.yaml
 
 # Build outputs
-lib/
-dist/
-build/
+!lib/
+!dist/
+!build/
 
 # Source files (only compiled lib/ is needed)
 src/
@@ -61,3 +61,16 @@ firebase-debug.*.log
 tsconfig.json
 tsconfig.*.json
 
+# Additional ignores for efficiency
+functions_list.json
+functions_list.txt
+*.sh
+test/
+tests/
+**/*.test.js
+**/*.spec.js
+*.js
+!index.js
+!lib/**/*.js
+!shared-backbone-intelligence-1.0.0.tgz
+!shared-firebase-models-1.0.0.tgz

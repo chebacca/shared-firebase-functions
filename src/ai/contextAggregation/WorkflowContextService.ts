@@ -11,7 +11,8 @@
 import { getFirestore } from 'firebase-admin/firestore';
 import * as admin from 'firebase-admin';
 
-const db = getFirestore();
+// Initialize getDb() lazily to avoid initialization errors during deployment
+const getDb = () => getFirestore();
 
 export interface WorkflowContext {
   // Current phase distribution
@@ -136,11 +137,11 @@ export async function gatherWorkflowContext(
 
   // Fetch all pitches and stories
   const [pitchesSnapshot, storiesSnapshot] = await Promise.all([
-    db
+    getDb()
       .collection('clipShowPitches')
       .where('organizationId', '==', organizationId)
       .get(),
-    db
+    getDb()
       .collection('clipShowStories')
       .where('organizationId', '==', organizationId)
       .get()

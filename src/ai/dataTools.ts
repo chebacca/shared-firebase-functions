@@ -1,4 +1,11 @@
 import { FunctionDeclaration, SchemaType } from '@google/generative-ai';
+import { allTools } from 'shared-backbone-intelligence';
+import { mapSharedToolToGeminiDeclaration } from './utils/schemaMapping';
+
+/**
+ * Shared Tool Declarations (Dynamically mapped from shared-backbone-intelligence)
+ */
+export const sharedToolDeclarations: FunctionDeclaration[] = allTools.map(mapSharedToolToGeminiDeclaration);
 
 /**
  * Data Tools for Gemini
@@ -6,6 +13,7 @@ import { FunctionDeclaration, SchemaType } from '@google/generative-ai';
  * Defines the tools that allow the AI to query Firestore data directly.
  */
 export const dataToolDeclarations: FunctionDeclaration[] = [
+    // ... existing declarations ...
     {
         name: 'list_projects',
         description: 'List active projects for the organization, optionally filtering by status. Use this to find projects.',

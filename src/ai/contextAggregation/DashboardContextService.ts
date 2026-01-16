@@ -7,7 +7,8 @@
 
 import { getFirestore } from 'firebase-admin/firestore';
 
-const db = getFirestore();
+// Initialize getDb() lazily
+const getDb = () => getFirestore();
 
 export interface DashboardContext {
   activeProjects: number;
@@ -30,8 +31,8 @@ export async function gatherDashboardContext(
   organizationId: string
 ): Promise<DashboardContext> {
   // Query projects using the same pattern as Dashboard functions
-  // Pattern: db.collection('projects').where('organizationId', '==', organizationId)
-  const projectsSnapshot = await db
+  // Pattern: getDb().collection('projects').where('organizationId', '==', organizationId)
+  const projectsSnapshot = await getDb()
     .collection('projects')
     .where('organizationId', '==', organizationId)
     .get();

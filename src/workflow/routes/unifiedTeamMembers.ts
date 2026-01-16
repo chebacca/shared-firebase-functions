@@ -13,7 +13,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 
 import { enhancedAuthMiddleware, requirePermission } from '../middleware/tierAuth';
 
-const router = Router();
+const router: Router = Router();
 
 // Handle OPTIONS preflight requests for CORS
 router.use((req, res, next) => {

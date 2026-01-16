@@ -375,11 +375,12 @@ export const HOT_CONTAINER_CONTEXTS: HotContainerContextDef[] = [
         phase: "PHASE 7: SYSTEM & MONITORING"
     },
     {
-        id: "reports",
-        name: "ReportsWrapper",
-        purpose: "Generated reports and analytics",
-        useWhen: "User asks about reports, generated reports, or report history",
-        keywords: ["reports", "report history", "generated reports", "analytics reports"],
+        id: "report_generator",
+        name: "ReportGeneratorWrapper",
+        purpose: "Full PDF report generation with AI analysis, financial charts, and production timelines.",
+        useWhen: "User wants to generate, create, or download a formal PDF report (Executive, Financial, Production, or Detailed).",
+        features: ["PDF exporting", "Real-time generation progress", "AI-driven executive summaries", "Interactive charts"],
+        keywords: ["generate report", "create report", "download report", "executive report", "financial report", "production report", "pdf analysis"],
         phase: "PHASE 7: SYSTEM & MONITORING"
     },
 
@@ -411,19 +412,11 @@ export const HOT_CONTAINER_CONTEXTS: HotContainerContextDef[] = [
 
     // OTHER / PHASE 4 ADDITIONAL
     {
-        id: "stories",
-        name: "StoriesWrapper",
-        purpose: "ClipShow story management",
-        useWhen: "User asks for 'stories' specifically (distinct from scripts)",
-        keywords: ["stories", "clipshow", "narrative", "arcs"],
-        phase: "PHASE 4: ADDITIONAL"
-    },
-    {
-        id: "analytics",
-        name: "AnalyticsWrapper",
-        purpose: "Global project analytics and insights",
-        useWhen: "User wants performance metrics, graphs, or high-level stats",
-        keywords: ["analytics", "stats", "metrics", "performance", "charts"],
+        id: "scripting",
+        name: "ClipShowBridge",
+        purpose: "Clip Show Pro Bridge",
+        useWhen: "User wants to open Clip Show Pro",
+        keywords: ["clipshow", "scripting", "open clipshow", "bridge"],
         phase: "PHASE 4: ADDITIONAL"
     },
     {

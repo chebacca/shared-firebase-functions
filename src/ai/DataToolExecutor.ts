@@ -1,6 +1,11 @@
 import { getFirestore } from 'firebase-admin/firestore';
 import { getPredictiveAnalyticsService } from '../ml/PredictiveAnalyticsService';
 import { getVectorSearchService } from '../ml/VectorSearchService';
+import {
+    createProjectTool as sharedCreateProjectTool,
+    createSessionTool as sharedCreateSessionTool,
+    createCallSheetTool as sharedCreateCallSheetTool
+} from 'shared-backbone-intelligence';
 
 import { googleMapsService } from '../google/maps';
 
@@ -29,25 +34,6 @@ export class DataToolExecutor {
                 case 'get_project_details':
                     return this.getProjectDetails(args, organizationId);
 
-                case 'search_users':
-                    return this.searchUsers(args, organizationId);
-
-                case 'check_schedule':
-                    return this.checkSchedule(args, organizationId);
-
-                case 'search_knowledge_base':
-                    return this.searchKnowledgeBase(args, organizationId);
-
-                case 'search_google_places':
-                    return this.searchGooglePlaces(args);
-
-                // Execution Tools
-                case 'create_project':
-                    return this.createProject(args, organizationId, userId);
-
-                case 'manage_task':
-                    return this.manageTask(args, organizationId, userId);
-
                 case 'assign_team_member':
                     return this.assignTeamMember(args, organizationId);
 
@@ -60,66 +46,86 @@ export class DataToolExecutor {
                 case 'list_timecards':
                     return this.listTimecards(args, organizationId);
 
-                // ML-Powered Tools
-                case 'predict_budget_health':
-                    return this.predictBudgetHealth(args, organizationId);
-
-                case 'forecast_spending':
-                    return this.forecastSpending(args, organizationId);
-
-                case 'predict_resource_availability':
-                    return this.predictResourceAvailability(args, organizationId);
-
-                case 'semantic_search':
-                    return this.semanticSearch(args, organizationId);
-
-                case 'find_similar_entities':
-                    return this.findSimilarEntities(args, organizationId);
-
-                case 'query_firestore':
-                    return this.queryFirestore(args, organizationId);
-
-                case 'list_collections':
-                    return this.listCollections();
-
-                case 'universal_create':
-                    return this.universalCreate(args, organizationId, userId);
-
-                case 'universal_update':
-                    return this.universalUpdate(args, organizationId, userId);
-
-                case 'create_session':
-                    return this.createSession(args, organizationId, userId);
-
-                case 'create_call_sheet':
-                    return this.createCallSheet(args, organizationId, userId);
-
                 case 'manage_contact':
                     return this.manageContact(args, organizationId, userId);
-
-                case 'create_budget':
-                    return this.createBudget(args, organizationId, userId);
-
-                case 'manage_inventory_item':
-                    return this.manageInventoryItem(args, organizationId, userId);
 
                 case 'log_visitor':
                     return this.logVisitor(args, organizationId, userId);
 
-                case 'create_delivery_package':
-                    return this.createDeliveryPackage(args, organizationId, userId);
+                case 'generate_report':
+                    return this.generateReport(args, organizationId, userId);
+
+                case 'analyze_project':
+                    return this.analyzeProject(args, organizationId, userId);
+
+                case 'export_report':
+                    return this.exportReport(args, organizationId, userId);
 
                 default:
-                    return {
-                        success: false,
-                        error: `Unknown data tool: ${toolName}`
-                    };
+                    // 🚀 UNIFIED INTELLIGENCE: Fallback to shared library (Generic Actions)
+                    console.log(`📡 [DataToolExecutor] Fallback to shared registry for: ${toolName}`);
+                    return this.executeSharedTool(toolName, args, organizationId, userId);
             }
         } catch (error: any) {
             console.error(`❌ [DataToolExecutor] Error executing ${toolName}:`, error);
             return {
                 success: false,
                 error: error.message || 'Tool execution failed'
+            };
+        }
+    }
+
+    /**
+     * Executes a tool from the shared registry
+     */
+    private static async executeSharedTool(
+        toolName: string,
+        args: any,
+        organizationId: string,
+        userId: string
+    ): Promise<ToolExecutionResult> {
+        try {
+            const { allTools } = await import('shared-backbone-intelligence');
+            const tool = allTools.find((t: any) => t.name === toolName);
+
+            if (!tool) {
+                return {
+                    success: false,
+                    error: `Unknown tool: ${toolName}. (Checked local switch and shared registry)`
+                };
+            }
+
+            console.log(`✅ [DataToolExecutor] Executing SHARED tool: ${toolName}`);
+
+            // Inject organizationId and userId into args if they are missing or required by the shared tool
+            const toolArgs = {
+                ...args,
+                organizationId: args.organizationId || organizationId,
+                userId: args.userId || userId
+            };
+
+            const result = await tool.execute(toolArgs);
+
+            if (result.isError) {
+                return {
+                    success: false,
+                    error: result.content?.[0]?.text || 'Shared tool execution failed'
+                };
+            }
+
+            // Extract data from shared tool response
+            const responseText = result.content?.[0]?.text;
+            const responseData = responseText ? JSON.parse(responseText) : {};
+
+            return {
+                success: true,
+                data: responseData
+            };
+        } catch (error: any) {
+            console.error(`❌ [DataToolExecutor] Shared tool execution error:`, error);
+            return {
+                success: false,
+                error: `Shared tool execution failed: ${error.message}`
             };
         }
     }
@@ -525,33 +531,39 @@ export class DataToolExecutor {
     }
 
     // Execution Actions
+
     private static async createProject(args: any, organizationId: string, userId: string): Promise<ToolExecutionResult> {
         try {
-            if (!args.name) throw new Error('Project name is required');
+            console.log(`🎬 [DataToolExecutor] Creating project using SHARED logic`);
 
-            const projectRef = db.collection('projects').doc();
-            const projectData = {
-                name: args.name,
-                phase: args.phase || 'PRE_PRODUCTION',
-                description: args.description || '',
-                organizationId,
-                createdBy: userId,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-                status: 'ACTIVE'
+            // Execute using the shared library tool
+            // Note: Shared tool expects specific args structure, we might need to adapt if Gemini args differ significantly.
+            // But based on our schema, they match closely (name, description, etc.)
+            // We just need to inject the organizationId which the tool expects in args but we have in context.
+
+            const toolArgs = {
+                ...args,
+                organizationId, // Inject org ID from context
+                // 'type' and 'scope' might default in the tool if missing
             };
 
-            await projectRef.set(projectData);
+            const result = await sharedCreateProjectTool.execute(toolArgs);
+
+            if (result.isError) {
+                return { success: false, error: result.content?.[0]?.text || 'Unknown error in shared tool' };
+            }
+
+            // Extract relevant data from shared tool response
+            // Shared tool returns { content: [{ text: JSON.stringify({...}) }] }
+            const responseText = result.content?.[0]?.text;
+            const responseData = responseText ? JSON.parse(responseText) : {};
 
             return {
                 success: true,
-                data: {
-                    id: projectRef.id,
-                    ...projectData,
-                    message: `Project "${args.name}" created successfully.`
-                }
+                data: responseData
             };
         } catch (error: any) {
+            console.error('❌ [DataToolExecutor] Error in createProject:', error);
             return { success: false, error: error.message };
         }
     }
@@ -803,52 +815,52 @@ export class DataToolExecutor {
 
     private static async createSession(args: any, organizationId: string, userId: string): Promise<ToolExecutionResult> {
         try {
-            if (!args.title || !args.projectId) throw new Error('title and projectId are required');
+            console.log(`🎬 [DataToolExecutor] Creating session using SHARED logic`);
 
-            const sessionRef = db.collection('sessions').doc();
-            const sessionData = {
-                title: args.title,
-                projectId: args.projectId,
-                organizationId,
-                type: args.type || 'Capture',
-                status: 'SCHEDULED',
-                scheduledAt: args.scheduledAt ? new Date(args.scheduledAt) : new Date(),
-                durationMinutes: args.durationMinutes || 60,
-                createdBy: userId,
-                createdAt: new Date(),
-                updatedAt: new Date()
+            const toolArgs = {
+                ...args,
+                organizationId
             };
 
-            await sessionRef.set(sessionData);
-            return { success: true, data: { id: sessionRef.id, ...sessionData } };
+            // Cast to any to bypass strict type checking against shared tool signature for now
+            // In a full implementation, we'd import the Zod schema and parse
+            const result = await sharedCreateSessionTool.execute(toolArgs as any);
+
+            if (result.isError) {
+                return { success: false, error: result.content?.[0]?.text || 'Unknown error in shared tool' };
+            }
+
+            const responseText = result.content?.[0]?.text;
+            const responseData = responseText ? JSON.parse(responseText) : {};
+
+            return { success: true, data: responseData };
         } catch (error: any) {
+            console.error('❌ [DataToolExecutor] Error in createSession:', error);
             return { success: false, error: error.message };
         }
     }
 
     private static async createCallSheet(args: any, organizationId: string, userId: string): Promise<ToolExecutionResult> {
         try {
-            if (!args.title || !args.projectId || !args.date) throw new Error('title, projectId, and date are required');
+            console.log(`🎬 [DataToolExecutor] Creating call sheet using SHARED logic`);
 
-            const callSheetRef = db.collection('callSheets').doc();
-            const callSheetData = {
-                title: args.title,
-                date: args.date,
-                projectId: args.projectId,
-                organizationId,
-                startTime: args.startTime || '08:00',
-                location: args.location || 'TBD',
-                notes: args.notes || '',
-                status: 'draft',
-                accessCode: Math.random().toString(36).substring(2, 8).toUpperCase(),
-                createdBy: userId,
-                createdAt: new Date(),
-                updatedAt: new Date()
+            const toolArgs = {
+                ...args,
+                organizationId
             };
 
-            await callSheetRef.set(callSheetData);
-            return { success: true, data: { id: callSheetRef.id, ...callSheetData } };
+            const result = await sharedCreateCallSheetTool.execute(toolArgs as any);
+
+            if (result.isError) {
+                return { success: false, error: result.content?.[0]?.text || 'Unknown error in shared tool' };
+            }
+
+            const responseText = result.content?.[0]?.text;
+            const responseData = responseText ? JSON.parse(responseText) : {};
+
+            return { success: true, data: responseData };
         } catch (error: any) {
+            console.error('❌ [DataToolExecutor] Error in createCallSheet:', error);
             return { success: false, error: error.message };
         }
     }
@@ -976,6 +988,73 @@ export class DataToolExecutor {
             return { success: false, error: error.message };
         }
     }
+    private static async generateReport(args: any, organizationId: string, userId: string): Promise<ToolExecutionResult> {
+        try {
+            console.log(`📊 [DataToolExecutor] Generating report for project: ${args.projectId}`);
+            const { ReportGeneratorService } = await import('../reports/ReportGeneratorService');
+            const generator = new ReportGeneratorService();
+
+            const result = await generator.generateReport(
+                args.projectId || 'current',
+                args.reportType || 'executive',
+                args.options || {}
+            );
+
+            return {
+                success: true,
+                data: result
+            };
+        } catch (error: any) {
+            console.error('❌ [DataToolExecutor] Error generating report:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    private static async analyzeProject(args: any, organizationId: string, userId: string): Promise<ToolExecutionResult> {
+        try {
+            console.log(`🔍 [DataToolExecutor] Analyzing project: ${args.projectId}`);
+            const { DocumentAnalysisService } = await import('./services/DocumentAnalysisService');
+            const { EnhancedDataCollectionService } = await import('../reports/EnhancedDataCollectionService');
+
+            const dataCollection = new EnhancedDataCollectionService();
+            const analysisService = new DocumentAnalysisService();
+
+            const projectData = await dataCollection.collectData(organizationId, args.projectId);
+            const insights = await analysisService.analyzeProject(projectData, {
+                reportType: args.analysisType || 'executive'
+            });
+
+            return {
+                success: true,
+                data: insights
+            };
+        } catch (error: any) {
+            console.error('❌ [DataToolExecutor] Error analyzing project:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    private static async exportReport(args: any, organizationId: string, userId: string): Promise<ToolExecutionResult> {
+        try {
+            console.log(`📤 [DataToolExecutor] Exporting report: ${args.reportUrl} to ${args.destination}`);
+            const { ReportExportService } = await import('../reports/ReportExportService');
+            const exportService = new ReportExportService();
+
+            const result = await exportService.exportReport(organizationId, args.reportUrl, {
+                type: args.destination,
+                recipient: args.recipient
+            });
+
+            return {
+                success: true,
+                data: result
+            };
+        } catch (error: any) {
+            console.error('❌ [DataToolExecutor] Error exporting report:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
 
     private static generateTableColumns(data: any[]): any[] {
         if (!data || data.length === 0) return [];

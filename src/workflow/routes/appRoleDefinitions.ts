@@ -6,7 +6,7 @@ import { appRoleDefinitionService } from '../../roles/AppRoleDefinitionService';
 // AppName type definition (inline since shared-firebase-models may not be available)
 type AppName = 'dashboard' | 'clipShowPro' | 'callSheet' | 'cuesheet';
 
-const router = Router();
+const router: Router = Router();
 
 // Apply authentication to all routes
 router.use(enhancedAuthMiddleware);
@@ -20,7 +20,7 @@ router.get('/organizations/:orgId/app-roles/:appName',
   async (req, res) => {
     try {
       const { orgId, appName } = req.params;
-      
+
       // Verify user belongs to this organization
       if (req.user?.organizationId !== orgId) {
         return res.status(403).json({
@@ -39,7 +39,7 @@ router.get('/organizations/:orgId/app-roles/:appName',
       }
 
       const roles = await appRoleDefinitionService.getAvailableAppRoles(orgId, appName as AppName);
-      
+
       return res.json({
         success: true,
         data: roles
@@ -74,7 +74,7 @@ router.get('/app-roles/system-defaults/:appName',
       }
 
       const roles = await appRoleDefinitionService.getSystemDefaults(appName as AppName);
-      
+
       return res.json({
         success: true,
         data: roles
@@ -100,7 +100,7 @@ router.post('/organizations/:orgId/app-roles/:appName',
     try {
       const { orgId, appName } = req.params;
       const { roleValue, displayName, description, permissions, hierarchy } = req.body;
-      
+
       // Verify user belongs to this organization
       if (req.user?.organizationId !== orgId) {
         return res.status(403).json({
@@ -138,7 +138,7 @@ router.post('/organizations/:orgId/app-roles/:appName',
         },
         req.user?.uid || 'system'
       );
-      
+
       return res.status(201).json({
         success: true,
         data: newRole,
@@ -165,7 +165,7 @@ router.put('/organizations/:orgId/app-roles/:appName/:roleId',
     try {
       const { orgId, appName, roleId } = req.params;
       const updates = req.body;
-      
+
       // Verify user belongs to this organization
       if (req.user?.organizationId !== orgId) {
         return res.status(403).json({
@@ -184,12 +184,12 @@ router.put('/organizations/:orgId/app-roles/:appName/:roleId',
       }
 
       const updatedRole = await appRoleDefinitionService.updateCustomAppRole(
-        orgId,
-        appName as AppName,
-        roleId,
+        orgId as string,
+        appName as string as AppName,
+        roleId as string,
         updates
       );
-      
+
       return res.json({
         success: true,
         data: updatedRole,
@@ -215,7 +215,7 @@ router.delete('/organizations/:orgId/app-roles/:appName/:roleId',
   async (req, res) => {
     try {
       const { orgId, appName, roleId } = req.params;
-      
+
       // Verify user belongs to this organization
       if (req.user?.organizationId !== orgId) {
         return res.status(403).json({
@@ -234,11 +234,11 @@ router.delete('/organizations/:orgId/app-roles/:appName/:roleId',
       }
 
       await appRoleDefinitionService.deleteCustomAppRole(
-        orgId,
-        appName as AppName,
-        roleId
+        orgId as string,
+        appName as string as AppName,
+        roleId as string
       );
-      
+
       return res.json({
         success: true,
         message: 'Custom app role deleted successfully'
@@ -263,7 +263,7 @@ router.post('/organizations/:orgId/app-roles/:appName/validate',
     try {
       const { orgId, appName } = req.params;
       const { roleValue } = req.body;
-      
+
       // Verify user belongs to this organization
       if (req.user?.organizationId !== orgId) {
         return res.status(403).json({
@@ -293,7 +293,7 @@ router.post('/organizations/:orgId/app-roles/:appName/validate',
         appName as AppName,
         roleValue
       );
-      
+
       return res.json({
         success: true,
         data: validation

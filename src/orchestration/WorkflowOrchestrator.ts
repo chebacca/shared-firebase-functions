@@ -6,7 +6,7 @@ let BaseMessage: any;
 let HumanMessage: any;
 
 try {
-  const langgraph = require('langgraph');
+  const langgraph = require('@langchain/langgraph');
   const langchain = require('@langchain/core/messages');
   StateGraph = langgraph.StateGraph;
   START = langgraph.START;
@@ -14,7 +14,7 @@ try {
   BaseMessage = langchain.BaseMessage;
   HumanMessage = langchain.HumanMessage;
 } catch (e) {
-  console.warn('⚠️ LangGraph packages not installed. Orchestration disabled.');
+  console.warn('⚠️ LangGraph packages not installed or fail to load. Orchestration disabled.', e);
 }
 import { traceFunction, addSpanAttribute } from '../observability/tracer';
 import { captureException } from '../observability/sentry';
@@ -34,14 +34,14 @@ export interface WorkflowState {
 
 export class WorkflowOrchestrator {
   private graph: any;
-  
+
   constructor() {
     if (!StateGraph) {
       throw new Error('LangGraph not installed. Install langgraph and @langchain/core to use orchestration.');
     }
     this.graph = this.buildGraph();
   }
-  
+
   private buildGraph() {
     if (!StateGraph) {
       throw new Error('LangGraph not available');
@@ -53,14 +53,14 @@ export class WorkflowOrchestrator {
         errors: { reducer: (x: Error[], y: Error[]) => x.concat(y) }
       }
     });
-    
+
     // Add nodes for each orchestration step
     workflow.addNode("analyze", this.analyzeRequest.bind(this));
     workflow.addNode("query_notebooklm", this.queryNotebookLM.bind(this));
     workflow.addNode("execute_mcp_tools", this.executeMCPTools.bind(this));
     workflow.addNode("generate_response", this.generateResponse.bind(this));
     workflow.addNode("error_handler", this.handleError.bind(this));
-    
+
     // Define edges
     workflow.addEdge(START, "analyze");
     workflow.addConditionalEdges(
@@ -76,33 +76,33 @@ export class WorkflowOrchestrator {
     workflow.addEdge("execute_mcp_tools", "generate_response");
     workflow.addEdge("generate_response", END);
     workflow.addEdge("error_handler", END);
-    
+
     return workflow.compile();
   }
-  
+
   private async analyzeRequest(state: WorkflowState): Promise<Partial<WorkflowState>> {
     return traceFunction('workflow.analyze', async () => {
       addSpanAttribute('workflow.step', 'analyze');
       addSpanAttribute('organization.id', state.organizationId);
-      
+
       // Call MasterAgent to analyze request
       const analysis = await this.callMasterAgent(state);
-      
+
       return {
         context: { ...state.context, analysis },
         results: { ...state.results, analysis }
       };
     });
   }
-  
+
   private async queryNotebookLM(state: WorkflowState): Promise<Partial<WorkflowState>> {
     return traceFunction('workflow.notebooklm', async () => {
       addSpanAttribute('workflow.step', 'query_notebooklm');
-      
+
       try {
         // Call NotebookLM service
         const notebookResults = await this.callNotebookLMService(state);
-        
+
         return {
           results: { ...state.results, notebookLM: notebookResults }
         };
@@ -114,27 +114,27 @@ export class WorkflowOrchestrator {
       }
     });
   }
-  
+
   private async executeMCPTools(state: WorkflowState): Promise<Partial<WorkflowState>> {
     return traceFunction('workflow.mcp_tools', async () => {
       addSpanAttribute('workflow.step', 'execute_mcp_tools');
-      
+
       try {
         // Check if architect provided actions in the plan
         const analysis = state.results.analysis;
         const architectActions = analysis?.actions || [];
-        
+
         if (architectActions.length > 0) {
           console.log('🏛️ [WorkflowOrchestrator] Using actions from Architect plan');
           addSpanAttribute('workflow.actions.source', 'architect');
           addSpanAttribute('workflow.actions.count', architectActions.length);
-          
+
           // Execute actions from architect plan
           const toolResults = await this.executeMCPActions(state, architectActions);
-          
+
           return {
-            results: { 
-              ...state.results, 
+            results: {
+              ...state.results,
               mcpTools: toolResults,
               executedActions: architectActions
             }
@@ -143,7 +143,7 @@ export class WorkflowOrchestrator {
           // Execute MCP tools based on analysis (regular flow)
           console.log('🔄 [WorkflowOrchestrator] Executing MCP tools based on analysis');
           const toolResults = await this.executeMCPActions(state);
-          
+
           return {
             results: { ...state.results, mcpTools: toolResults }
           };
@@ -156,55 +156,55 @@ export class WorkflowOrchestrator {
       }
     });
   }
-  
+
   private async generateResponse(state: WorkflowState): Promise<Partial<WorkflowState>> {
     return traceFunction('workflow.generate_response', async () => {
       addSpanAttribute('workflow.step', 'generate_response');
-      
+
       // Combine all results and generate final response
       const response = await this.synthesizeResponse(state);
-      
+
       return {
         results: { ...state.results, finalResponse: response }
       };
     });
   }
-  
+
   private async handleError(state: WorkflowState): Promise<Partial<WorkflowState>> {
     const errors = state.errors;
     console.error('Workflow errors:', errors);
-    
-    errors.forEach(error => captureException(error, { 
+
+    errors.forEach(error => captureException(error, {
       workflow: 'orchestration',
-      state 
+      state
     }));
-    
+
     return {
-      results: { 
-        ...state.results, 
+      results: {
+        ...state.results,
         error: 'Workflow failed',
         details: errors.map(e => e.message)
       }
     };
   }
-  
+
   private routeAfterAnalysis(state: WorkflowState): string {
     const analysis = state.results.analysis;
-    
+
     if (!analysis || state.errors.length > 0) {
       return "error";
     }
-    
+
     // Route based on analysis
     if (analysis.requiresDocumentKnowledge) {
       return "notebooklm";
     } else if (analysis.requiresActions) {
       return "mcp";
     }
-    
+
     return "error";
   }
-  
+
   async executeWorkflow(
     messages: any[],
     organizationId: string,
@@ -219,52 +219,52 @@ export class WorkflowOrchestrator {
       results: {},
       errors: []
     };
-    
+
     return traceFunction('workflow.execute', async () => {
       addSpanAttribute('workflow.type', 'orchestration');
       addSpanAttribute('organization.id', organizationId);
       addSpanAttribute('user.id', userId);
-      
+
       const result = await this.graph.invoke(initialState);
       return result;
     });
   }
-  
+
   // Integrated with existing GeminiService and Architect mode
   private async callMasterAgent(state: WorkflowState): Promise<any> {
     return traceFunction('workflow.callMasterAgent', async () => {
       try {
         // Get the user's message from state
         const userMessage = state.messages[state.messages.length - 1];
-        const messageText = typeof userMessage === 'string' 
-          ? userMessage 
+        const messageText = typeof userMessage === 'string'
+          ? userMessage
           : (userMessage as any)?.content || (userMessage as any)?.text || '';
-        
+
         // Check if in architect/plan mode
         const isPlanMode = state.context?.activeMode === 'plan_mode';
         const conversationHistory = state.context?.conversationHistory || [];
-        
+
         // Gather global context (same as callAIAgent does)
         const globalContext: GlobalContext = await gatherGlobalContext(
           state.organizationId,
           state.userId
         );
-        
+
         // Add architect mode, conversation history, and current project context
         (globalContext as any).activeMode = state.context?.activeMode || 'none';
         (globalContext as any).conversationHistory = conversationHistory;
-        
+
         // CRITICAL: Add current projectId from Hub context (user's selected project after login)
         const currentProjectId = state.context?.projectId || null;
         if (currentProjectId) {
           (globalContext as any).currentProjectId = currentProjectId;
           console.log(`📁 [WorkflowOrchestrator] Current project context: ${currentProjectId}`);
         }
-        
+
         // Use GeminiService for analysis (same as callAIAgent)
         const geminiService = createGeminiService();
         const currentMode = (state.context?.activeMode as any) || 'none';
-        
+
         // If in plan mode, use architect session
         if (isPlanMode) {
           console.log('🏛️ [WorkflowOrchestrator] Using Architect mode for analysis');
@@ -273,7 +273,7 @@ export class WorkflowOrchestrator {
             globalContext,
             []
           );
-          
+
           // Extract analysis from architect response
           return {
             requiresDocumentKnowledge: false,
@@ -284,7 +284,7 @@ export class WorkflowOrchestrator {
             actions: architectResponse.contextData?.actions || []
           };
         }
-        
+
         // Regular analysis using generateAgentResponse
         const agentResponse = await geminiService.generateAgentResponse(
           messageText,
@@ -292,22 +292,24 @@ export class WorkflowOrchestrator {
           currentMode,
           []
         );
-        
+
         // Analyze the response to determine routing
         const responseText = agentResponse.response.toLowerCase();
-        const requiresDocumentKnowledge = 
+        const requiresDocumentKnowledge =
           responseText.includes('document') ||
           responseText.includes('knowledge base') ||
           responseText.includes('notebooklm') ||
           agentResponse.contextData?.suggestedContext === 'knowledge_base';
-        
-        const requiresActions = 
+
+        const requiresActions =
           responseText.includes('create') ||
           responseText.includes('update') ||
           responseText.includes('delete') ||
           responseText.includes('assign') ||
+          responseText.includes('report') ||
+          responseText.includes('analyze') ||
           agentResponse.contextData?.intent;
-        
+
         return {
           requiresDocumentKnowledge,
           requiresActions,
@@ -317,7 +319,7 @@ export class WorkflowOrchestrator {
       } catch (error: any) {
         console.error('❌ [WorkflowOrchestrator] Error calling MasterAgent:', error);
         captureException(error, { step: 'callMasterAgent', state });
-        
+
         // Fallback to basic analysis
         return {
           requiresDocumentKnowledge: false,
@@ -328,12 +330,12 @@ export class WorkflowOrchestrator {
       }
     });
   }
-  
+
   private async callNotebookLMService(state: WorkflowState): Promise<any> {
     // TODO: Implement NotebookLM service call
     return {};
   }
-  
+
   private async executeMCPActions(state: WorkflowState, architectActions?: any[]): Promise<any> {
     return traceFunction('workflow.executeMCPActions', async () => {
       // If architect provided actions, use those
@@ -341,17 +343,17 @@ export class WorkflowOrchestrator {
         console.log(`🏛️ [WorkflowOrchestrator] Executing ${architectActions.length} actions from Architect plan`);
         addSpanAttribute('workflow.actions.source', 'architect');
         addSpanAttribute('workflow.actions.count', architectActions.length);
-        
+
         // Import executors (same as GeminiService uses)
         const { DataToolExecutor } = await import('../ai/DataToolExecutor');
         const { WorkflowFunctionExecutor } = await import('../ai/workflowFunctionExecutor');
         const { dataToolDeclarations } = await import('../ai/dataTools');
-        
+
         // Execute each action from the architect plan
         // CRITICAL: Store results from previous actions to pass to dependent actions
         const results = [];
         const actionResults: Record<string, any> = {}; // Store results keyed by action type and common IDs
-        
+
         // CRITICAL: Add current project context from Hub (user's selected project after login)
         // This makes it available for variable resolution and auto-fill
         const currentProjectId = state.context?.projectId || null;
@@ -360,11 +362,11 @@ export class WorkflowOrchestrator {
           actionResults['projectId'] = currentProjectId; // Also available as $projectId for convenience
           console.log(`📁 [WorkflowOrchestrator] Current project context available: ${currentProjectId}`);
         }
-        
+
         // Helper function to resolve variables in params (e.g., "$projectId" → actual projectId)
         const resolveVariables = (params: any, results: Record<string, any>): any => {
           if (!params || typeof params !== 'object') return params;
-          
+
           const resolved = { ...params };
           for (const [key, value] of Object.entries(resolved)) {
             if (typeof value === 'string' && value.startsWith('$')) {
@@ -383,26 +385,26 @@ export class WorkflowOrchestrator {
           }
           return resolved;
         };
-        
+
         for (const action of architectActions) {
           try {
             addSpanAttribute(`workflow.action.${action.type}`, 'executing');
-            
+
             // Resolve variables in action params using results from previous actions
             let resolvedParams = resolveVariables(action.params || {}, actionResults);
-            
+
             // CRITICAL: If projectId is missing and we have currentProjectId from context, auto-fill it
             // This ensures project-related actions use the user's selected project from Hub
             if (!resolvedParams.projectId && state.context?.projectId) {
               resolvedParams = { ...resolvedParams, projectId: state.context.projectId };
               console.log(`📁 [WorkflowOrchestrator] Auto-filled projectId from context: ${state.context.projectId}`);
             }
-            
+
             console.log(`🔄 [WorkflowOrchestrator] Action ${action.type} params:`, JSON.stringify(resolvedParams));
-            
+
             // Determine which executor to use (same logic as GeminiService)
             const isDataTool = dataToolDeclarations.some((t: any) => t.name === action.type);
-            
+
             let toolResult;
             if (isDataTool) {
               console.log(`⚙️ [WorkflowOrchestrator] Executing via DataToolExecutor: ${action.type}`);
@@ -421,20 +423,20 @@ export class WorkflowOrchestrator {
                 state.userId
               );
             }
-            
+
             if (toolResult.success) {
               addSpanAttribute(`workflow.action.${action.type}`, 'success');
-              
+
               // Store result for subsequent actions
               const resultData = toolResult.data || {};
-              
+
               // Store by action type
               actionResults[action.type] = resultData;
-              
+
               // Store common ID patterns for easy reference
               if (resultData.id) {
                 actionResults[`${action.type}_id`] = resultData.id;
-                
+
                 // Map common action types to common variable names
                 if (action.type === 'create_project') {
                   actionResults['projectId'] = resultData.id;
@@ -452,16 +454,16 @@ export class WorkflowOrchestrator {
                 } else if (action.type === 'create_budget') {
                   actionResults['budgetId'] = resultData.id;
                 }
-                
+
                 // Also store any other IDs that might be in the result
                 if (resultData.projectId) actionResults['projectId'] = resultData.projectId;
                 if (resultData.sessionId) actionResults['sessionId'] = resultData.sessionId;
                 if (resultData.storyId) actionResults['storyId'] = resultData.storyId;
               }
-              
+
               // Store full result data for complex lookups
               actionResults[`${action.type}_result`] = resultData;
-              
+
               results.push({
                 action: action.type,
                 success: true,
@@ -496,7 +498,7 @@ export class WorkflowOrchestrator {
             });
           }
         }
-        
+
         return {
           executed: results,
           totalActions: architectActions.length,
@@ -504,7 +506,7 @@ export class WorkflowOrchestrator {
           failed: results.filter(r => !r.success).length
         };
       }
-      
+
       // Regular MCP tool execution (when no architect actions)
       // This would be based on analysis - for now return empty
       // TODO: Implement analysis-based tool execution if needed
@@ -515,11 +517,11 @@ export class WorkflowOrchestrator {
       };
     });
   }
-  
+
   private async synthesizeResponse(state: WorkflowState): Promise<any> {
     // Combine results into final response
     const analysis = state.results.analysis;
-    
+
     // If architect provided a response, use it
     if (analysis?.architectResponse) {
       const architectResponse = analysis.architectResponse;
@@ -532,7 +534,7 @@ export class WorkflowOrchestrator {
         }
       };
     }
-    
+
     // If we have agent response, use it
     if (analysis?.agentResponse) {
       return {
@@ -540,7 +542,7 @@ export class WorkflowOrchestrator {
         data: state.results
       };
     }
-    
+
     // Default response
     return {
       message: 'Workflow completed successfully',

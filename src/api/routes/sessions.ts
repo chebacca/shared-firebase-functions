@@ -1,30 +1,30 @@
-import express from 'express';
+import { Router, Request, Response } from 'express';
 import { db } from '../../shared/utils';
 import { authenticateToken } from '../../shared/middleware';
 import { FieldValue } from 'firebase-admin/firestore';
 
-const router = express.Router();
+const router: Router = Router();
 
 // ====================
 // Sessions API
 // ====================
 
 // Handle OPTIONS for sessions endpoints
-router.options('/', (req: express.Request, res: express.Response) => {
+router.options('/', (req: Request, res: Response) => {
     res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
     res.set('Access-Control-Max-Age', '3600');
     res.status(200).send('');
 });
 
-router.options('/tags', (req: express.Request, res: express.Response) => {
+router.options('/tags', (req: Request, res: Response) => {
     res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
     res.set('Access-Control-Max-Age', '3600');
     res.status(200).send('');
 });
 
-router.options('/:id', (req: express.Request, res: express.Response) => {
+router.options('/:id', (req: Request, res: Response) => {
     res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
     res.set('Access-Control-Max-Age', '3600');
@@ -32,7 +32,7 @@ router.options('/:id', (req: express.Request, res: express.Response) => {
 });
 
 // Get all sessions
-router.get('/', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.get('/', authenticateToken, async (req: Request, res: Response) => {
     try {
         console.log('📋 [SESSIONS API] Fetching all sessions...');
         const organizationId = req.user?.organizationId;
@@ -209,7 +209,7 @@ router.get('/', authenticateToken, async (req: express.Request, res: express.Res
 });
 
 // Get all session tags
-router.get('/tags', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.get('/tags', authenticateToken, async (req: Request, res: Response) => {
     try {
         const organizationId = req.user?.organizationId;
         if (!organizationId) {
@@ -240,7 +240,7 @@ router.get('/tags', authenticateToken, async (req: express.Request, res: express
 });
 
 // Get session by ID
-router.get('/:id', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.get('/:id', authenticateToken, async (req: Request, res: Response) => {
     try {
         const sessionId = req.params.id;
         const organizationId = req.user?.organizationId;
@@ -249,7 +249,7 @@ router.get('/:id', authenticateToken, async (req: express.Request, res: express.
             return res.status(403).json({ success: false, error: 'User not associated with any organization' });
         }
 
-        const sessionDoc = await db.collection('sessions').doc(sessionId).get();
+        const sessionDoc = await db.collection('sessions').doc(sessionId as string).get();
         if (!sessionDoc.exists) {
             return res.status(404).json({ success: false, error: 'Session not found' });
         }
@@ -419,7 +419,7 @@ async function createSessionConversation(
 }
 
 // Create session
-router.post('/', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.post('/', authenticateToken, async (req: Request, res: Response) => {
     try {
         console.log('📝 [SESSIONS API] Creating session...');
         const organizationId = req.user?.organizationId;
@@ -457,7 +457,7 @@ router.post('/', authenticateToken, async (req: express.Request, res: express.Re
 });
 
 // Update step documentation
-router.put('/:sessionId/steps/:stepId/documentation', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.put('/:sessionId/steps/:stepId/documentation', authenticateToken, async (req: Request, res: Response) => {
     try {
         const { sessionId, stepId } = req.params;
         const documentationData = req.body;
@@ -474,7 +474,7 @@ router.put('/:sessionId/steps/:stepId/documentation', authenticateToken, async (
         }
 
         // Verify step exists and belongs to organization
-        const stepRef = db.collection('workflowSteps').doc(stepId);
+        const stepRef = db.collection('workflowSteps').doc(stepId as string);
         const stepDoc = await stepRef.get();
 
         if (!stepDoc.exists) {
@@ -506,8 +506,8 @@ router.put('/:sessionId/steps/:stepId/documentation', authenticateToken, async (
             updateData.notes = documentationData.notes;
         }
         if (documentationData.files !== undefined) {
-            updateData.files = Array.isArray(documentationData.files) 
-                ? documentationData.files 
+            updateData.files = Array.isArray(documentationData.files)
+                ? documentationData.files
                 : JSON.stringify(documentationData.files || []);
         }
         if (documentationData.workNotes !== undefined) {
@@ -529,8 +529,8 @@ router.put('/:sessionId/steps/:stepId/documentation', authenticateToken, async (
 
         // 🔧 NEW: Update user assignments if provided
         if (documentationData.assignedUserIds !== undefined) {
-            updateData.assignedUserIds = Array.isArray(documentationData.assignedUserIds) 
-                ? documentationData.assignedUserIds 
+            updateData.assignedUserIds = Array.isArray(documentationData.assignedUserIds)
+                ? documentationData.assignedUserIds
                 : [];
         }
         if (documentationData.assignedUserId !== undefined) {

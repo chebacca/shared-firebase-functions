@@ -1,4 +1,4 @@
-import express from 'express';
+import { Router, Request, Response } from 'express';
 import { db, getUserOrganizationId } from '../../shared/utils';
 import { authenticateToken } from '../../shared/middleware';
 import { GeminiService } from '../../ai/GeminiService';
@@ -12,20 +12,20 @@ async function loadPdf() {
     if (!pdf) {
         // pdf-parse is a CommonJS module that exports a function directly
         const pdfModule = require('pdf-parse');
-        
+
         console.log('🔍 [ND BOT] pdf-parse module:', {
             type: typeof pdfModule,
             keys: pdfModule ? Object.keys(pdfModule) : 'null',
             hasDefault: !!pdfModule?.default,
             defaultType: pdfModule?.default ? typeof pdfModule.default : 'none'
         });
-        
+
         // Handle common export patterns: direct function or default export
         if (typeof pdfModule === 'function') {
             pdf = pdfModule;
         } else if (pdfModule?.default && typeof pdfModule.default === 'function') {
             pdf = pdfModule.default;
-        } 
+        }
         // pdf-parse v2.x exports an object with the function as a property
         else if (pdfModule && typeof pdfModule === 'object') {
             // Try to find the actual function - it might be the module itself if it's callable
@@ -46,7 +46,7 @@ async function loadPdf() {
         } else {
             throw new Error(`pdf-parse did not export a function or object. Got type: ${typeof pdfModule}`);
         }
-        
+
         console.log('✅ [ND BOT] pdf-parse loaded successfully, type:', typeof pdf);
     }
     return pdf;
@@ -60,7 +60,7 @@ async function loadMammoth() {
 }
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 
-const router = express.Router();
+const router: Router = Router();
 
 // Helper function to extract text from files
 async function extractTextFromFile(fileBuffer: Buffer, contentType: string): Promise<string> {
@@ -89,7 +89,7 @@ async function extractTextFromFile(fileBuffer: Buffer, contentType: string): Pro
 
 
 // Upload endpoint
-router.post('/upload-bible', authenticateToken, async (req, res) => {
+router.post('/upload-bible', authenticateToken, async (req: Request, res: Response) => {
     try {
         const userId = req.user?.uid;
         const { fileName, fileContent, fileType, projectId } = req.body;
@@ -117,9 +117,9 @@ router.post('/upload-bible', authenticateToken, async (req, res) => {
             deliverableCount: 0
         };
 
-        await db.collection('networkDeliveryBibles').doc(bibleId).set(bibleData);
+        await db.collection('networkDeliveryBibles').doc(bibleId as string).set(bibleData);
         const fileBuffer = Buffer.from(fileContent, 'base64');
-        
+
         // Get Gemini API key from Firestore (encrypted storage) - same pattern as transcription service
         let keyData;
         try {
@@ -152,12 +152,12 @@ router.post('/upload-bible', authenticateToken, async (req, res) => {
                 organizationId,
                 userId,
             });
-            await db.collection('networkDeliveryBibles').doc(bibleId).update({
+            await db.collection('networkDeliveryBibles').doc(bibleId as string).update({
                 status: 'error',
                 errorMessage: `Failed to retrieve Gemini API key: ${keyError.message || 'Unknown error'}`
             });
-            return res.status(500).json({ 
-                success: false, 
+            return res.status(500).json({
+                success: false,
                 error: 'Gemini API key not configured',
                 errorDetails: keyError.message || 'Please configure the Gemini API key in Settings > Integrations > AI API Keys'
             });
@@ -188,7 +188,7 @@ router.post('/upload-bible', authenticateToken, async (req, res) => {
             // For PDFs, use Gemini Vision API directly (bypasses pdf-parse issues)
             if (fileType === 'application/pdf') {
                 console.log('📄 [ND BOT] Using Gemini Vision API to parse PDF directly...');
-                await db.collection('networkDeliveryBibles').doc(bibleId).update({
+                await db.collection('networkDeliveryBibles').doc(bibleId as string).update({
                     status: 'text_extracted',
                     rawText: 'PDF parsed via Gemini Vision API'
                 });
@@ -200,17 +200,17 @@ router.post('/upload-bible', authenticateToken, async (req, res) => {
                     rawText = await extractTextFromFile(fileBuffer, fileType);
                 } catch (extractError) {
                     console.error('❌ [ND BOT] Text extraction failed:', extractError);
-                    await db.collection('networkDeliveryBibles').doc(bibleId).update({
+                    await db.collection('networkDeliveryBibles').doc(bibleId as string).update({
                         status: 'error',
                         errorMessage: extractError instanceof Error ? extractError.message : 'Text extraction failed'
                     });
-                    return res.status(500).json({ 
-                        success: false, 
+                    return res.status(500).json({
+                        success: false,
                         error: 'Failed to extract text from file',
                         errorDetails: extractError instanceof Error ? extractError.message : 'Unknown error'
                     });
                 }
-                await db.collection('networkDeliveryBibles').doc(bibleId).update({
+                await db.collection('networkDeliveryBibles').doc(bibleId as string).update({
                     rawText,
                     status: 'text_extracted'
                 });
@@ -228,11 +228,11 @@ router.post('/upload-bible', authenticateToken, async (req, res) => {
             for (let i = 0; i < deliverables.length; i += BATCH_LIMIT) {
                 const batch = db.batch();
                 const chunk = deliverables.slice(i, i + BATCH_LIMIT);
-                
+
                 chunk.forEach((deliverable: any, chunkIndex: number) => {
                     const globalIndex = i + chunkIndex;
                     const deliverableId = `${bibleId}_deliverable_${globalIndex}`;
-                    const docRef = db.collection('networkDeliveryBibles').doc(bibleId).collection('deliverables').doc(deliverableId);
+                    const docRef = db.collection('networkDeliveryBibles').doc(bibleId as string).collection('deliverables').doc(deliverableId);
                     batch.set(docRef, {
                         ...deliverable,
                         id: deliverableId,
@@ -248,7 +248,7 @@ router.post('/upload-bible', authenticateToken, async (req, res) => {
                 console.log(`✅ [ND BOT] Committed batch ${Math.floor(i / BATCH_LIMIT) + 1} (${chunk.length} deliverables)`);
             }
 
-            await db.collection('networkDeliveryBibles').doc(bibleId).update({
+            await db.collection('networkDeliveryBibles').doc(bibleId as string).update({
                 status: 'parsed_successfully',
                 deliverableCount: totalDeliverables,
                 parsedAt: FieldValue.serverTimestamp()
@@ -257,32 +257,32 @@ router.post('/upload-bible', authenticateToken, async (req, res) => {
             return res.json({ success: true, data: { bibleId, fileName, status: 'parsed_successfully', deliverableCount: structuredData.deliverables.length } });
         } catch (parseError: any) {
             console.error('❌ [ND BOT] Parse error:', parseError);
-            
+
             // Check if it's an API key error
             const errorMessage = parseError.message || String(parseError);
-            const isApiKeyError = errorMessage.includes('API key not valid') || 
-                                 errorMessage.includes('API_KEY_INVALID') ||
-                                 errorMessage.includes('API key') && errorMessage.includes('invalid');
-            
+            const isApiKeyError = errorMessage.includes('API key not valid') ||
+                errorMessage.includes('API_KEY_INVALID') ||
+                errorMessage.includes('API key') && errorMessage.includes('invalid');
+
             if (isApiKeyError) {
-                await db.collection('networkDeliveryBibles').doc(bibleId).update({ 
-                    status: 'parse_failed', 
+                await db.collection('networkDeliveryBibles').doc(bibleId as string).update({
+                    status: 'parse_failed',
                     errorMessage: 'Invalid Gemini API key. Please reconfigure it in Settings > Integrations > AI API Keys'
                 });
-                return res.status(500).json({ 
-                    success: false, 
+                return res.status(500).json({
+                    success: false,
                     error: 'Invalid Gemini API key',
                     errorDetails: 'The Gemini API key is invalid or expired. Please go to Settings > Integrations > AI API Keys and update your Gemini API key with a valid key from https://makersuite.google.com/app/apikey'
                 });
             }
-            
-            await db.collection('networkDeliveryBibles').doc(bibleId).update({ 
-                status: 'parse_failed', 
+
+            await db.collection('networkDeliveryBibles').doc(bibleId as string).update({
+                status: 'parse_failed',
                 errorMessage: parseError.message || 'Unknown parsing error'
             });
-            return res.status(500).json({ 
-                success: false, 
-                error: 'AI Parsing failed', 
+            return res.status(500).json({
+                success: false,
+                error: 'AI Parsing failed',
                 errorDetails: parseError.message || 'Unknown error'
             });
         }
@@ -292,7 +292,7 @@ router.post('/upload-bible', authenticateToken, async (req, res) => {
 });
 
 // Get deliverables
-router.get('/bibles/:bibleId/deliverables', authenticateToken, async (req, res) => {
+router.get('/bibles/:bibleId/deliverables', authenticateToken, async (req: Request, res: Response) => {
     try {
         const { bibleId } = req.params;
         const userId = req.user?.uid;
@@ -302,12 +302,12 @@ router.get('/bibles/:bibleId/deliverables', authenticateToken, async (req, res) 
             organizationId = await getUserOrganizationId(userId!, req.user?.email || '') || undefined;
         }
 
-        const bibleDoc = await db.collection('networkDeliveryBibles').doc(bibleId).get();
+        const bibleDoc = await db.collection('networkDeliveryBibles').doc(bibleId as string).get();
         if (!bibleDoc.exists || bibleDoc.data()?.organizationId !== organizationId) {
             return res.status(403).json({ success: false, error: 'Access denied' });
         }
 
-        const deliverablesSnapshot = await db.collection('networkDeliveryBibles').doc(bibleId).collection('deliverables').orderBy('createdAt', 'asc').get();
+        const deliverablesSnapshot = await db.collection('networkDeliveryBibles').doc(bibleId as string).collection('deliverables').orderBy('createdAt', 'asc').get();
         const deliverables = deliverablesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
         return res.json({ success: true, data: deliverables, bibleInfo: bibleDoc.data() });
@@ -317,7 +317,7 @@ router.get('/bibles/:bibleId/deliverables', authenticateToken, async (req, res) 
 });
 
 // Delete bible
-router.delete('/bibles/:bibleId', authenticateToken, async (req, res) => {
+router.delete('/bibles/:bibleId', authenticateToken, async (req: Request, res: Response) => {
     try {
         console.log('🗑️ [ND BOT] Deleting bible...');
         const { bibleId } = req.params;
@@ -334,20 +334,20 @@ router.delete('/bibles/:bibleId', authenticateToken, async (req, res) => {
         }
 
         // Verify bible belongs to user's organization
-        const bibleDoc = await db.collection('networkDeliveryBibles').doc(bibleId).get();
+        const bibleDoc = await db.collection('networkDeliveryBibles').doc(bibleId as string).get();
         if (!bibleDoc.exists || bibleDoc.data()?.organizationId !== organizationId) {
             return res.status(404).json({ success: false, error: 'Bible not found or access denied' });
         }
 
         // Delete all deliverables in the bible (handle large batches)
         const deliverablesSnapshot = await db.collection('networkDeliveryBibles')
-            .doc(bibleId)
+            .doc(bibleId as string)
             .collection('deliverables')
             .get();
 
         const BATCH_LIMIT = 500;
         const deliverables = deliverablesSnapshot.docs;
-        
+
         // Delete deliverables in batches if needed
         for (let i = 0; i < deliverables.length; i += BATCH_LIMIT) {
             const batch = db.batch();
@@ -357,7 +357,7 @@ router.delete('/bibles/:bibleId', authenticateToken, async (req, res) => {
         }
 
         // Delete the bible document
-        await db.collection('networkDeliveryBibles').doc(bibleId).delete();
+        await db.collection('networkDeliveryBibles').doc(bibleId as string).delete();
 
         console.log(`✅ [ND BOT] Successfully deleted bible: ${bibleId} and ${deliverables.length} deliverables`);
 
@@ -369,7 +369,7 @@ router.delete('/bibles/:bibleId', authenticateToken, async (req, res) => {
 });
 
 // Re-process bible endpoint (for stuck bibles)
-router.post('/bibles/:bibleId/reprocess', authenticateToken, async (req, res) => {
+router.post('/bibles/:bibleId/reprocess', authenticateToken, async (req: Request, res: Response) => {
     try {
         console.log('🔄 [ND BOT] Re-processing bible...');
         const { bibleId } = req.params;
@@ -384,7 +384,7 @@ router.post('/bibles/:bibleId/reprocess', authenticateToken, async (req, res) =>
         }
 
         // Get the bible document
-        const bibleDoc = await db.collection('networkDeliveryBibles').doc(bibleId).get();
+        const bibleDoc = await db.collection('networkDeliveryBibles').doc(bibleId as string).get();
         if (!bibleDoc.exists) {
             return res.status(404).json({ success: false, error: 'Bible not found' });
         }
@@ -396,9 +396,9 @@ router.post('/bibles/:bibleId/reprocess', authenticateToken, async (req, res) =>
 
         // Check if bible has rawText
         if (!bibleData?.rawText) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'Cannot re-process: Bible has no extracted text. Please re-upload the file.' 
+            return res.status(400).json({
+                success: false,
+                error: 'Cannot re-process: Bible has no extracted text. Please re-upload the file.'
             });
         }
 
@@ -406,12 +406,12 @@ router.post('/bibles/:bibleId/reprocess', authenticateToken, async (req, res) =>
         const projectId = bibleData.projectId || null;
 
         // Update status to processing
-        await db.collection('networkDeliveryBibles').doc(bibleId).update({
+        await db.collection('networkDeliveryBibles').doc(bibleId as string).update({
             status: 'processing'
         });
 
         // Delete existing deliverables
-        const deliverablesRef = db.collection('networkDeliveryBibles').doc(bibleId).collection('deliverables');
+        const deliverablesRef = db.collection('networkDeliveryBibles').doc(bibleId as string).collection('deliverables');
         const existingDeliverables = await deliverablesRef.get();
         const deleteBatch = db.batch();
         existingDeliverables.docs.forEach(doc => deleteBatch.delete(doc.ref));
@@ -428,12 +428,12 @@ router.post('/bibles/:bibleId/reprocess', authenticateToken, async (req, res) =>
             console.log(`✅ [ND BOT] API key retrieved for re-process (length: ${keyData.apiKey.length}, model: ${keyData.model || 'default'})`);
         } catch (keyError: any) {
             console.error('❌ [ND BOT] Failed to get API key for re-process:', keyError.message);
-            await db.collection('networkDeliveryBibles').doc(bibleId).update({
+            await db.collection('networkDeliveryBibles').doc(bibleId as string).update({
                 status: 'error',
                 errorMessage: `Failed to retrieve Gemini API key: ${keyError.message || 'Unknown error'}`
             });
-            return res.status(500).json({ 
-                success: false, 
+            return res.status(500).json({
+                success: false,
                 error: 'Gemini API key not configured',
                 errorDetails: keyError.message || 'Please configure the Gemini API key in Settings > Integrations > AI API Keys'
             });
@@ -463,11 +463,11 @@ router.post('/bibles/:bibleId/reprocess', authenticateToken, async (req, res) =>
             for (let i = 0; i < deliverables.length; i += BATCH_LIMIT) {
                 const batch = db.batch();
                 const chunk = deliverables.slice(i, i + BATCH_LIMIT);
-                
+
                 chunk.forEach((deliverable: any, chunkIndex: number) => {
                     const globalIndex = i + chunkIndex;
                     const deliverableId = `${bibleId}_deliverable_${globalIndex}`;
-                    const docRef = db.collection('networkDeliveryBibles').doc(bibleId).collection('deliverables').doc(deliverableId);
+                    const docRef = db.collection('networkDeliveryBibles').doc(bibleId as string).collection('deliverables').doc(deliverableId);
                     batch.set(docRef, {
                         ...deliverable,
                         id: deliverableId,
@@ -483,45 +483,45 @@ router.post('/bibles/:bibleId/reprocess', authenticateToken, async (req, res) =>
                 console.log(`✅ [ND BOT] Committed batch ${Math.floor(i / BATCH_LIMIT) + 1} (${chunk.length} deliverables)`);
             }
 
-            await db.collection('networkDeliveryBibles').doc(bibleId).update({
+            await db.collection('networkDeliveryBibles').doc(bibleId as string).update({
                 status: 'parsed_successfully',
                 deliverableCount: totalDeliverables,
                 parsedAt: FieldValue.serverTimestamp()
             });
 
-            return res.json({ 
-                success: true, 
+            return res.json({
+                success: true,
                 message: 'Bible re-processed successfully',
-                data: { bibleId, deliverableCount: totalDeliverables } 
+                data: { bibleId, deliverableCount: totalDeliverables }
             });
         } catch (parseError: any) {
             console.error('❌ [ND BOT] Parse error:', parseError);
-            
+
             // Check if it's an API key error
             const errorMessage = parseError.message || String(parseError);
-            const isApiKeyError = errorMessage.includes('API key not valid') || 
-                                 errorMessage.includes('API_KEY_INVALID') ||
-                                 (errorMessage.includes('API key') && errorMessage.includes('invalid'));
-            
+            const isApiKeyError = errorMessage.includes('API key not valid') ||
+                errorMessage.includes('API_KEY_INVALID') ||
+                (errorMessage.includes('API key') && errorMessage.includes('invalid'));
+
             if (isApiKeyError) {
-                await db.collection('networkDeliveryBibles').doc(bibleId).update({ 
-                    status: 'parse_failed', 
+                await db.collection('networkDeliveryBibles').doc(bibleId as string).update({
+                    status: 'parse_failed',
                     errorMessage: 'Invalid Gemini API key. Please reconfigure it in Settings > Integrations > AI API Keys'
                 });
-                return res.status(500).json({ 
-                    success: false, 
+                return res.status(500).json({
+                    success: false,
                     error: 'Invalid Gemini API key',
                     errorDetails: 'The Gemini API key is invalid or expired. Please go to Settings > Integrations > AI API Keys and update your Gemini API key with a valid key from https://makersuite.google.com/app/apikey'
                 });
             }
-            
-            await db.collection('networkDeliveryBibles').doc(bibleId).update({ 
-                status: 'parse_failed', 
+
+            await db.collection('networkDeliveryBibles').doc(bibleId as string).update({
+                status: 'parse_failed',
                 errorMessage: parseError.message || 'Unknown parsing error'
             });
-            return res.status(500).json({ 
-                success: false, 
-                error: 'AI Parsing failed', 
+            return res.status(500).json({
+                success: false,
+                error: 'AI Parsing failed',
                 errorDetails: parseError.message || 'Unknown error'
             });
         }
@@ -546,11 +546,11 @@ export const getNetworkDeliveryDeliverables = onCall(async (request) => {
 
         if (!organizationId) throw new HttpsError('failed-precondition', 'User not associated with an organization');
 
-        const bibleDoc = await db.collection('networkDeliveryBibles').doc(bibleId).get();
+        const bibleDoc = await db.collection('networkDeliveryBibles').doc(bibleId as string).get();
         if (!bibleDoc.exists) throw new HttpsError('not-found', 'Bible not found');
         if (bibleDoc.data()?.organizationId !== organizationId) throw new HttpsError('permission-denied', 'Access denied');
 
-        const deliverablesSnapshot = await db.collection('networkDeliveryBibles').doc(bibleId).collection('deliverables').orderBy('createdAt', 'asc').get();
+        const deliverablesSnapshot = await db.collection('networkDeliveryBibles').doc(bibleId as string).collection('deliverables').orderBy('createdAt', 'asc').get();
         const deliverables = deliverablesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
         return { success: true, data: deliverables, bibleInfo: bibleDoc.data() };
@@ -589,9 +589,9 @@ export const uploadNetworkDeliveryBible = onCall(async (request) => {
             deliverableCount: 0
         };
 
-        await db.collection('networkDeliveryBibles').doc(bibleId).set(bibleData);
+        await db.collection('networkDeliveryBibles').doc(bibleId as string).set(bibleData);
         const fileBuffer = Buffer.from(fileContent, 'base64');
-        
+
         // Get Gemini API key from Firestore (encrypted storage) - same pattern as transcription service
         let keyData;
         try {
@@ -602,7 +602,7 @@ export const uploadNetworkDeliveryBible = onCall(async (request) => {
             console.log(`✅ [ND BOT] API key retrieved (length: ${keyData.apiKey.length}, model: ${keyData.model || 'default'})`);
         } catch (keyError: any) {
             console.error('❌ [ND BOT] Failed to get API key:', keyError.message);
-            await db.collection('networkDeliveryBibles').doc(bibleId).update({
+            await db.collection('networkDeliveryBibles').doc(bibleId as string).update({
                 status: 'error',
                 errorMessage: `Failed to retrieve Gemini API key: ${keyError.message || 'Unknown error'}`
             });
@@ -626,7 +626,7 @@ export const uploadNetworkDeliveryBible = onCall(async (request) => {
             // For PDFs, use Gemini Vision API directly (bypasses pdf-parse issues)
             if (fileType === 'application/pdf') {
                 console.log('📄 [ND BOT] Using Gemini Vision API to parse PDF directly...');
-                await db.collection('networkDeliveryBibles').doc(bibleId).update({
+                await db.collection('networkDeliveryBibles').doc(bibleId as string).update({
                     status: 'text_extracted',
                     rawText: 'PDF parsed via Gemini Vision API'
                 });
@@ -638,13 +638,13 @@ export const uploadNetworkDeliveryBible = onCall(async (request) => {
                     rawText = await extractTextFromFile(fileBuffer, fileType);
                 } catch (extractError) {
                     console.error('❌ [ND BOT] Text extraction failed:', extractError);
-                    await db.collection('networkDeliveryBibles').doc(bibleId).update({
+                    await db.collection('networkDeliveryBibles').doc(bibleId as string).update({
                         status: 'error',
                         errorMessage: extractError instanceof Error ? extractError.message : 'Text extraction failed'
                     });
                     throw new HttpsError('internal', `Failed to extract text from file: ${extractError instanceof Error ? extractError.message : 'Unknown error'}`);
                 }
-                await db.collection('networkDeliveryBibles').doc(bibleId).update({ rawText, status: 'text_extracted' });
+                await db.collection('networkDeliveryBibles').doc(bibleId as string).update({ rawText, status: 'text_extracted' });
                 structuredData = await geminiSvc.parseNetworkBible(rawText);
             }
 
@@ -659,11 +659,11 @@ export const uploadNetworkDeliveryBible = onCall(async (request) => {
             for (let i = 0; i < deliverables.length; i += BATCH_LIMIT) {
                 const batch = db.batch();
                 const chunk = deliverables.slice(i, i + BATCH_LIMIT);
-                
+
                 chunk.forEach((deliverable: any, chunkIndex: number) => {
                     const globalIndex = i + chunkIndex;
                     const deliverableId = `${bibleId}_deliverable_${globalIndex}`;
-                    const docRef = db.collection('networkDeliveryBibles').doc(bibleId).collection('deliverables').doc(deliverableId);
+                    const docRef = db.collection('networkDeliveryBibles').doc(bibleId as string).collection('deliverables').doc(deliverableId);
                     batch.set(docRef, {
                         ...deliverable,
                         id: deliverableId,
@@ -679,7 +679,7 @@ export const uploadNetworkDeliveryBible = onCall(async (request) => {
                 console.log(`✅ [ND BOT] Committed batch ${Math.floor(i / BATCH_LIMIT) + 1} (${chunk.length} deliverables)`);
             }
 
-            await db.collection('networkDeliveryBibles').doc(bibleId).update({
+            await db.collection('networkDeliveryBibles').doc(bibleId as string).update({
                 status: 'parsed_successfully',
                 deliverableCount: totalDeliverables,
                 parsedAt: FieldValue.serverTimestamp()
@@ -688,23 +688,23 @@ export const uploadNetworkDeliveryBible = onCall(async (request) => {
             return { success: true, data: { bibleId, fileName, status: 'parsed_successfully', deliverableCount: structuredData.deliverables.length } };
         } catch (parseError: any) {
             console.error('❌ [ND BOT] Parse error:', parseError);
-            
+
             // Check if it's an API key error
             const errorMessage = parseError.message || String(parseError);
-            const isApiKeyError = errorMessage.includes('API key not valid') || 
-                                 errorMessage.includes('API_KEY_INVALID') ||
-                                 errorMessage.includes('API key') && errorMessage.includes('invalid');
-            
+            const isApiKeyError = errorMessage.includes('API key not valid') ||
+                errorMessage.includes('API_KEY_INVALID') ||
+                errorMessage.includes('API key') && errorMessage.includes('invalid');
+
             if (isApiKeyError) {
-                await db.collection('networkDeliveryBibles').doc(bibleId).update({ 
-                    status: 'parse_failed', 
+                await db.collection('networkDeliveryBibles').doc(bibleId as string).update({
+                    status: 'parse_failed',
                     errorMessage: 'Invalid Gemini API key. Please reconfigure it in Settings > Integrations > AI API Keys'
                 });
                 throw new HttpsError('failed-precondition', 'The Gemini API key is invalid or expired. Please go to Settings > Integrations > AI API Keys and update your Gemini API key with a valid key from https://makersuite.google.com/app/apikey');
             }
-            
-            await db.collection('networkDeliveryBibles').doc(bibleId).update({ 
-                status: 'parse_failed', 
+
+            await db.collection('networkDeliveryBibles').doc(bibleId as string).update({
+                status: 'parse_failed',
                 errorMessage: parseError.message || 'Unknown parsing error'
             });
             throw new HttpsError('internal', `AI Parsing failed: ${parseError.message || 'Unknown error'}`);

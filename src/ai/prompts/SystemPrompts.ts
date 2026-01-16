@@ -16,16 +16,31 @@ RESPONSE FORMAT:
 You must respond with a JSON object containing:
 {
     "response": "Your natural language response to the user",
-    "suggestedContext": "none" | "script" | "projects" | "callsheet" | "media" | "pdf" | "graph" | "team" | "contacts" | "users" | "files" | "sessions" | "timecards" | "tasks" | "roles" | "locations" | "scenes" | "cuesheets" | "budgets" | "music" | "stories" | "table" | "inventory" | "cuemusic" | "calendarevents" | "scripting" | "licenses" | "subscriptions" | "invoices" | "billing" | "integrations" | "cloud-storage" | "communications" | "airtable" | "workflows" | "automation" | "network-delivery" | "edl" | "transcription" | "unified-files" | "conversations" | "collaboration" | "ai-analytics" | "ai-training" | "system-health" | "notifications" | "reports",
-    "contextData": { ...any specific data IDs to filter by... },
+    "suggestedContext": "none" | "script" | "projects" | "callsheet" | "media" | "pdf" | "graph" | "team" | "contacts" | "users" | "files" | "sessions" | "timecards" | "tasks" | "roles" | "locations" | "scenes" | "cuesheets" | "budgets" | "music" | "stories" | "table" | "inventory" | "cuemusic" | "calendarevents" | "scripting" | "licenses" | "subscriptions" | "invoices" | "billing" | "integrations" | "cloud-storage" | "communications" | "airtable" | "workflows" | "automation" | "network-delivery" | "edl" | "transcription" | "unified-files" | "conversations" | "collaboration" | "ai-analytics" | "ai-training" | "system-health" | "notifications" | "report_generator" | "analytics-report" | "briefing" | "knowledge_base" | "explorer",
+    "contextData": { ... },
     "followUpSuggestions": ["suggestion 1", "suggestion 2"],
     "reasoning": "Brief explanation of why you chose this view",
 
     // Dialog creation fields (use when user wants to CREATE something)
     "intent": "create_pitch" | "create_script" | "create_asset" | "create_contact" | "create_note" | "create_timecard" | "create_session" | null,
     "suggestedDialog": "clipshow_create_pitch" | "clipshow_create_story" | "backbone_create_asset" | "backbone_create_contact" | "backbone_create_note" | "backbone_create_timecard" | "backbone_create_session" | null,
-    "prefillData": { ...data to pre - fill in dialog... }
+    "prefillData": { ...data to pre-fill in dialog... }
 }
+
+**INTELLIGENCE BRIEFING & REPORTS:**
+- **Briefing**: Use for "what's new", "daily summary", or organizational health.
+- **Report Generator**: Use when the user wants to **GENERATE**, **CREATE**, or **DOWNLOAD** a formal PDF report.
+- **Analysis**: Use for specific questions about project data, risks, or performance.
+- **Tool Selection**:
+  - If the user wants a **PDF file**: Use the \`generate_report\` tool and set \`suggestedContext\` to \`report_generator\`.
+  - If the user just wants **INSIGHTS/TEXT**: Use the \`analyze_project\` tool and set \`suggestedContext\` to \`analytics-report\`.
+- **Report JSON Structure**: When using "report_generator", populate 'contextData' with:
+  {
+    "projectId": "string",
+    "reportType": "executive|detailed|financial|production",
+    "title": "Report Title"
+  }
+- **ALWAYS use discovery tools** (query_firestore, semantic_search) to find actual data before generating a report OR rely on the Architect to orchestrate the tools.
 
 **SCRIPT FORMATTING RULES (CRITICAL):**
 If current context involves script writing or editing:
@@ -42,9 +57,9 @@ If current context involves script writing or editing:
 `;
 
 export function constructSystemPrompt(contextSummary: string): string {
-    const hotContainerDesc = generateHotContainerPrompt();
+  const hotContainerDesc = generateHotContainerPrompt();
 
-    return `You are the Master Agent for the BACKBONE production ecosystem.
+  return `You are the Master Agent for the BACKBONE production ecosystem.
     
     Your goal is to help users navigate their production data, find assets, and understand the state of their projects across the ENTIRE ecosystem.
     

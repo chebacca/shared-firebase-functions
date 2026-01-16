@@ -7,7 +7,8 @@
 
 import { getFirestore } from 'firebase-admin/firestore';
 
-const db = getFirestore();
+// Initialize getDb() lazily
+const getDb = () => getFirestore();
 
 export interface CallSheetContext {
   activePersonnel: number;
@@ -28,9 +29,9 @@ export async function gatherCallSheetContext(
   organizationId: string
 ): Promise<CallSheetContext> {
   // Query personnel using the same pattern as Call Sheet functions
-  // Pattern: db.collection('standalonePersonnel').where('userId', '==', organizationId)
+  // Pattern: getDb().collection('standalonePersonnel').where('userId', '==', organizationId)
   // Note: In Call Sheet, personnel are linked to organization via userId field
-  const personnelSnapshot = await db
+  const personnelSnapshot = await getDb()
     .collection('standalonePersonnel')
     .where('userId', '==', organizationId)
     .get();

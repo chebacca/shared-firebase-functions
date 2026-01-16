@@ -103,7 +103,7 @@ export class GeminiService extends CoreGeminiService {
     contextInfo += `- organizationId: "${globalContext.organizationId}"\n`;
     contextInfo += `- userId: "${globalContext.userId || 'N/A'}"\n`;
     contextInfo += `- timestamp: "${globalContext.timestamp}"\n`;
-    
+
     // CRITICAL: Add current project context (user's selected project from Hub)
     // This MUST be included in EVERY iteration to maintain context throughout planning
     const currentProjectId = (globalContext as any).currentProjectId;
@@ -115,7 +115,7 @@ export class GeminiService extends CoreGeminiService {
       contextInfo += `When creating sessions, tasks, call sheets, timecards, or other project-related items, `;
       contextInfo += `ALWAYS use this projectId automatically unless the user explicitly specifies a different project.\n`;
       contextInfo += `Do NOT ask for projectId - it is already known: "${currentProjectId}".\n`;
-      
+
       // Try to get project name from dashboard context
       const dashboardProjects = globalContext.dashboard?.projects || [];
       const currentProject = dashboardProjects.find((p: any) => p.id === currentProjectId);
@@ -147,8 +147,9 @@ export class GeminiService extends CoreGeminiService {
     }));
 
     // Create a specific model for the Architect with system instruction and JSON mode
+    // Using gemini-2.5-flash - gemini-1.5-pro is not available in v1beta API
     const architectModel = this.genAI.getGenerativeModel({
-      model: 'gemini-1.5-pro', // Use Pro for complex planning tasks
+      model: 'gemini-2.5-flash', // Use Flash for complex planning tasks (Pro not available in v1beta)
       systemInstruction: ARCHITECT_SYSTEM_PROMPT + contextInfo
     });
 
@@ -261,17 +262,27 @@ export class GeminiService extends CoreGeminiService {
     try {
       console.log('🧠 [Gemini Service] Starting response generation...');
       console.log('📝 [Gemini Service] User message:', message);
-      console.log('🎯 [Gemini Service] Current mode:', currentMode);
-      console.log('🎯 [Gemini Service] globalContext.activeMode:', (globalContext as any).activeMode);
+      console.log(`🎯 [Gemini Service] Current mode:`, currentMode);
+      console.log(`🎯 [Gemini Service] globalContext.activeMode:`, (globalContext as any).activeMode);
+
+      // Interpret intent to see if we should auto-route to Architect
+      const interpretedIntent = await this.interpretUserIntent(message);
+      console.log(`🎯 [Gemini Service] Interpreted intent:`, interpretedIntent);
 
       // CRITICAL: Architect/Plan Mode Check - MUST happen FIRST before any other processing
       const activeModeValue = (globalContext as any).activeMode;
       const currentModeValue = currentMode as string;
-      const shouldUseArchitect = activeModeValue === 'plan_mode' || currentModeValue === 'plan_mode';
+
+      // Route to Architect if in plan_mode OR if user wants a report/analysis
+      const shouldUseArchitect =
+        activeModeValue === 'plan_mode' ||
+        currentModeValue === 'plan_mode' ||
+        interpretedIntent === 'reports';
 
       console.log(`🏛️ [Gemini Service] Architect routing check (FIRST):`);
       console.log(`  - globalContext.activeMode: "${activeModeValue}"`);
       console.log(`  - currentMode: "${currentModeValue}"`);
+      console.log(`  - interpretedIntent: "${interpretedIntent}"`);
       console.log(`  - shouldUseArchitect: ${shouldUseArchitect}`);
 
       if (shouldUseArchitect) {
@@ -685,8 +696,13 @@ REQUIREMENTS:
         throw new Error('Gemini AI client not initialized. API key may be missing.');
       }
 
-      // Combine all tools
-      const allTools = [...workflowFunctionDeclarations, ...dataToolDeclarations];
+      // Combine all tools: Workflow, Hardcoded Data Tools, and Dynamic Shared Tools
+      const { sharedToolDeclarations } = await import('./dataTools');
+      const allTools = [
+        ...workflowFunctionDeclarations,
+        ...dataToolDeclarations,
+        ...sharedToolDeclarations
+      ];
 
       // Validate function declarations
       if (!allTools || allTools.length === 0) {
@@ -1395,6 +1411,7 @@ RULES:
     if (lowerMessage.includes('media') || lowerMessage.includes('video') || lowerMessage.includes('clip')) return 'media';
     if (lowerMessage.includes('pdf') || lowerMessage.includes('document')) return 'pdf';
     if (lowerMessage.includes('graph') || lowerMessage.includes('backbone') || lowerMessage.includes('relationship')) return 'graph';
+    if (lowerMessage.includes('report') || lowerMessage.includes('analyze') || lowerMessage.includes('outlook') || lowerMessage.includes('audit')) return 'reports';
 
     // Default to none (Mission Control)
     return 'none';
@@ -1413,6 +1430,10 @@ export function createGeminiService(): GeminiService {
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY secret not configured');
   }
+
+  // CRITICAL: Expose API key to process.env so that shared library services
+  // (like VectorMemory) can access it without dependency injection
+  process.env.GEMINI_API_KEY = apiKey;
 
   return new GeminiService(apiKey);
 }

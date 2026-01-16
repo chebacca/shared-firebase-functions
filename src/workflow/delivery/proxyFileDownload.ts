@@ -13,7 +13,7 @@ const corsHandler = cors({ origin: true });
  * This is used to bypass CORS restrictions when downloading files from
  * third-party providers (Box, Dropbox, etc.) directly in the browser.
  */
-export const proxyFileDownload = functions.https.onRequest(async (req: Request, res: Response) => {
+export const proxyFileDownload = functions.https.onRequest(async (req: any, res: any) => {
     return corsHandler(req, res, async () => {
         try {
             // 1. Validate Authentication

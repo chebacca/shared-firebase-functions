@@ -96,3 +96,5 @@ PLANNING RULES:
 - Use list_collections when user wants to discover available data collections
 - Use responseForm for complex searches with multiple filters
 - Use multipleChoiceQuestion for collection selection
+
+`;

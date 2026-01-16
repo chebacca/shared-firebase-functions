@@ -1,12 +1,12 @@
-import express from 'express';
+import { Router, Request, Response } from 'express';
 import { db } from '../../shared/utils';
 import { authenticateToken } from '../../shared/middleware';
 import { FieldValue } from 'firebase-admin/firestore';
 
-const router = express.Router();
+const router: Router = Router();
 
 // Get workflow instance for a session
-router.get('/:sessionId/workflow', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.get('/:sessionId/workflow', authenticateToken, async (req: Request, res: Response) => {
     try {
         const { sessionId } = req.params;
         const organizationId = req.user?.organizationId;
@@ -33,7 +33,7 @@ router.get('/:sessionId/workflow', authenticateToken, async (req: express.Reques
 });
 
 // Get steps for a session
-router.get('/:sessionId/steps', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.get('/:sessionId/steps', authenticateToken, async (req: Request, res: Response) => {
     try {
         const { sessionId } = req.params;
         const organizationId = req.user?.organizationId;
@@ -59,7 +59,7 @@ router.get('/:sessionId/steps', authenticateToken, async (req: express.Request, 
 });
 
 // Create workflow instance
-router.post('/:sessionId/workflow', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.post('/:sessionId/workflow', authenticateToken, async (req: Request, res: Response) => {
     try {
         const { sessionId } = req.params;
         const organizationId = req.user?.organizationId;
@@ -94,7 +94,7 @@ router.post('/:sessionId/workflow', authenticateToken, async (req: express.Reque
 });
 
 // Get workflow templates
-router.get('/templates', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.get('/templates', authenticateToken, async (req: Request, res: Response) => {
     try {
         const organizationId = req.user?.organizationId;
         const templatesSnapshot = await db.collection('workflowTemplates').where('organizationId', '==', organizationId).get();

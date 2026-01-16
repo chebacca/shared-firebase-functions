@@ -8,7 +8,8 @@
 
 import { getFirestore } from 'firebase-admin/firestore';
 
-const db = getFirestore();
+// Initialize getDb() lazily
+const getDb = () => getFirestore();
 
 export interface PWSWorkflowContext {
   // Templates available
@@ -65,7 +66,7 @@ export async function gatherPWSWorkflowContext(
 ): Promise<PWSWorkflowContext> {
   try {
     // Query templates (read-only)
-    const templatesSnapshot = await db.collection('workflow-templates')
+    const templatesSnapshot = await getDb().collection('workflow-templates')
       .where('organizationId', '==', organizationId)
       .limit(50)
       .get();
@@ -85,7 +86,7 @@ export async function gatherPWSWorkflowContext(
     });
     
     // Query session workflows (read-only)
-    const sessionsSnapshot = await db.collection('sessionWorkflows')
+    const sessionsSnapshot = await getDb().collection('sessionWorkflows')
       .where('organizationId', '==', organizationId)
       .where('status', 'in', ['ACTIVE', 'PENDING'])
       .limit(20)
@@ -105,7 +106,7 @@ export async function gatherPWSWorkflowContext(
     });
     
     // Query user workflows (read-only)
-    const userWorkflowsSnapshot = await db.collection('user-workflows')
+    const userWorkflowsSnapshot = await getDb().collection('user-workflows')
       .where('organizationId', '==', organizationId)
       .limit(30)
       .get();

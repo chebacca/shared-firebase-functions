@@ -1,12 +1,12 @@
-import express from 'express';
+import { Router, Request, Response } from 'express';
 import { db } from '../../shared/utils';
 import { authenticateToken } from '../../shared/middleware';
 import { FieldValue } from 'firebase-admin/firestore';
 
-const router = express.Router();
+const router: Router = Router();
 
 // Get active production sessions
-router.get('/active', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.get('/active', authenticateToken, async (req: Request, res: Response) => {
     try {
         const organizationId = req.user?.organizationId;
         if (!organizationId) {
@@ -29,7 +29,7 @@ router.get('/active', authenticateToken, async (req: express.Request, res: expre
 });
 
 // Get production crew
-router.get('/crew', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.get('/crew', authenticateToken, async (req: Request, res: Response) => {
     try {
         const organizationId = req.user?.organizationId;
         if (!organizationId) {
@@ -59,7 +59,7 @@ router.get('/crew', authenticateToken, async (req: express.Request, res: express
 });
 
 // Get production dashboard data
-router.get('/dashboard', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.get('/dashboard', authenticateToken, async (req: Request, res: Response) => {
     try {
         const organizationId = req.user?.organizationId;
         if (!organizationId) {
@@ -105,7 +105,7 @@ router.get('/dashboard', authenticateToken, async (req: express.Request, res: ex
 });
 
 // Get production equipment
-router.get('/equipment', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.get('/equipment', authenticateToken, async (req: Request, res: Response) => {
     try {
         const organizationId = req.user?.organizationId;
         if (!organizationId) {

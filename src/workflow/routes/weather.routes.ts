@@ -8,7 +8,7 @@
 import { Router } from 'express';
 import { getApiServiceConfig } from '../utils/environment';
 
-const router = Router();
+const router: Router = Router();
 
 // Mock weather data function
 async function getWeatherData(location: string) {

@@ -1,15 +1,15 @@
-import express from 'express';
+import { Router, Request, Response } from 'express';
 import { db } from '../../shared/utils';
 import { authenticateToken } from '../../shared/middleware';
 
-const router = express.Router();
+const router: Router = Router();
 
 // ====================
 // Server Management API
 // ====================
 
 // Handle OPTIONS
-router.options('/', (req: express.Request, res: express.Response) => {
+router.options('/', (req: Request, res: Response) => {
     res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
     res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
     res.set('Access-Control-Max-Age', '3600');
@@ -17,7 +17,7 @@ router.options('/', (req: express.Request, res: express.Response) => {
 });
 
 // GET all servers
-router.get('/', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.get('/', authenticateToken, async (req: Request, res: Response) => {
     try {
         console.log('🖥️ [SERVER API] Fetching all servers...');
         const organizationId = req.user?.organizationId;
@@ -61,10 +61,10 @@ router.get('/', authenticateToken, async (req: express.Request, res: express.Res
 });
 
 // GET single server
-router.get('/:id', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.get('/:id', authenticateToken, async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
-        const doc = await db.collection('servers').doc(id).get();
+        const doc = await db.collection('servers').doc(id as string).get();
 
         if (!doc.exists) {
             return res.status(404).json({
@@ -88,7 +88,7 @@ router.get('/:id', authenticateToken, async (req: express.Request, res: express.
 });
 
 // POST create server
-router.post('/', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.post('/', authenticateToken, async (req: Request, res: Response) => {
     try {
         const organizationId = req.user?.organizationId;
         if (!organizationId) {
@@ -132,12 +132,12 @@ router.post('/', authenticateToken, async (req: express.Request, res: express.Re
 });
 
 // PUT update server
-router.put('/:id', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.put('/:id', authenticateToken, async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
         const organizationId = req.user?.organizationId;
 
-        const docRef = db.collection('servers').doc(id);
+        const docRef = db.collection('servers').doc(id as string);
         const doc = await docRef.get();
 
         if (!doc.exists) {
@@ -183,12 +183,12 @@ router.put('/:id', authenticateToken, async (req: express.Request, res: express.
 });
 
 // DELETE server
-router.delete('/:id', authenticateToken, async (req: express.Request, res: express.Response) => {
+router.delete('/:id', authenticateToken, async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
         const organizationId = req.user?.organizationId;
 
-        const docRef = db.collection('servers').doc(id);
+        const docRef = db.collection('servers').doc(id as string);
         const doc = await docRef.get();
 
         if (!doc.exists) {

@@ -7,7 +7,7 @@
 import { Router } from 'express';
 import { getEnvironmentConfig, getApiServiceConfig, getWebSocketConfig } from '../utils/environment';
 
-const router = Router();
+const router: Router = Router();
 
 // Get environment configuration (safe info only)
 router.get('/', async (req, res) => {

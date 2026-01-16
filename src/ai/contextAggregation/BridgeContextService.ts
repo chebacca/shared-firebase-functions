@@ -7,7 +7,8 @@
 
 import { getFirestore } from 'firebase-admin/firestore';
 
-const db = getFirestore();
+// Initialize getDb() lazily
+const getDb = () => getFirestore();
 
 export interface BridgeContext {
   activeFolders: number;
@@ -30,7 +31,7 @@ export async function gatherBridgeContext(
 ): Promise<BridgeContext> {
   // Query folders using the same pattern as Bridge FirebaseNLESourceFolderService
   // Pattern: organizations/{orgId}/nleSourceFolders (subcollection)
-  const foldersSnapshot = await db
+  const foldersSnapshot = await getDb()
     .collection(`organizations/${organizationId}/nleSourceFolders`)
     .get();
 

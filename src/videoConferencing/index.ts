@@ -258,9 +258,7 @@ export const getVideoConferencingProvidersHttp = onRequest(
   },
   async (req, res) => {
     // Set CORS headers first
-    setCorsHeaders(res, req.headers.origin);
-
-    // Handle preflight requests
+    setCorsHeaders(res, req.headers.origin);    // Handle preflight requests
     if (req.method === 'OPTIONS') {
       res.status(204).end();
       return;

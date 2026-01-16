@@ -6,6 +6,9 @@
  */
 
 import { getFirestore } from 'firebase-admin/firestore';
+import { ReportGeneratorService } from '../reports/ReportGeneratorService';
+import { ReportExportService } from '../reports/ReportExportService';
+import { DocumentAnalysisService } from './services/DocumentAnalysisService';
 
 const db = getFirestore();
 
@@ -27,25 +30,34 @@ export class WorkflowFunctionExecutor {
       switch (functionName) {
         case 'create_workflow':
           return this.createWorkflow(args);
-        
+
         case 'validate_workflow':
           return this.validateWorkflow(args);
-        
+
         case 'fix_workflow_errors':
           return this.fixWorkflowErrors(args);
-        
+
         case 'modify_workflow':
           return this.modifyWorkflow(args);
-        
+
         case 'search_templates':
           return this.searchTemplates(args, organizationId);
-        
+
         case 'calculate_workflow_timeline':
           return this.calculateTimeline(args);
-        
+
         case 'suggest_workflow_for_phase':
           return this.suggestWorkflowForPhase(args);
-        
+
+        case 'generate_report':
+          return this.generateReport(args);
+
+        case 'analyze_project':
+          return this.analyzeProject(args);
+
+        case 'export_report':
+          return this.exportReport(args);
+
         default:
           return {
             success: false,
@@ -72,9 +84,9 @@ export class WorkflowFunctionExecutor {
 
     // Validate structure (with optional phase and status context)
     const validation = this.validateWorkflowStructure(
-      args.nodes, 
-      args.edges, 
-      args.targetPhase, 
+      args.nodes,
+      args.edges,
+      args.targetPhase,
       args.sessionStatus
     );
     if (!validation.valid) {
@@ -101,9 +113,9 @@ export class WorkflowFunctionExecutor {
 
   private static validateWorkflow(args: any): FunctionCallResult {
     const validation = this.validateWorkflowStructure(
-      args.nodes, 
-      args.edges, 
-      args.targetPhase, 
+      args.nodes,
+      args.edges,
+      args.targetPhase,
       args.sessionStatus
     );
     return {
@@ -145,7 +157,7 @@ export class WorkflowFunctionExecutor {
             }
           }
           break;
-        
+
         case 'MISSING_END_NODE':
           // Add end node
           fixedNodes.push({
@@ -167,7 +179,7 @@ export class WorkflowFunctionExecutor {
             });
           }
           break;
-        
+
         case 'ORPHANED_NODE':
           // Connect orphaned node to nearest node
           const orphanedNode = fixedNodes.find(n => n.id === error.nodeId);
@@ -185,7 +197,7 @@ export class WorkflowFunctionExecutor {
             }
           }
           break;
-        
+
         case 'CYCLE_DETECTED':
           // Break cycle by removing problematic edge
           fixedEdges = fixedEdges.filter(e => e.id !== error.edgeId);
@@ -212,7 +224,7 @@ export class WorkflowFunctionExecutor {
         if (!args.targetNodeId || !args.newNodes) {
           return { success: false, error: 'targetNodeId and newNodes required for add_after' };
         }
-        
+
         const targetIndex = modifiedNodes.findIndex(n => n.id === args.targetNodeId);
         if (targetIndex === -1) {
           return { success: false, error: `Target node ${args.targetNodeId} not found` };
@@ -222,7 +234,7 @@ export class WorkflowFunctionExecutor {
         const insertIndex = targetIndex + 1;
         args.newNodes.forEach((node: any, idx: number) => {
           modifiedNodes.splice(insertIndex + idx, 0, node);
-          
+
           // Create edges: target -> new node
           modifiedEdges.push({
             id: `edge-${args.targetNodeId}-${node.id}`,
@@ -245,7 +257,7 @@ export class WorkflowFunctionExecutor {
         if (!args.targetNodeId || !args.newNodes) {
           return { success: false, error: 'targetNodeId and newNodes required for add_before' };
         }
-        
+
         const beforeIndex = modifiedNodes.findIndex(n => n.id === args.targetNodeId);
         if (beforeIndex === -1) {
           return { success: false, error: `Target node ${args.targetNodeId} not found` };
@@ -254,7 +266,7 @@ export class WorkflowFunctionExecutor {
         // Insert new nodes before target
         args.newNodes.forEach((node: any, idx: number) => {
           modifiedNodes.splice(beforeIndex + idx, 0, node);
-          
+
           // Update edges: new node -> target
           modifiedEdges = modifiedEdges.map(edge => {
             if (edge.target === args.targetNodeId) {
@@ -269,9 +281,9 @@ export class WorkflowFunctionExecutor {
         if (!args.targetNodeId) {
           return { success: false, error: 'targetNodeId required for remove' };
         }
-        
+
         modifiedNodes = modifiedNodes.filter(n => n.id !== args.targetNodeId);
-        modifiedEdges = modifiedEdges.filter(e => 
+        modifiedEdges = modifiedEdges.filter(e =>
           e.source !== args.targetNodeId && e.target !== args.targetNodeId
         );
         break;
@@ -280,12 +292,12 @@ export class WorkflowFunctionExecutor {
         if (!args.targetNodeId || !args.updatedNode) {
           return { success: false, error: 'targetNodeId and updatedNode required for update' };
         }
-        
+
         const updateIndex = modifiedNodes.findIndex(n => n.id === args.targetNodeId);
         if (updateIndex === -1) {
           return { success: false, error: `Target node ${args.targetNodeId} not found` };
         }
-        
+
         modifiedNodes[updateIndex] = { ...modifiedNodes[updateIndex], ...args.updatedNode };
         break;
 
@@ -293,12 +305,12 @@ export class WorkflowFunctionExecutor {
         if (!args.targetNodeId || !args.updatedNode) {
           return { success: false, error: 'targetNodeId and updatedNode required for replace' };
         }
-        
+
         const replaceIndex = modifiedNodes.findIndex(n => n.id === args.targetNodeId);
         if (replaceIndex === -1) {
           return { success: false, error: `Target node ${args.targetNodeId} not found` };
         }
-        
+
         modifiedNodes[replaceIndex] = args.updatedNode;
         break;
 
@@ -306,7 +318,7 @@ export class WorkflowFunctionExecutor {
         if (!args.targetNodeId || !args.newNodes) {
           return { success: false, error: 'targetNodeId and newNodes required for insert_parallel' };
         }
-        
+
         // Find nodes that come after target
         const parallelTargetIndex = modifiedNodes.findIndex(n => n.id === args.targetNodeId);
         if (parallelTargetIndex === -1) {
@@ -316,7 +328,7 @@ export class WorkflowFunctionExecutor {
         // Insert parallel nodes (same level as target)
         args.newNodes.forEach((node: any) => {
           modifiedNodes.push(node);
-          
+
           // Connect from same source as target
           const targetEdges = modifiedEdges.filter(e => e.target === args.targetNodeId);
           targetEdges.forEach(edge => {
@@ -349,11 +361,11 @@ export class WorkflowFunctionExecutor {
       // Query Firestore for templates
       let query = db.collection('workflow-templates')
         .where('organizationId', '==', organizationId);
-      
+
       if (args.category) {
         query = query.where('category', '==', args.category) as any;
       }
-      
+
       const snapshot = await query.limit(20).get();
       const templates = snapshot.docs.map(doc => ({
         id: doc.id,
@@ -362,7 +374,7 @@ export class WorkflowFunctionExecutor {
 
       // Simple text matching on query
       const queryLower = args.query.toLowerCase();
-      const filtered = templates.filter((t: any) => 
+      const filtered = templates.filter((t: any) =>
         t.name?.toLowerCase().includes(queryLower) ||
         t.description?.toLowerCase().includes(queryLower) ||
         t.category?.toLowerCase().includes(queryLower)
@@ -370,7 +382,7 @@ export class WorkflowFunctionExecutor {
 
       return {
         success: true,
-        data: { 
+        data: {
           templates: filtered,
           totalFound: filtered.length
         }
@@ -407,13 +419,13 @@ export class WorkflowFunctionExecutor {
       const calculatePathLength = (nodeId: string, visited: Set<string> = new Set()): number => {
         if (visited.has(nodeId)) return 0; // Cycle protection
         visited.add(nodeId);
-        
+
         const node = nodeMap.get(nodeId) as any;
         const hours = node?.data?.estimatedHours || 8;
-        
+
         const deps = dependencies.get(nodeId) || [];
         if (deps.length === 0) return hours;
-        
+
         const maxDepTime = Math.max(...deps.map((dep: string) => calculatePathLength(dep, new Set(visited))));
         return hours + maxDepTime;
       };
@@ -476,7 +488,7 @@ export class WorkflowFunctionExecutor {
           suggestions.recommendedNodeTypes = ['task', 'approval'];
           suggestions.recommendedTaskTypes = ['GENERAL_TASK', 'COMMUNICATION'];
           suggestions.recommendedAgents = ['COORDINATOR'];
-          suggestions.recommendedRoles = teamMembers.filter((m: any) => 
+          suggestions.recommendedRoles = teamMembers.filter((m: any) =>
             ['PRODUCER', 'POST_COORDINATOR', 'DIRECTOR'].includes(m.roleName?.toUpperCase())
           ).map((m: any) => m.roleName);
           suggestions.workflowStructure = [
@@ -493,7 +505,7 @@ export class WorkflowFunctionExecutor {
           suggestions.recommendedNodeTypes = ['task', 'agent'];
           suggestions.recommendedTaskTypes = ['GENERAL_TASK', 'COMMUNICATION'];
           suggestions.recommendedAgents = ['INGEST_BOT', 'COORDINATOR'];
-          suggestions.recommendedRoles = teamMembers.filter((m: any) => 
+          suggestions.recommendedRoles = teamMembers.filter((m: any) =>
             ['DIRECTOR', 'PRODUCER', 'CAMERA_OPERATOR'].includes(m.roleName?.toUpperCase())
           ).map((m: any) => m.roleName);
           suggestions.workflowStructure = [
@@ -511,7 +523,7 @@ export class WorkflowFunctionExecutor {
           suggestions.recommendedNodeTypes = ['task', 'agent', 'approval', 'decision'];
           suggestions.recommendedTaskTypes = ['INGEST', 'EDITORIAL', 'COLOR', 'AUDIO', 'GRAPHICS', 'QC', 'REVIEW'];
           suggestions.recommendedAgents = ['INGEST_BOT', 'QC_BOT', 'COORDINATOR'];
-          suggestions.recommendedRoles = teamMembers.filter((m: any) => 
+          suggestions.recommendedRoles = teamMembers.filter((m: any) =>
             ['EDITOR', 'COLORIST', 'SOUND_DESIGNER', 'QC_SPECIALIST', 'PRODUCER'].includes(m.roleName?.toUpperCase())
           ).map((m: any) => m.roleName);
           suggestions.workflowStructure = [
@@ -533,7 +545,7 @@ export class WorkflowFunctionExecutor {
           suggestions.recommendedNodeTypes = ['task', 'agent', 'approval'];
           suggestions.recommendedTaskTypes = ['QC', 'REVIEW', 'COMMUNICATION'];
           suggestions.recommendedAgents = ['DELIVERY_BOT', 'QC_BOT'];
-          suggestions.recommendedRoles = teamMembers.filter((m: any) => 
+          suggestions.recommendedRoles = teamMembers.filter((m: any) =>
             ['POST_COORDINATOR', 'PRODUCER', 'QC_SPECIALIST'].includes(m.roleName?.toUpperCase())
           ).map((m: any) => m.roleName);
           suggestions.workflowStructure = [
@@ -631,16 +643,16 @@ export class WorkflowFunctionExecutor {
       connectedNodes.add(e.source);
       connectedNodes.add(e.target);
     });
-    
+
     nodeIds.forEach(id => {
       if (!connectedNodes.has(id)) {
         const node = nodes.find((n: any) => n.id === id);
         // Start and end nodes can be unconnected if they're the only nodes
         if (node?.type !== 'start' && node?.type !== 'end') {
-          errors.push({ 
-            code: 'ORPHANED_NODE', 
+          errors.push({
+            code: 'ORPHANED_NODE',
             message: `Node ${id} is not connected to the workflow`,
-            nodeId: id 
+            nodeId: id
           });
         }
       }
@@ -669,7 +681,7 @@ export class WorkflowFunctionExecutor {
     agentNodes.forEach((node: any) => {
       const validAgentRoles = ['COORDINATOR', 'QC_BOT', 'INGEST_BOT', 'DELIVERY_BOT', 'ASSISTANT'];
       const agentRole = node.data?.role;
-      
+
       if (!agentRole) {
         warnings.push({
           code: 'AGENT_MISSING_ROLE',
@@ -683,7 +695,7 @@ export class WorkflowFunctionExecutor {
           nodeId: node.id
         });
       }
-      
+
       // Validate networkMode if provided
       if (node.data?.networkMode && !['cloud', 'local', 'auto'].includes(node.data.networkMode)) {
         warnings.push({
@@ -692,7 +704,7 @@ export class WorkflowFunctionExecutor {
           nodeId: node.id
         });
       }
-      
+
       // Validate executionMode if provided
       if (node.data?.executionMode && !['rule_based', 'llm_based'].includes(node.data.executionMode)) {
         warnings.push({
@@ -714,7 +726,7 @@ export class WorkflowFunctionExecutor {
 
       const validTaskTypes = validTaskTypesByPhase[targetPhase] || [];
       const taskNodes = nodes.filter((n: any) => n.type === 'task' && n.data?.taskType);
-      
+
       taskNodes.forEach((node: any) => {
         const taskType = node.data.taskType;
         if (validTaskTypes.length > 0 && !validTaskTypes.includes(taskType)) {
@@ -766,14 +778,14 @@ export class WorkflowFunctionExecutor {
     // Check for cycles (simplified - full DFS would be better)
     const visited = new Set<string>();
     const recStack = new Set<string>();
-    
+
     const hasCycle = (nodeId: string): boolean => {
       if (recStack.has(nodeId)) return true;
       if (visited.has(nodeId)) return false;
-      
+
       visited.add(nodeId);
       recStack.add(nodeId);
-      
+
       const outgoingEdges = edges.filter((e: any) => e.source === nodeId);
       for (const edge of outgoingEdges) {
         if (hasCycle(edge.target)) {
@@ -785,7 +797,7 @@ export class WorkflowFunctionExecutor {
           return true;
         }
       }
-      
+
       recStack.delete(nodeId);
       return false;
     };
@@ -809,6 +821,84 @@ export class WorkflowFunctionExecutor {
       errors,
       warnings
     };
+  }
+
+  private static async generateReport(args: any): Promise<FunctionCallResult> {
+    try {
+      const { organizationId, projectId, reportType, options } = args;
+      if (!projectId) {
+        return { success: false, error: 'projectId is required' };
+      }
+
+      const reportGenerator = new ReportGeneratorService();
+      const result = await reportGenerator.generateReport(
+        projectId,
+        reportType || 'executive',
+        options || {}
+      );
+
+      return {
+        success: true,
+        data: result
+      };
+    } catch (error: any) {
+      return { success: false, error: `Report generation failed: ${error.message}` };
+    }
+  }
+
+  private static async analyzeProject(args: any): Promise<FunctionCallResult> {
+    try {
+      const { projectId, analysisType, focusAreas } = args;
+      if (!projectId) {
+        return { success: false, error: 'projectId is required' };
+      }
+
+      // TODO: Mock data collection needs to be consistent
+      const projectData = {
+        projectName: "Project Alpha",
+        organizationId: "org-123",
+        projectId: projectId,
+        dateRange: { start: "2024-01-01", end: "2024-12-31" },
+        budget: { allocated: 50000, spent: 35000 },
+        sessions: [], workflows: [], team: [], deliverables: []
+      };
+
+      const analysisService = new DocumentAnalysisService();
+      const insights = await analysisService.analyzeProject(projectData, {
+        reportType: (analysisType as any) || 'executive',
+        focusAreas
+      });
+
+      return {
+        success: true,
+        data: insights
+      };
+    } catch (error: any) {
+      return { success: false, error: `Analysis failed: ${error.message}` };
+    }
+  }
+
+  private static async exportReport(args: any): Promise<FunctionCallResult> {
+    try {
+      const { organizationId, reportUrl, destination, recipient } = args;
+      if (!organizationId || !reportUrl || !destination) {
+        return { success: false, error: 'organizationId, reportUrl, and destination are required' };
+      }
+
+      const exportService = new ReportExportService();
+      const result = await exportService.exportReport(organizationId, reportUrl, {
+        type: destination,
+        recipient: recipient || ''
+      });
+
+      return {
+        success: result.success,
+        data: result,
+        error: result.success ? undefined : result.message
+      };
+    } catch (error: any) {
+      return { success: false, error: `Export failed: ${error.message}` };
+    }
   }
 }
 

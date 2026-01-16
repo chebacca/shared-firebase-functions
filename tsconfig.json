@@ -18,28 +18,23 @@
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
     "noEmitOnError": false,
-    "baseUrl": "..",
+    "baseUrl": ".",
     "paths": {
-      "@sentry/*": ["node_modules/@sentry/*"],
-      "@opentelemetry/*": ["node_modules/@opentelemetry/*"],
-      "@google-cloud/opentelemetry-cloud-trace-exporter": ["node_modules/@google-cloud/opentelemetry-cloud-trace-exporter"],
-      "@google-cloud/opentelemetry-cloud-monitoring-exporter": ["node_modules/@google-cloud/opentelemetry-cloud-monitoring-exporter"],
-      "langgraph": ["node_modules/langgraph"],
-      "@langchain/*": ["node_modules/@langchain/*"],
-      "*": [
-        "node_modules/*",
-        "shared-firebase-functions/node_modules/*"
+      "shared-backbone-intelligence": [
+        "../shared-backbone-intelligence"
+      ],
+      "shared-backbone-intelligence/*": [
+        "../shared-backbone-intelligence/src/*"
       ]
     }
   },
   "include": [
-    "src/**/*",
-    "src/types/**/*"
+    "src/**/*"
   ],
   "exclude": [
     "node_modules",
     "lib",
-    "src/**/__tests__/**/*",
-    "src/**/*.test.ts"
+    "google-drive-deploy",
+    "**/*.test.ts"
   ]
 }
