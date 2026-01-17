@@ -268,9 +268,7 @@ export const getVideoConferencingProvidersHttp = onRequest(
     if (req.method !== 'POST') {
       res.status(405).json({ success: false, error: 'Method not allowed' });
       return;
-    }
-
-    try {
+    }    try {
       const { organizationId } = req.body as {
         organizationId: string;
       };      if (!organizationId) {

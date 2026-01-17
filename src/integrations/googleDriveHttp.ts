@@ -336,17 +336,37 @@ export const getGoogleIntegrationStatusHttp = functions.https.onRequest(async (r
       });
       res.status(200).json(response);
 
-    } catch (tokenError) {
-      // Tokens are invalid, mark as disconnected
-      await admin.firestore()
-        .collection('userIntegrations')
-        .doc(`${userId}_google`)
-        .delete();
+    } catch (tokenError: any) {
+      console.warn('Google Drive token validation failed:', tokenError?.message);
+      
+      // Only delete if it's a permanent auth error
+      const errorMessage = (tokenError?.message || '').toLowerCase();
+      const isAuthError = 
+        errorMessage.includes('invalid_grant') || 
+        errorMessage.includes('invalid_token') || 
+        errorMessage.includes('unauthorized') ||
+        (tokenError?.code === 401) ||
+        (tokenError?.response?.status === 401);
+
+      if (isAuthError) {
+        console.warn('Permanent authentication error detected, removing invalid integration');
+        // Tokens are invalid, mark as disconnected
+        await admin.firestore()
+          .collection('userIntegrations')
+          .doc(`${userId}_google`)
+          .delete();
+        
+        // Also try to clean up organization-level connection if it exists and we're an admin
+        // (This is safer to leave for manual cleanup or specific admin action, but preserving current behavior for user-level)
+      } else {
+        console.warn('Transient or unknown error, preserving integration data');
+      }
 
       const response = createSuccessResponse({
         connected: false,
         accountEmail: null,
-        connectedAt: null
+        connectedAt: null,
+        error: isAuthError ? 'Authentication expired' : 'Connection check failed'
       });
       res.status(200).json(response);
     }

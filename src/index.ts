@@ -472,5 +472,14 @@ export {
   manualCheckInOutHttp,
 } from './security';
 
+// Export overtime request functions
+export {
+  createOvertimeRequest,
+  respondToOvertimeRequest,
+  certifyOvertimeRequest,
+  approveOvertimeRequest,
+  rejectOvertimeRequest
+} from './overtime';
+
 // NOTE: Other functions commented out due to TypeScript errors
 

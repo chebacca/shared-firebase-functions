@@ -209,6 +209,17 @@ export class UnifiedOAuthService {
       ? encryptToken(tokens.refreshToken)
       : undefined;
 
+    // Validation: Check for missing refresh token for persistent providers
+    if (!tokens.refreshToken && ['google', 'dropbox', 'box'].includes(providerName)) {
+      console.warn(`⚠️ [OAuthService] No refresh token returned for ${providerName}!`);
+      console.warn(`⚠️ [OAuthService] This connection will expire when the access token expires.`);
+      console.warn(`⚠️ [OAuthService] Suggestion: Disconnect and Reconnect, or check provider 'offline' access settings.`);
+
+      // For Google, this usually means 'prompt: consent' was missing (but we send it).
+      // For Dropbox, this means 'token_access_type: offline' was missing (but we send it).
+      // Or the user has already granted access and we didn't force a new refresh token.
+    }
+
     // Special handling for Slack - save to slackConnections collection
     if (providerName === 'slack') {
       // Slack-specific connection format
@@ -381,7 +392,7 @@ export class UnifiedOAuthService {
       const separator = redirectUrl.includes('?') ? '&' : '?';
       finalRedirectUrl = `${redirectUrl}${separator}oauth_success=true&provider=${providerName}`;
     }
-    
+
     console.log(`✅ [OAuthService] OAuth callback successful, redirecting to: ${finalRedirectUrl}`);
     console.log(`🔍 [OAuthService] Redirect URL details:`, {
       original: stateData.redirectUrl,

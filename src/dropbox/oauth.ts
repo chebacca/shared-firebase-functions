@@ -682,6 +682,7 @@ export const dropboxOAuthCallbackHttp = onRequest(
   {
     region: 'us-central1',
     cors: true,
+    invoker: 'public',
     secrets: [encryptionKey],
   },
   async (req, res) => {
@@ -823,15 +824,22 @@ async function completeOAuthCallbackLogic(code: string, state: string, stateData
   try {
     const { organizationId, connectionType, userId, redirectUri, redirectUrl } = stateData;
 
-    // Get Dropbox configuration
-    const dropboxConfig = await getDropboxConfig(organizationId);
-
     // Exchange code for access token using Dropbox API
     const https = require('https');
     const querystring = require('querystring');
 
     // Use redirectUri from state (Firebase Function URL) for token exchange
     const tokenExchangeRedirectUri = redirectUri || 'https://us-central1-backbone-logic.cloudfunctions.net/dropboxOAuthCallbackHttp';
+
+    console.log(`🔄 [DropboxOAuth] Getting Dropbox config for org: ${organizationId}...`);
+    let dropboxConfig;
+    try {
+      dropboxConfig = await getDropboxConfig(organizationId);
+      console.log(`✅ [DropboxOAuth] Got Dropbox config, appKey length: ${dropboxConfig.appKey?.length}`);
+    } catch (configError) {
+      console.error(`❌ [DropboxOAuth] Failed to get Dropbox config:`, configError);
+      throw new Error(`Configuration error: ${configError instanceof Error ? configError.message : 'Unknown error'}`);
+    }
 
     console.log(`🔄 [DropboxOAuth] Initiating token exchange for org: ${organizationId}`, {
       redirectUri: tokenExchangeRedirectUri,
@@ -894,39 +902,28 @@ async function completeOAuthCallbackLogic(code: string, state: string, stateData
       throw new Error('Token exchange succeeded but no access_token received');
     }
 
-    // Get user info using Dropbox API
-    const userInfoResponse = await new Promise<any>((resolve, reject) => {
-      const req = https.request({
-        hostname: 'api.dropboxapi.com',
-        path: '/2/users/get_current_account',
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${tokenResponse.access_token}`,
-          'Content-Type': 'application/json'
-        }
-      }, (res: any) => {
-        let data = '';
-        res.on('data', (chunk: any) => { data += chunk; });
-        res.on('end', () => {
-          if (res.statusCode === 200) {
-            try {
-              resolve(JSON.parse(data));
-            } catch (parseError) {
-              reject(new Error(`Failed to parse user info response: ${parseError}`));
-            }
-          } else {
-            reject(new Error(`Failed to get user info: ${res.statusCode}`));
-          }
-        });
-      });
+    console.log(`✅ [DropboxOAuth] Token exchange successful, scopes received: ${tokenResponse.scope || 'none'}`);
 
-      req.on('error', (error: any) => {
-        reject(error);
-      });
+    if (tokenResponse.scope && !tokenResponse.scope.includes('account_info.read')) {
+      console.warn('⚠️ [DropboxOAuth] Warning: account_info.read scope missing from token response. User info fetch might fail.');
+    }
 
-      req.write(JSON.stringify({}));
-      req.end();
-    });
+    // Get user info using Dropbox SDK to ensure correct request formatting
+    console.log('🔄 [DropboxOAuth] Fetching user info via SDK...');
+    let userInfoResponse;
+    try {
+      const { Dropbox } = require('dropbox');
+      const dbx = new Dropbox({ accessToken: tokenResponse.access_token });
+      const response = await dbx.usersGetCurrentAccount();
+      userInfoResponse = response.result;
+      console.log('✅ [DropboxOAuth] User info fetched successfully:', userInfoResponse.account_id);
+    } catch (usersError: any) {
+      console.error('❌ [DropboxOAuth] SDK User info fetch failed:', usersError);
+      if (usersError.error) {
+        console.error('❌ [DropboxOAuth] Error body:', JSON.stringify(usersError.error, null, 2));
+      }
+      throw new Error(`Failed to get user info: ${usersError.message || 'Unknown SDK error'}`);
+    }
 
     // Encrypt tokens
     const encryptedAccessToken = encryptToken(tokenResponse.access_token);
