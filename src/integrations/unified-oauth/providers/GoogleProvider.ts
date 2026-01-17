@@ -14,14 +14,14 @@ export class GoogleProvider implements OAuthProvider {
   name = 'google';
   displayName = 'Google Drive';
   type = 'oauth2' as const;
-  
+
   authorizationEndpoint = 'https://accounts.google.com/o/oauth2/v2/auth';
   tokenEndpoint = 'https://oauth2.googleapis.com/token';
   revokeEndpoint = 'https://oauth2.googleapis.com/revoke';
-  
+
   // Union of all scopes needed by all apps
   requiredScopes = FeatureAccessService.getAllRequiredScopesForProvider('google');
-  
+
   /**
    * Generate OAuth authorization URL
    */
@@ -36,17 +36,17 @@ export class GoogleProvider implements OAuthProvider {
       }
       throw error;
     }
-    
+
     if (!config.clientId || !config.clientSecret) {
       throw new Error(`Google OAuth credentials are incomplete. Client ID and Client Secret must be configured in Integration Settings.`);
     }
-    
+
     const oauth2Client = new google.auth.OAuth2(
       config.clientId,
       config.clientSecret,
       params.redirectUri
     );
-    
+
     return oauth2Client.generateAuthUrl({
       access_type: 'offline', // Required for refresh token
       scope: this.requiredScopes,
@@ -54,32 +54,32 @@ export class GoogleProvider implements OAuthProvider {
       prompt: 'consent' // Force consent to get refresh token
     });
   }
-  
+
   /**
    * Exchange authorization code for tokens
    */
   async exchangeCodeForTokens(code: string, redirectUri: string, organizationId: string): Promise<TokenSet> {
     const config = await this.getConfig(organizationId);
-    
+
     const oauth2Client = new google.auth.OAuth2(
       config.clientId,
       config.clientSecret,
       redirectUri
     );
-    
+
     // Exchange code for tokens
     const { tokens } = await oauth2Client.getToken(code);
-    
+
     if (!tokens || !tokens.access_token) {
       throw new Error('Token exchange succeeded but no access_token received');
     }
-    
+
     // Get user info
     oauth2Client.setCredentials(tokens);
     const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
     const userInfoResponse = await oauth2.userinfo.get();
     const userInfo = userInfoResponse.data as { email: string; name: string; id?: string; picture?: string };
-    
+
     return {
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
@@ -92,36 +92,36 @@ export class GoogleProvider implements OAuthProvider {
       }
     };
   }
-  
+
   /**
    * Refresh expired access token
    */
   async refreshTokens(refreshToken: string, organizationId: string): Promise<TokenSet> {
     const config = await this.getConfig(organizationId);
-    
+
     const oauth2Client = new google.auth.OAuth2(
       config.clientId,
       config.clientSecret,
       config.additionalParams?.redirectUri || 'https://us-central1-backbone-logic.cloudfunctions.net/handleOAuthCallback'
     );
-    
+
     // Set refresh token and refresh
     oauth2Client.setCredentials({
       refresh_token: refreshToken,
     });
-    
+
     const { credentials } = await oauth2Client.refreshAccessToken();
-    
+
     if (!credentials.access_token) {
       throw new Error('Token refresh failed - no access token received');
     }
-    
+
     // Get updated user info
     oauth2Client.setCredentials(credentials);
     const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
     const userInfoResponse = await oauth2.userinfo.get();
     const userInfo = userInfoResponse.data as { email: string; name: string; id?: string };
-    
+
     return {
       accessToken: credentials.access_token,
       refreshToken: credentials.refresh_token || refreshToken, // Keep existing if not provided
@@ -134,7 +134,7 @@ export class GoogleProvider implements OAuthProvider {
       }
     };
   }
-  
+
   /**
    * Revoke access token
    */
@@ -155,7 +155,7 @@ export class GoogleProvider implements OAuthProvider {
       // Continue anyway - we'll still mark as inactive
     }
   }
-  
+
   /**
    * Validate that connection still works
    */
@@ -166,17 +166,17 @@ export class GoogleProvider implements OAuthProvider {
         access_token: tokens.accessToken,
         refresh_token: tokens.refreshToken
       });
-      
+
       // Make a test API call to verify tokens work
       const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
       const response = await oauth2.userinfo.get();
-      
+
       return response.status === 200;
     } catch {
       return false;
     }
   }
-  
+
   /**
    * Get provider configuration
    */
@@ -203,26 +203,28 @@ export class GoogleProvider implements OAuthProvider {
               console.warn('Failed to decrypt client secret, using as-is');
             }
           }
-          
+
+          console.log(`✅ [GoogleProvider] Loaded config from integrationSettings/google`);
+
           return {
             clientId: settingsData.clientId,
             clientSecret: clientSecret,
             additionalParams: {
               redirectUri: settingsData.redirectUri || 'https://us-central1-backbone-logic.cloudfunctions.net/handleOAuthCallback',
-              // 🔥 Use requiredScopes (includes calendar/meet) or fallback to full list
-              scopes: settingsData.scopes || this.requiredScopes.length > 0 
-                ? this.requiredScopes 
-                : [
-                    'https://www.googleapis.com/auth/drive.readonly',
-                    'https://www.googleapis.com/auth/drive.file',
-                    'https://www.googleapis.com/auth/documents',
-                    'https://www.googleapis.com/auth/userinfo.email',
-                    'https://www.googleapis.com/auth/userinfo.profile',
-                    'https://www.googleapis.com/auth/calendar',
-                    'https://www.googleapis.com/auth/calendar.events',
-                    'https://www.googleapis.com/auth/meetings.space.created',
-                    'https://www.googleapis.com/auth/meetings.space.readonly'
-                  ]
+              // 🔥 Always prefer code-defined required scopes to ensure feature availability
+              scopes: this.requiredScopes.length > 0
+                ? this.requiredScopes
+                : (settingsData.scopes || [
+                  'https://www.googleapis.com/auth/drive.readonly',
+                  'https://www.googleapis.com/auth/drive.file',
+                  'https://www.googleapis.com/auth/documents',
+                  'https://www.googleapis.com/auth/userinfo.email',
+                  'https://www.googleapis.com/auth/userinfo.profile',
+                  'https://www.googleapis.com/auth/calendar',
+                  'https://www.googleapis.com/auth/calendar.events',
+                  'https://www.googleapis.com/auth/meetings.space.created',
+                  'https://www.googleapis.com/auth/meetings.space.readonly'
+                ])
             }
           };
         }
@@ -237,12 +239,14 @@ export class GoogleProvider implements OAuthProvider {
         .where('type', 'in', ['google_docs', 'google_drive'])
         .limit(1)
         .get();
-      
+
       if (!configsSnapshot.empty) {
         const configDoc = configsSnapshot.docs[0];
         const data = configDoc.data()!;
-        
+
         if (data.credentials?.clientId && data.credentials?.clientSecret) {
+          console.log(`✅ [GoogleProvider] Loaded config from integrationConfigs/${configDoc.id}`);
+
           // Decrypt client secret if encrypted
           let clientSecret = data.credentials.clientSecret;
           if (clientSecret.includes(':')) {
@@ -253,40 +257,40 @@ export class GoogleProvider implements OAuthProvider {
               console.warn('Failed to decrypt client secret, using as-is');
             }
           }
-          
+
           return {
             clientId: data.credentials.clientId,
             clientSecret: clientSecret,
             additionalParams: {
               redirectUri: data.settings?.redirectUri || 'https://us-central1-backbone-logic.cloudfunctions.net/handleOAuthCallback',
-              // 🔥 Use requiredScopes (includes calendar/meet) - ensures all features are available
-              scopes: this.requiredScopes.length > 0 
-                ? this.requiredScopes 
+              // 🔥 Always prefer code-defined required scopes
+              scopes: this.requiredScopes.length > 0
+                ? this.requiredScopes
                 : [
-                    'https://www.googleapis.com/auth/drive.readonly',
-                    'https://www.googleapis.com/auth/drive.file',
-                    'https://www.googleapis.com/auth/documents',
-                    'https://www.googleapis.com/auth/userinfo.email',
-                    'https://www.googleapis.com/auth/userinfo.profile',
-                    'https://www.googleapis.com/auth/calendar',
-                    'https://www.googleapis.com/auth/calendar.events',
-                    'https://www.googleapis.com/auth/meetings.space.created',
-                    'https://www.googleapis.com/auth/meetings.space.readonly'
-                  ]
+                  'https://www.googleapis.com/auth/drive.readonly',
+                  'https://www.googleapis.com/auth/drive.file',
+                  'https://www.googleapis.com/auth/documents',
+                  'https://www.googleapis.com/auth/userinfo.email',
+                  'https://www.googleapis.com/auth/userinfo.profile',
+                  'https://www.googleapis.com/auth/calendar',
+                  'https://www.googleapis.com/auth/calendar.events',
+                  'https://www.googleapis.com/auth/meetings.space.created',
+                  'https://www.googleapis.com/auth/meetings.space.readonly'
+                ]
             }
           };
         }
       }
     }
-    
+
     // Option 2: Get from environment variables (global config)
     const clientId = process.env.GOOGLE_CLIENT_ID || '749245129278-vnepq570jrh5ji94c9olshc282bj1l86';
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-    
+
     // Option 3: Try Firebase Functions config (v1 compatibility)
     let finalClientId = clientId;
     let finalClientSecret = clientSecret;
-    
+
     if (!finalClientSecret) {
       try {
         const functions = require('firebase-functions');
@@ -299,11 +303,11 @@ export class GoogleProvider implements OAuthProvider {
         // Config not available (v2 functions)
       }
     }
-    
+
     if (!finalClientSecret) {
       throw new Error('Google OAuth client secret not configured. Set GOOGLE_CLIENT_SECRET environment variable or configure in Integration Settings.');
     }
-    
+
     return {
       clientId: finalClientId,
       clientSecret: finalClientSecret,

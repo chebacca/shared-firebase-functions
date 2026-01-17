@@ -146,6 +146,13 @@ export * from './webex';
 export * from './videoConferencing';
 export * from './location';
 
+// Export Travel Management functions
+export {
+  sendTravelEmail,
+  sendTravelNotification,
+  sendTravelReminder
+} from './travel';
+
 // Export Production Workflow System functions
 export * from './workflow';
 

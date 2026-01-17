@@ -87,6 +87,7 @@ export const handleOAuthCallback = onRequest(
   {
     region: 'us-central1',
     cors: true,
+    invoker: 'public', // Required for OAuth callbacks from Google/other providers
     secrets: [encryptionKey],
   },
   async (req, res) => {
@@ -197,10 +198,22 @@ export const handleOAuthCallback = onRequest(
     }
 
     try {
+      console.log(`🔄 [handleOAuthCallback] Processing OAuth callback`, {
+        hasCode: !!code,
+        hasState: !!state,
+        statePreview: state ? (state as string).substring(0, 8) + '...' : 'none'
+      });
+
       const result = await oauthService.handleCallback(
         code as string,
         state as string
       );
+
+      console.log(`✅ [handleOAuthCallback] OAuth callback processed, redirecting to:`, {
+        redirectUrl: result.redirectUrl,
+        isHubUrl: result.redirectUrl.includes('localhost:5300') || result.redirectUrl.includes('hub'),
+        isLicensingWebsite: result.redirectUrl.includes('localhost:4001') || result.redirectUrl.includes('backbone-logic.web.app')
+      });
 
       return res.redirect(result.redirectUrl);
     } catch (error: any) {

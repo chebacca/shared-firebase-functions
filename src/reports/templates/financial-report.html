@@ -207,19 +207,19 @@
     <div class="metric-grid">
       <div class="metric-card">
         <div class="metric-label">Total Budget</div>
-        <div class="metric-value">{{metrics.totalBudget}}</div>
+        <div class="metric-value">${{metrics.totalBudget}}</div>
       </div>
       <div class="metric-card">
         <div class="metric-label">Actual Spent</div>
-        <div class="metric-value">{{metrics.spent}}</div>
+        <div class="metric-value">${{metrics.spent}}</div>
       </div>
       <div class="metric-card">
         <div class="metric-label">Remaining</div>
-        <div class="metric-value">{{metrics.remaining}}</div>
+        <div class="metric-value">${{metrics.remaining}}</div>
       </div>
       <div class="metric-card">
         <div class="metric-label">Variance</div>
-        <div class="metric-value">{{metrics.variance}}</div>
+        <div class="metric-value">{{metrics.variance}}%</div>
       </div>
     </div>
     <div class="chart-container">
@@ -227,6 +227,235 @@
       <img src="{{charts.budget}}" alt="Budget Allocation" />
       {{/if}}
     </div>
+  </div>
+
+  <div class="page">
+    <div class="header">
+      <div class="header-title">Labor Costs & Timecards</div>
+      <div class="header-meta">Page 03</div>
+    </div>
+    <h1>Labor Analysis</h1>
+    <div class="metric-grid">
+      <div class="metric-card">
+        <div class="metric-label">Total Hours</div>
+        <div class="metric-value">{{financialSummary.totalTimecardHours}}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Labor Cost</div>
+        <div class="metric-value">${{financialSummary.totalTimecardPay}}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Payroll Batches</div>
+        <div class="metric-value">{{financialSummary.payrollBatchCount}}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Total Payroll</div>
+        <div class="metric-value">${{financialSummary.totalPayroll}}</div>
+      </div>
+    </div>
+    <h2>Timecard Summary</h2>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Metric</th>
+          <th>Count</th>
+          <th>Hours</th>
+          <th>Cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Total Timecards</td>
+          <td>{{financialSummary.timecardCount}}</td>
+          <td>{{financialSummary.totalTimecardHours}}</td>
+          <td>${{financialSummary.totalTimecardPay}}</td>
+        </tr>
+        <tr>
+          <td>Payroll Batches</td>
+          <td>{{financialSummary.payrollBatchCount}}</td>
+          <td>-</td>
+          <td>${{financialSummary.totalPayroll}}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="page">
+    <div class="header">
+      <div class="header-title">Expenses & Cash Flow</div>
+      <div class="header-meta">Page 04</div>
+    </div>
+    <h1>Expense Analysis</h1>
+    <div class="metric-grid">
+      <div class="metric-card">
+        <div class="metric-label">Total Expenses</div>
+        <div class="metric-value">${{financialSummary.totalExpenses}}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Expense Count</div>
+        <div class="metric-value">{{financialSummary.expenseCount}}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Total Income</div>
+        <div class="metric-value">${{financialSummary.totalIncome}}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Net Cash Flow</div>
+        <div class="metric-value">${{financialSummary.netCashFlow}}</div>
+      </div>
+    </div>
+    <h2>Expense Breakdown by Category</h2>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Category</th>
+          <th>Amount</th>
+          <th>Count</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each analytics.expenseByCategory}}
+        <tr>
+          <td>{{@key}}</td>
+          <td>${{this.amount}}</td>
+          <td>{{this.count}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+    <h2>Financial Health</h2>
+    <p>{{executiveSummary}}</p>
+    <div class="chart-container">
+      {{#if charts.timeline}}
+      <img src="{{charts.timeline}}" alt="Timeline" />
+      {{/if}}
+    </div>
+  </div>
+
+  <div class="page">
+    <div class="header">
+      <div class="header-title">Labor Costs & Department Analysis</div>
+      <div class="header-meta">Page 05</div>
+    </div>
+    <h1>Department Labor Breakdown</h1>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Department</th>
+          <th>Hours</th>
+          <th>Cost</th>
+          <th>Timecards</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each analytics.timecardByDepartment}}
+        <tr>
+          <td>{{@key}}</td>
+          <td>{{this.hours}}</td>
+          <td>${{this.cost}}</td>
+          <td>{{this.count}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+    <h2>Team Distribution</h2>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Department</th>
+          <th>Team Members</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each analytics.teamByDepartment}}
+        <tr>
+          <td>{{@key}}</td>
+          <td>{{this.count}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="page">
+    <div class="header">
+      <div class="header-title">Project Status & Deliverables</div>
+      <div class="header-meta">Page 06</div>
+    </div>
+    <h1>Deliverables Status</h1>
+    <div class="metric-grid">
+      <div class="metric-card">
+        <div class="metric-label">Total Deliverables</div>
+        <div class="metric-value">{{analytics.totalDeliverablesCount}}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Completed</div>
+        <div class="metric-value">{{analytics.completedDeliverablesCount}}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Blocked</div>
+        <div class="metric-value">{{analytics.blockedDeliverablesCount}}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Completion %</div>
+        <div class="metric-value">{{metrics.completionPercentage}}%</div>
+      </div>
+    </div>
+    <h2>Deliverables Breakdown</h2>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Status</th>
+          <th>Count</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each analytics.deliverableStatusBreakdown}}
+        <tr>
+          <td>{{@key}}</td>
+          <td>{{this}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+    <h2>Session Phases</h2>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Phase</th>
+          <th>Sessions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each analytics.sessionPhases}}
+        <tr>
+          <td>{{@key}}</td>
+          <td>{{this}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="page">
+    <div class="header">
+      <div class="header-title">Key Insights & Recommendations</div>
+      <div class="header-meta">Page 07</div>
+    </div>
+    <h1>Executive Summary</h1>
+    <p>{{executiveSummary}}</p>
+    <h2>Key Highlights</h2>
+    <ul style="list-style: none; padding: 0;">
+      {{#each insights.keyHighlights}}
+      <li style="padding: 12px 0; border-bottom: 1px solid #f1f5f9;">• {{this}}</li>
+      {{/each}}
+    </ul>
+    <h2>Recommendations</h2>
+    <ul style="list-style: none; padding: 0;">
+      {{#each insights.recommendations}}
+      <li style="padding: 12px 0; border-bottom: 1px solid #f1f5f9;">• {{this}}</li>
+      {{/each}}
+    </ul>
   </div>
 </body>
 

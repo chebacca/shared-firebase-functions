@@ -32,7 +32,7 @@ export class ReportGeneratorService {
         this.chartService = new ChartGenerationService();
         this.pdfService = new PDFTemplateService();
         this.dataCollectionService = new EnhancedDataCollectionService();
-        this.storageBucket = process.env.REPORT_STORAGE_BUCKET || 'backbone-logic.appspot.com';
+        this.storageBucket = process.env.REPORT_STORAGE_BUCKET || 'backbone-logic.firebasestorage.app';
     }
 
     async generateReport(
@@ -61,39 +61,115 @@ export class ReportGeneratorService {
         const chartBuffers: Buffer[] = [];
 
         if (options.includeCharts !== false) {
+            console.log('📊 [ReportGenerator] Generating charts...');
+            
             // Budget Chart
+            console.log('📊 [ReportGenerator] Generating budget chart with data:', projectData.budget);
             const budgetChart = await this.chartService.generateBudgetChart(projectData.budget);
             renderedCharts.budget = `data:image/png;base64,${budgetChart.toString('base64')}`;
             chartBuffers.push(budgetChart);
 
             // Timeline Chart
+            console.log('📊 [ReportGenerator] Generating timeline chart with', projectData.sessions?.length || 0, 'sessions');
             const timelineChart = await this.chartService.generateTimelineChart(projectData.sessions);
             renderedCharts.timeline = `data:image/png;base64,${timelineChart.toString('base64')}`;
             chartBuffers.push(timelineChart);
 
             // Team Chart
+            console.log('📊 [ReportGenerator] Generating team chart with', projectData.team?.length || 0, 'members');
             const teamChart = await this.chartService.generateTeamPerformanceChart(projectData.team);
             renderedCharts.team = `data:image/png;base64,${teamChart.toString('base64')}`;
             chartBuffers.push(teamChart);
 
             // Deliverables
+            console.log('📊 [ReportGenerator] Generating deliverables chart with', projectData.deliverables?.length || 0, 'items');
             const deliverablesChart = await this.chartService.generateDeliverablesChart(projectData.deliverables);
             renderedCharts.deliverables = `data:image/png;base64,${deliverablesChart.toString('base64')}`;
             chartBuffers.push(deliverablesChart);
+            
+            console.log('✅ [ReportGenerator] Generated', chartBuffers.length, 'charts');
+        } else {
+            console.log('⚠️ [ReportGenerator] Chart generation disabled by options');
         }
 
-        // 5. Prepare Template Data
+        // 5. Prepare Template Data with formatted values
+        const formatCurrency = (num: number) => {
+            return num.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+        };
+
+        // Format analytics data for template
+        const formatAnalytics = (analytics: any) => {
+            if (!analytics) return {};
+            
+            // Format expense by category
+            const expenseByCategory: any = {};
+            if (analytics.expenseByCategory) {
+                Object.entries(analytics.expenseByCategory).forEach(([cat, data]: [string, any]) => {
+                    expenseByCategory[cat] = {
+                        amount: formatCurrency(data.amount || 0),
+                        count: data.count || 0
+                    };
+                });
+            }
+            
+            // Format timecard by department
+            const timecardByDepartment: any = {};
+            if (analytics.timecardByDepartment) {
+                Object.entries(analytics.timecardByDepartment).forEach(([dept, data]: [string, any]) => {
+                    timecardByDepartment[dept] = {
+                        hours: (data.hours || 0).toFixed(1),
+                        cost: formatCurrency(data.cost || 0),
+                        count: data.count || 0
+                    };
+                });
+            }
+            
+            return {
+                ...analytics,
+                expenseByCategory,
+                timecardByDepartment
+            };
+        };
+
         const templateData: TemplateData = {
             projectName: projectData.projectName,
             projectId: projectData.projectId,
-            generatedAt: new Date().toLocaleDateString(),
+            generatedAt: new Date().toLocaleDateString('en-US', { 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+            }),
             dateRange: options.dateRange
                 ? `${options.dateRange.start} to ${options.dateRange.end}`
                 : 'All Time',
             executiveSummary: insights.executiveSummary,
             insights,
-            metrics: insights.metrics,
-            charts: renderedCharts
+            metrics: {
+                ...insights.metrics,
+                totalBudget: formatCurrency(projectData.budget?.allocated || 0),
+                spent: formatCurrency(projectData.budget?.spent || 0),
+                remaining: formatCurrency((projectData.budget?.allocated || 0) - (projectData.budget?.spent || 0)),
+                variance: (projectData.budget?.allocated || 0) > 0 
+                    ? (((projectData.budget?.spent || 0) - (projectData.budget?.allocated || 0)) / (projectData.budget?.allocated || 1) * 100).toFixed(1)
+                    : '0.0',
+                completionPercentage: projectData.keyMetrics?.completionPercentage || 0
+            } as any,
+            charts: renderedCharts,
+            // Add financial summary for financial reports
+            financialSummary: projectData.financialSummary || {
+                totalTimecardHours: '0',
+                totalTimecardPay: '0',
+                totalExpenses: '0',
+                totalPayroll: '0',
+                totalIncome: '0',
+                netCashFlow: '0',
+                timecardCount: 0,
+                expenseCount: 0,
+                payrollBatchCount: 0,
+                invoiceCount: 0
+            },
+            // Add analytics data
+            analytics: formatAnalytics(projectData.analytics)
         };
 
         // 6. Create PDF

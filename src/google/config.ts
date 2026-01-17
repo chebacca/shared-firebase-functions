@@ -4,7 +4,7 @@
  * Functions to save and retrieve Google Drive OAuth configuration from Firestore
  */
 
-import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
 import * as functions from 'firebase-functions'; // Import v1 for config() access
 import { db } from '../shared/utils';
 import * as admin from 'firebase-admin';
@@ -202,11 +202,11 @@ export async function getGoogleConfig(organizationId: string) {
 
 /**
  * Save Google Drive configuration to Firestore
+ * Callable version (for backward compatibility)
  */
 export const saveGoogleConfig = onCall(
   {
     region: 'us-central1',
-    cors: true,
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -285,6 +285,123 @@ export const saveGoogleConfig = onCall(
       }
 
       throw new HttpsError('internal', 'Failed to save Google Drive configuration');
+    }
+  }
+);
+
+/**
+ * Save Google Drive configuration to Firestore - HTTP version with CORS support
+ * Use this version when calling from frontend to avoid CORS issues
+ */
+export const saveGoogleConfigHttp = onRequest(
+  {
+    region: 'us-central1',
+    cors: true,
+    secrets: [encryptionKey],
+  },
+  async (req, res) => {
+    // Set CORS headers
+    const { setCorsHeaders } = await import('../shared/utils');
+    setCorsHeaders(req, res);
+
+    // Handle preflight requests
+    if (req.method === 'OPTIONS') {
+      res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.set('Access-Control-Max-Age', '3600');
+      res.status(200).send('');
+      return;
+    }
+
+    // Only allow POST requests
+    if (req.method !== 'POST') {
+      res.status(405).json({ success: false, error: 'Method Not Allowed' });
+      return;
+    }
+
+    try {
+      // Verify user authentication
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        res.status(401).json({ success: false, error: 'Authentication required' });
+        return;
+      }
+
+      const token = authHeader.split('Bearer ')[1];
+      const { getAuth } = await import('firebase-admin/auth');
+      const auth = getAuth();
+      const decodedToken = await auth.verifyIdToken(token);
+      const userId = decodedToken.uid;
+
+      const { organizationId, clientId, clientSecret, redirectUri } = req.body;
+
+      if (!organizationId || !clientId || !clientSecret) {
+        res.status(400).json({ success: false, error: 'Missing required configuration fields' });
+        return;
+      }
+
+      console.log(`💾 [GoogleConfig] Saving config (HTTP) for org: ${organizationId} by user: ${userId}`);
+
+      // Verify user is admin of the organization
+      const userDoc = await db.collection('users').doc(userId).get();
+      const userData = userDoc.data();
+
+      if (!userData || userData.organizationId !== organizationId) {
+        res.status(403).json({ success: false, error: 'User does not belong to this organization' });
+        return;
+      }
+
+      // Check if user is admin
+      if (userData.role !== 'ADMIN' && userData.role !== 'OWNER') {
+        res.status(403).json({ success: false, error: 'Only organization admins can configure integrations' });
+        return;
+      }
+
+      // Encrypt sensitive fields
+      const encryptedClientSecret = encryptToken(clientSecret);
+
+      // Save configuration
+      await db
+        .collection('organizations')
+        .doc(organizationId)
+        .collection('integrationSettings')
+        .doc('google')
+        .set({
+          clientId,
+          clientSecret: encryptedClientSecret,
+          redirectUri: redirectUri || 'https://backbone-logic.web.app/integration-settings',
+          scopes: [
+            'https://www.googleapis.com/auth/drive.readonly',
+            'https://www.googleapis.com/auth/drive.file',
+            'https://www.googleapis.com/auth/documents',
+            'https://www.googleapis.com/auth/userinfo.email',
+            'https://www.googleapis.com/auth/userinfo.profile',
+            // Google Calendar and Meet scopes
+            'https://www.googleapis.com/auth/calendar',
+            'https://www.googleapis.com/auth/calendar.events',
+            'https://www.googleapis.com/auth/meetings.space.created',
+            'https://www.googleapis.com/auth/meetings.space.readonly'
+          ],
+          isConfigured: true,
+          configuredBy: userId,
+          configuredAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+
+      console.log(`✅ [GoogleConfig] Config saved successfully (HTTP) for org: ${organizationId}`);
+
+      res.status(200).json({
+        success: true,
+        message: 'Google Drive configuration saved successfully',
+      });
+
+    } catch (error: any) {
+      console.error(`❌ [GoogleConfig] Error saving config (HTTP):`, error);
+
+      const errorMessage = error.message || 'Failed to save Google Drive configuration';
+      res.status(500).json({
+        success: false,
+        error: errorMessage
+      });
     }
   }
 );

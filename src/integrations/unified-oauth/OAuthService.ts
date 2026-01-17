@@ -44,9 +44,17 @@ export class UnifiedOAuthService {
     // Default to /dashboard/integrations (correct route path)
     let redirectUrl = 'https://backbone-logic.web.app/dashboard/integrations';
     if (returnUrl) {
-      // If returnUrl is provided, use it (could be localhost in dev)
+      // If returnUrl is provided, use it (could be localhost in dev, or Hub URL)
       // This will be the full URL like http://localhost:4001/dashboard/integrations
+      // OR http://localhost:5300/apps/integrations (Hub URL)
       redirectUrl = returnUrl;
+      console.log(`🔍 [OAuthService] Using provided returnUrl:`, {
+        returnUrl,
+        isHubUrl: returnUrl.includes('localhost:5300') || returnUrl.includes('hub'),
+        isLicensingWebsite: returnUrl.includes('localhost:4001') || returnUrl.includes('backbone-logic.web.app')
+      });
+    } else {
+      console.log(`ℹ️ [OAuthService] No returnUrl provided, using default: ${redirectUrl}`);
     }
 
     // Store state in Firestore with redirect URL
@@ -64,13 +72,18 @@ export class UnifiedOAuthService {
       provider: providerName,
       redirectUrl: redirectUrl,
       state: state.substring(0, 8) + '...',
-      expiresIn: '1 hour'
+      expiresIn: '1 hour',
+      isHubUrl: redirectUrl.includes('localhost:5300') || redirectUrl.includes('hub')
     });
 
     // Determine the redirect URI for the provider
     // ALWAYS use Firebase Functions callback URL - it will redirect back to the client URL after processing
     // This ensures the redirect URI is always authorized in Google Cloud Console
-    const oauthCallbackUrl = 'https://us-central1-backbone-logic.cloudfunctions.net/handleOAuthCallback';
+    // EXCEPTION: Dropbox needs its own callback for legacy/consistency reasons
+    const oauthCallbackUrl = providerName === 'dropbox'
+      ? 'https://us-central1-backbone-logic.cloudfunctions.net/dropboxOAuthCallbackHttp'
+      : 'https://us-central1-backbone-logic.cloudfunctions.net/handleOAuthCallback';
+
     const redirectUriToUse = oauthCallbackUrl;
 
     const authUrl = await (provider as OAuthProvider).getAuthUrl({
@@ -344,22 +357,38 @@ export class UnifiedOAuthService {
       storedRedirectUrl: stateData.redirectUrl,
       finalRedirectUrl: redirectUrl,
       provider: providerName,
-      isLocalhost: redirectUrl.includes('localhost')
+      isLocalhost: redirectUrl.includes('localhost'),
+      isHubUrl: redirectUrl.includes('localhost:5300') || redirectUrl.includes('hub'),
+      redirectUrlLength: redirectUrl?.length
     });
 
     // Ensure redirect URL has the success parameter
     // Parse URL carefully to handle existing query params
-    const url = new URL(redirectUrl);
-    // Clear any existing oauth params to avoid duplicates
-    url.searchParams.delete('oauth_success');
-    url.searchParams.delete('oauth_error');
-    url.searchParams.delete('provider');
-    // Set success params
-    url.searchParams.set('oauth_success', 'true');
-    url.searchParams.set('provider', providerName);
-
-    const finalRedirectUrl = url.toString();
+    let finalRedirectUrl: string;
+    try {
+      const url = new URL(redirectUrl);
+      // Clear any existing oauth params to avoid duplicates
+      url.searchParams.delete('oauth_success');
+      url.searchParams.delete('oauth_error');
+      url.searchParams.delete('provider');
+      // Set success params
+      url.searchParams.set('oauth_success', 'true');
+      url.searchParams.set('provider', providerName);
+      finalRedirectUrl = url.toString();
+    } catch (urlError: any) {
+      // If URL parsing fails, try to construct it manually
+      console.warn(`⚠️ [OAuthService] URL parsing failed, attempting manual construction:`, urlError.message);
+      const separator = redirectUrl.includes('?') ? '&' : '?';
+      finalRedirectUrl = `${redirectUrl}${separator}oauth_success=true&provider=${providerName}`;
+    }
+    
     console.log(`✅ [OAuthService] OAuth callback successful, redirecting to: ${finalRedirectUrl}`);
+    console.log(`🔍 [OAuthService] Redirect URL details:`, {
+      original: stateData.redirectUrl,
+      final: finalRedirectUrl,
+      isHub: finalRedirectUrl.includes('localhost:5300') || finalRedirectUrl.includes('hub'),
+      hasQueryParams: finalRedirectUrl.includes('?')
+    });
 
     return {
       success: true,

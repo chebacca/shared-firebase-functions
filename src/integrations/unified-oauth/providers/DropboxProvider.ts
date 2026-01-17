@@ -237,6 +237,38 @@ export class DropboxProvider implements OAuthProvider {
       }
 
       // Also check integrationConfigs (alternative location)
+      // Check specific dropbox-integration file first (created by audit script)
+      const auditConfigDoc = await db
+        .collection('organizations')
+        .doc(organizationId)
+        .collection('integrationConfigs')
+        .doc('dropbox-integration')
+        .get();
+
+      if (auditConfigDoc.exists) {
+        const data = auditConfigDoc.data()!;
+        // Handle nested credentials object (audit script format)
+        if (data.credentials?.clientId && data.credentials?.clientSecret) {
+          // Decrypt client secret if encrypted
+          let clientSecret = data.credentials.clientSecret;
+          if (clientSecret && clientSecret.includes(':')) {
+            try {
+              const { decryptToken } = await import('../encryption');
+              clientSecret = decryptToken(clientSecret);
+            } catch (error) {
+              console.warn('Failed to decrypt client secret, using as-is');
+            }
+          }
+
+          return {
+            clientId: data.credentials.clientId,
+            clientSecret: clientSecret,
+            additionalParams: data.settings || {}
+          };
+        }
+      }
+
+      // Check legacy dropbox-config
       const configDoc = await db
         .collection('organizations')
         .doc(organizationId)

@@ -96,8 +96,45 @@ export class DocumentAnalysisService {
             model: process.env.GEMINI_REPORT_MODEL || 'gemini-2.0-flash'
         });
 
-        // Build financial data section if this is a financial report
+        // Build comprehensive data section for analysis
         let financialDataSection = '';
+        let analyticsSection = '';
+        
+        // Add analytics data if available
+        if (projectData.analytics) {
+            const analytics = projectData.analytics;
+            analyticsSection = `
+## Project Analytics
+
+### Deliverables Status Breakdown:
+${Object.entries(analytics.deliverableStatusBreakdown || {}).map(([status, count]: [string, any]) => `- ${status}: ${count} deliverables`).join('\n')}
+- Total Deliverables: ${analytics.totalDeliverablesCount || 0}
+- Completed: ${analytics.completedDeliverablesCount || 0}
+- Blocked: ${analytics.blockedDeliverablesCount || 0}
+
+### Session Phase Distribution:
+${Object.entries(analytics.sessionPhases || {}).map(([phase, count]: [string, any]) => `- ${phase}: ${count} sessions`).join('\n')}
+- Total Sessions: ${analytics.totalSessions || 0}
+
+### Team by Department:
+${Object.entries(analytics.teamByDepartment || {}).map(([dept, data]: [string, any]) => `- ${dept}: ${data.count} team members`).join('\n')}
+
+### Labor Costs by Department:
+${Object.entries(analytics.timecardByDepartment || {}).map(([dept, data]: [string, any]) => 
+    `- ${dept}: ${data.hours.toFixed(1)} hours, $${data.cost.toLocaleString()} cost, ${data.count} timecards`
+).join('\n')}
+
+### Expenses by Category:
+${Object.entries(analytics.expenseByCategory || {}).map(([cat, data]: [string, any]) => 
+    `- ${cat}: $${data.amount.toLocaleString()} (${data.count} expenses)`
+).join('\n')}
+
+### Workflow Status:
+${Object.entries(analytics.workflowStepStatus || {}).map(([status, count]: [string, any]) => `- ${status}: ${count} steps`).join('\n')}
+- Total Workflows: ${analytics.totalWorkflows || 0}
+- Total Workflow Steps: ${analytics.totalWorkflowSteps || 0}
+`;
+        }
         if (options.reportType === 'financial' && projectData.timecards) {
             const timecards = projectData.timecards || [];
             const expenses = projectData.expenses || [];
@@ -155,27 +192,72 @@ export class DocumentAnalysisService {
       Project Data:
       ${JSON.stringify(projectData, null, 2)}
       ${financialDataSection}
+      ${analyticsSection}
+      
+      **CRITICAL ANALYSIS REQUIREMENTS:**
+      
+      1. **Project Health Assessment**: 
+         - Analyze completion percentage in context of blocked deliverables
+         - Assess timeline health based on session phases and workflow progress
+         - Evaluate team utilization across departments
+         - Identify bottlenecks in workflow steps
+      
+      2. **Budget & Financial Analysis**:
+         - Deep dive into budget variance and spending patterns
+         - Analyze labor costs by department (Post-Production, Art, General, etc.)
+         - Review expense patterns by category (transportation, meals, equipment rental)
+         - Assess cash flow health (income vs expenses vs payroll)
+         - Identify cost optimization opportunities
+      
+      3. **Resource Allocation**:
+         - Review team distribution across departments
+         - Analyze timecard hours and costs by department
+         - Identify departments with high labor costs
+         - Assess alignment between budget line items and actual expenses
+      
+      4. **Deliverables & Workflow**:
+         - Analyze blocked deliverables and their impact
+         - Review workflow step completion rates
+         - Assess session phase distribution
+         - Identify workflow bottlenecks
+      
+      5. **Risk Identification**:
+         - Financial risks (overspending, negative cash flow, budget variance)
+         - Operational risks (blocked deliverables, low completion rate)
+         - Resource risks (department imbalances, high labor costs)
+         - Timeline risks (workflow delays, phase transitions)
       
       Constraints:
-      1. Focus specifically on ${options.focusAreas?.join(', ') || (options.reportType === 'financial' ? 'financial performance, cash flow, budget health, and cost analysis' : 'overall project health, budget, and timeline')}.
-      2. Keep the executive summary professional and concise (2-3 paragraphs).
-      3. Identify at least 3-5 risks with mitigation strategies if possible.
-      4. Provide actionable recommendations.
-      5. Extract key performance metrics.
-      ${options.reportType === 'financial' ? '6. **CRITICAL**: Include detailed financial analysis using the timecard, expense, payroll, and invoice data provided above.' : ''}
+      1. Focus specifically on ${options.focusAreas?.join(', ') || (options.reportType === 'financial' ? 'financial performance, cash flow, budget health, cost analysis, and resource allocation' : 'overall project health, budget, timeline, deliverables, and resource utilization')}.
+      2. Keep the executive summary comprehensive but professional (3-5 paragraphs covering all critical areas).
+      3. Identify at least 5-7 risks with specific mitigation strategies.
+      4. Provide actionable recommendations addressing:
+         - Blocked deliverables resolution
+         - Budget optimization
+         - Resource reallocation
+         - Cash flow improvement
+         - Department efficiency
+      5. Extract and analyze ALL key performance metrics from the analytics data.
+      ${options.reportType === 'financial' ? '6. **CRITICAL**: Include detailed financial analysis using ALL the timecard, expense, payroll, and invoice data provided above, with department and category breakdowns.' : ''}
+      7. **CRITICAL**: Address the specific challenges mentioned in the analytics:
+         - Blocked deliverables count and impact
+         - Department labor cost distribution
+         - Expense category patterns
+         - Workflow step status distribution
+         - Team utilization by department
       
       Output Format (JSON):
       {
-        "executiveSummary": "string",
-        "keyHighlights": ["string"],
+        "executiveSummary": "string (comprehensive 3-5 paragraph analysis covering budget health, completion challenges, resource allocation, cash flow, and key recommendations)",
+        "keyHighlights": ["string (at least 8-10 key insights)"],
         "risks": [{"category": "string", "description": "string", "severity": "low|medium|high", "mitigation": "string"}],
-        "recommendations": ["string"],
+        "recommendations": ["string (at least 8-10 actionable recommendations)"],
         "metrics": {
           "totalBudget": "string",
           "spent": "string",
           "completionPercentage": number,
           "activeTasks": number,
-          "teamUtilization": "string"${options.reportType === 'financial' ? ',\n          "netCashFlow": "string",\n          "totalIncome": "string",\n          "totalExpenses": "string",\n          "totalPayroll": "string",\n          "budgetVariance": "string"' : ''}
+          "teamUtilization": "string"${options.reportType === 'financial' ? ',\n          "netCashFlow": "string",\n          "totalIncome": "string",\n          "totalExpenses": "string",\n          "totalPayroll": "string",\n          "budgetVariance": "string",\n          "blockedDeliverables": number,\n          "departmentLaborCosts": "object",\n          "expenseCategoryBreakdown": "object"' : ''}
         }
       }
     `;
