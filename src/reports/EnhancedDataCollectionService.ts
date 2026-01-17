@@ -33,12 +33,14 @@ export class EnhancedDataCollectionService {
 
         // Fetch detailed sessions for this project
         const sessionsSnapshot = await getDb().collection('sessions')
+            .where('organizationId', '==', context.organizationId)
             .where('projectId', '==', projectId)
             .get();
         const sessions = sessionsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
 
         // Fetch budgets
         const budgetsSnapshot = await getDb().collection('budgets')
+            .where('organizationId', '==', context.organizationId)
             .where('projectId', '==', projectId)
             .get();
         const budgets = budgetsSnapshot.docs.map(doc => doc.data());
@@ -47,6 +49,7 @@ export class EnhancedDataCollectionService {
 
         // Fetch deliverables
         const deliverablesSnapshot = await getDb().collection('deliverables')
+            .where('organizationId', '==', context.organizationId)
             .where('projectId', '==', projectId)
             .get();
         const deliverables = deliverablesSnapshot.docs.map(doc => {
@@ -159,9 +162,9 @@ export class EnhancedDataCollectionService {
 
             // 1. Fetch Timecards (from timecard_entries collection)
             // Use collectionGroup to query across all subcollections
-            let timecardsQuery: any = db.collectionGroup('timecard_entries')
+            let timecardsQuery: any = db.collection('timecard_entries')
                 .where('organizationId', '==', organizationId);
-            if (projectId) {
+            if (projectId && projectId !== 'all' && projectId !== 'current') {
                 timecardsQuery = timecardsQuery.where('projectId', '==', projectId);
             }
             const timecardsSnapshot = await timecardsQuery.limit(1000).get();

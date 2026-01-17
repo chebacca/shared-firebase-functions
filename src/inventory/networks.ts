@@ -23,7 +23,7 @@ const auth = getAuth();
 export const getNetworks = onRequest(async (req, res) => {
   try {
     console.log('🌐 [NETWORKS API] Fetching all networks...');
-    
+
     // Verify authentication
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -36,7 +36,7 @@ export const getNetworks = onRequest(async (req, res) => {
 
     const token = authHeader.split('Bearer ')[1];
     let decodedToken;
-    
+
     try {
       decodedToken = await auth.verifyIdToken(token);
     } catch (error) {
@@ -49,7 +49,7 @@ export const getNetworks = onRequest(async (req, res) => {
 
     const userId = decodedToken.uid;
     const userEmail = decodedToken.email;
-    
+
     // Get user's organization ID
     let userData: any = null;
     const userDocByUid = await db.collection('users').doc(userId).get();
@@ -66,29 +66,29 @@ export const getNetworks = onRequest(async (req, res) => {
         }
       }
     }
-    
+
     if (!userData) {
       res.status(404).json({
-        success: false, 
-        error: 'User not found' 
+        success: false,
+        error: 'User not found'
       });
       return;
     }
-    
+
     const organizationId = userData.organizationId;
-    
+
     // Get networks for the organization
     let networksQuery: any = db.collection('networks');
     if (organizationId) {
       networksQuery = networksQuery.where('organizationId', '==', organizationId);
     }
-    
+
     const networksSnapshot = await networksQuery.get();
     const networks = networksSnapshot.docs.map((doc: any) => ({
       id: doc.id,
       ...doc.data()
     }));
-    
+
     console.log(`✅ [NETWORKS API] Found ${networks.length} networks`);
     res.status(200).json({
       success: true,
@@ -112,7 +112,7 @@ export const getNetwork = onRequest(async (req, res) => {
   try {
     const networkId = req.params.id;
     console.log(`🌐 [NETWORKS API] Fetching network: ${networkId}`);
-    
+
     // Verify authentication
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -125,7 +125,7 @@ export const getNetwork = onRequest(async (req, res) => {
 
     const token = authHeader.split('Bearer ')[1];
     let decodedToken;
-    
+
     try {
       decodedToken = await auth.verifyIdToken(token);
     } catch (error) {
@@ -138,7 +138,7 @@ export const getNetwork = onRequest(async (req, res) => {
 
     const userId = decodedToken.uid;
     const userEmail = decodedToken.email;
-    
+
     // Get user's organization ID
     let userData: any = null;
     const userDocByUid = await db.collection('users').doc(userId).get();
@@ -155,20 +155,20 @@ export const getNetwork = onRequest(async (req, res) => {
         }
       }
     }
-    
+
     if (!userData) {
       res.status(404).json({
-        success: false, 
-        error: 'User not found' 
+        success: false,
+        error: 'User not found'
       });
       return;
     }
-    
+
     const organizationId = userData.organizationId;
-    
+
     // Get the specific network
-    const networkDoc = await db.collection('networks').doc(networkId).get();
-    
+    const networkDoc = await db.collection('networks').doc(networkId as string).get();
+
     if (!networkDoc.exists) {
       res.status(404).json({
         success: false,
@@ -176,9 +176,9 @@ export const getNetwork = onRequest(async (req, res) => {
       });
       return;
     }
-    
+
     const networkData = networkDoc.data();
-    
+
     // Verify organization access
     if (organizationId && networkData?.organizationId !== organizationId) {
       res.status(403).json({
@@ -187,7 +187,7 @@ export const getNetwork = onRequest(async (req, res) => {
       });
       return;
     }
-    
+
     console.log(`✅ [NETWORKS API] Found network: ${networkId}`);
     res.status(200).json({
       success: true,
@@ -212,7 +212,7 @@ export const getNetwork = onRequest(async (req, res) => {
 export const createNetwork = onRequest(async (req, res) => {
   try {
     console.log('🌐 [NETWORKS API] Creating new network...');
-    
+
     // Verify authentication
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -225,7 +225,7 @@ export const createNetwork = onRequest(async (req, res) => {
 
     const token = authHeader.split('Bearer ')[1];
     let decodedToken;
-    
+
     try {
       decodedToken = await auth.verifyIdToken(token);
     } catch (error) {
@@ -238,7 +238,7 @@ export const createNetwork = onRequest(async (req, res) => {
 
     const userId = decodedToken.uid;
     const userEmail = decodedToken.email;
-    
+
     // Get user's organization ID
     let userData: any = null;
     const userDocByUid = await db.collection('users').doc(userId).get();
@@ -255,20 +255,20 @@ export const createNetwork = onRequest(async (req, res) => {
         }
       }
     }
-    
+
     if (!userData) {
       res.status(404).json({
-        success: false, 
-        error: 'User not found' 
+        success: false,
+        error: 'User not found'
       });
       return;
     }
-    
+
     const organizationId = userData.organizationId;
-    
+
     // Validate required fields
     const { name, description, category, isActive = true } = req.body;
-    
+
     if (!name) {
       res.status(400).json({
         success: false,
@@ -276,7 +276,7 @@ export const createNetwork = onRequest(async (req, res) => {
       });
       return;
     }
-    
+
     // Create network document
     const networkData = {
       name,
@@ -288,9 +288,9 @@ export const createNetwork = onRequest(async (req, res) => {
       updatedAt: new Date().toISOString(),
       createdBy: userId
     };
-    
+
     const networkRef = await db.collection('networks').add(networkData);
-    
+
     console.log(`✅ [NETWORKS API] Created network: ${networkRef.id}`);
     res.status(201).json({
       success: true,
@@ -316,7 +316,7 @@ export const updateNetwork = onRequest(async (req, res) => {
   try {
     const networkId = req.params.id;
     console.log(`🌐 [NETWORKS API] Updating network: ${networkId}`);
-    
+
     // Verify authentication
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -329,7 +329,7 @@ export const updateNetwork = onRequest(async (req, res) => {
 
     const token = authHeader.split('Bearer ')[1];
     let decodedToken;
-    
+
     try {
       decodedToken = await auth.verifyIdToken(token);
     } catch (error) {
@@ -342,7 +342,7 @@ export const updateNetwork = onRequest(async (req, res) => {
 
     const userId = decodedToken.uid;
     const userEmail = decodedToken.email;
-    
+
     // Get user's organization ID
     let userData: any = null;
     const userDocByUid = await db.collection('users').doc(userId).get();
@@ -359,20 +359,20 @@ export const updateNetwork = onRequest(async (req, res) => {
         }
       }
     }
-    
+
     if (!userData) {
       res.status(404).json({
-        success: false, 
-        error: 'User not found' 
+        success: false,
+        error: 'User not found'
       });
       return;
     }
-    
+
     const organizationId = userData.organizationId;
-    
+
     // Check if network exists and user has access
-    const networkDoc = await db.collection('networks').doc(networkId).get();
-    
+    const networkDoc = await db.collection('networks').doc(networkId as string).get();
+
     if (!networkDoc.exists) {
       res.status(404).json({
         success: false,
@@ -380,9 +380,9 @@ export const updateNetwork = onRequest(async (req, res) => {
       });
       return;
     }
-    
+
     const existingData = networkDoc.data();
-    
+
     // Verify organization access
     if (organizationId && existingData?.organizationId !== organizationId) {
       res.status(403).json({
@@ -391,27 +391,27 @@ export const updateNetwork = onRequest(async (req, res) => {
       });
       return;
     }
-    
+
     // Prepare update data
     const updateData = {
       ...req.body,
       updatedAt: new Date().toISOString(),
       updatedBy: userId
     };
-    
+
     // Remove fields that shouldn't be updated
     delete updateData.id;
     delete updateData.createdAt;
     delete updateData.createdBy;
     delete updateData.organizationId;
-    
+
     // Update the network
-    await db.collection('networks').doc(networkId).update(updateData);
-    
+    await db.collection('networks').doc(networkId as string).update(updateData);
+
     // Get updated data
-    const updatedDoc = await db.collection('networks').doc(networkId).get();
+    const updatedDoc = await db.collection('networks').doc(networkId as string).get();
     const updatedData = updatedDoc.data();
-    
+
     console.log(`✅ [NETWORKS API] Updated network: ${networkId}`);
     res.status(200).json({
       success: true,
@@ -437,7 +437,7 @@ export const deleteNetwork = onRequest(async (req, res) => {
   try {
     const networkId = req.params.id;
     console.log(`🌐 [NETWORKS API] Deleting network: ${networkId}`);
-    
+
     // Verify authentication
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -450,7 +450,7 @@ export const deleteNetwork = onRequest(async (req, res) => {
 
     const token = authHeader.split('Bearer ')[1];
     let decodedToken;
-    
+
     try {
       decodedToken = await auth.verifyIdToken(token);
     } catch (error) {
@@ -463,7 +463,7 @@ export const deleteNetwork = onRequest(async (req, res) => {
 
     const userId = decodedToken.uid;
     const userEmail = decodedToken.email;
-    
+
     // Get user's organization ID
     let userData: any = null;
     const userDocByUid = await db.collection('users').doc(userId).get();
@@ -480,20 +480,20 @@ export const deleteNetwork = onRequest(async (req, res) => {
         }
       }
     }
-    
+
     if (!userData) {
       res.status(404).json({
-        success: false, 
-        error: 'User not found' 
+        success: false,
+        error: 'User not found'
       });
       return;
     }
-    
+
     const organizationId = userData.organizationId;
-    
+
     // Check if network exists and user has access
-    const networkDoc = await db.collection('networks').doc(networkId).get();
-    
+    const networkDoc = await db.collection('networks').doc(networkId as string).get();
+
     if (!networkDoc.exists) {
       res.status(404).json({
         success: false,
@@ -501,9 +501,9 @@ export const deleteNetwork = onRequest(async (req, res) => {
       });
       return;
     }
-    
+
     const networkData = networkDoc.data();
-    
+
     // Verify organization access
     if (organizationId && networkData?.organizationId !== organizationId) {
       res.status(403).json({
@@ -512,10 +512,10 @@ export const deleteNetwork = onRequest(async (req, res) => {
       });
       return;
     }
-    
+
     // Delete the network
-    await db.collection('networks').doc(networkId).delete();
-    
+    await db.collection('networks').doc(networkId as string).delete();
+
     console.log(`✅ [NETWORKS API] Deleted network: ${networkId}`);
     res.status(200).json({
       success: true,

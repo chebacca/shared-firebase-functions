@@ -44,29 +44,29 @@ async function verifyAuth(request: any): Promise<{ uid: string; organizationId: 
 
   const token = authHeader.split('Bearer ')[1];
   const decodedToken = await auth.verifyIdToken(token);
-  
+
   // Try multiple sources for organization ID
   let organizationId = decodedToken.organizationId;
-  
+
   if (!organizationId) {
     // Try user document with multiple field names
     const userDoc = await db.collection('users').doc(decodedToken.uid).get();
     if (userDoc.exists) {
       const userData = userDoc.data();
-      organizationId = userData?.organizationId || 
-                      userData?.organization_id || 
-                      userData?.orgId ||
-                      userData?.org_id;
+      organizationId = userData?.organizationId ||
+        userData?.organization_id ||
+        userData?.orgId ||
+        userData?.org_id;
     }
   }
-  
+
   // If still no organization ID, try teamMembers collection
   if (!organizationId) {
     const teamMemberQuery = await db.collection('teamMembers')
       .where('userId', '==', decodedToken.uid)
       .limit(1)
       .get();
-    
+
     if (!teamMemberQuery.empty) {
       const teamMemberData = teamMemberQuery.docs[0].data();
       organizationId = teamMemberData?.organizationId || teamMemberData?.organization_id;
@@ -84,7 +84,7 @@ async function verifyAuth(request: any): Promise<{ uid: string; organizationId: 
 export const getNotifications = onRequest(async (request, response) => {
   try {
     const { uid, organizationId } = await verifyAuth(request);
-    
+
     const notificationsRef = db.collection('notifications');
     const query = notificationsRef
       .where('userId', '==', uid)
@@ -116,7 +116,7 @@ export const getNotifications = onRequest(async (request, response) => {
 export const getUnreadNotifications = onRequest(async (request, response) => {
   try {
     const { uid, organizationId } = await verifyAuth(request);
-    
+
     const notificationsRef = db.collection('notifications');
     const query = notificationsRef
       .where('userId', '==', uid)
@@ -206,7 +206,7 @@ export const createNotification = onRequest(async (request, response) => {
     // Use Firestore Timestamp for proper Firestore compatibility
     const now = Timestamp.now();
     const nowISO = now.toDate().toISOString();
-    
+
     const notification: Notification = {
       ...notificationData,
       userId: uid,
@@ -218,7 +218,7 @@ export const createNotification = onRequest(async (request, response) => {
       // Ensure sourceApp is set (default to 'hub' if not provided)
       sourceApp: notificationData.sourceApp || 'hub'
     };
-    
+
     // Convert to Firestore document format with Timestamps
     const firestoreNotification = {
       ...notification,
@@ -227,7 +227,7 @@ export const createNotification = onRequest(async (request, response) => {
     };
 
     const docRef = await db.collection('notifications').add(firestoreNotification);
-    
+
     // Convert Timestamps back to ISO strings for response
     const responseData = {
       id: docRef.id,
@@ -235,7 +235,7 @@ export const createNotification = onRequest(async (request, response) => {
       createdAt: nowISO,
       updatedAt: nowISO
     };
-    
+
     response.json({
       success: true,
       data: responseData
@@ -254,7 +254,7 @@ export const createNotification = onRequest(async (request, response) => {
 export const updateNotification = onRequest(async (request, response) => {
   try {
     const { uid, organizationId } = await verifyAuth(request);
-    const { id } = request.params;
+    const id = request.params.id as string;
     const updateData = request.body;
 
     if (!id) {
@@ -287,7 +287,7 @@ export const updateNotification = onRequest(async (request, response) => {
 
     const now = Timestamp.now();
     const nowISO = now.toDate().toISOString();
-    
+
     const updatedData = {
       ...updateData,
       updatedAt: now // Firestore Timestamp
@@ -302,7 +302,7 @@ export const updateNotification = onRequest(async (request, response) => {
       ...updateData,
       updatedAt: nowISO
     };
-    
+
     response.json({
       success: true,
       data: responseData
@@ -321,7 +321,7 @@ export const updateNotification = onRequest(async (request, response) => {
 export const markNotificationAsRead = onRequest(async (request, response) => {
   try {
     const { uid, organizationId } = await verifyAuth(request);
-    const { id } = request.params;
+    const id = request.params.id as string;
 
     if (!id) {
       response.status(400).json({
@@ -353,7 +353,7 @@ export const markNotificationAsRead = onRequest(async (request, response) => {
 
     const now = Timestamp.now();
     const nowISO = now.toDate().toISOString();
-    
+
     await notificationRef.update({
       read: true,
       updatedAt: now // Firestore Timestamp
@@ -393,7 +393,7 @@ export const markAllNotificationsAsRead = onRequest(async (request, response) =>
     const batch = db.batch();
 
     const now = Timestamp.now();
-    
+
     snapshot.docs.forEach(doc => {
       batch.update(doc.ref, {
         read: true,
@@ -424,7 +424,7 @@ export const markAllNotificationsAsRead = onRequest(async (request, response) =>
 export const deleteNotification = onRequest(async (request, response) => {
   try {
     const { uid, organizationId } = await verifyAuth(request);
-    const { id } = request.params;
+    const id = request.params.id as string;
 
     if (!id) {
       response.status(400).json({
@@ -521,7 +521,7 @@ export const getNotificationSettings = onRequest(async (request, response) => {
       .limit(1);
 
     const snapshot = await query.get();
-    
+
     if (snapshot.empty) {
       // Return default settings
       const defaultSettings = {
@@ -576,10 +576,10 @@ export const updateNotificationSettings = onRequest(async (request, response) =>
       .limit(1);
 
     const snapshot = await query.get();
-    
+
     const now = Timestamp.now();
     const nowISO = now.toDate().toISOString();
-    
+
     const updatedSettings = {
       ...settingsData,
       userId: uid,
@@ -603,7 +603,7 @@ export const updateNotificationSettings = onRequest(async (request, response) =>
       createdAt: snapshot.empty ? nowISO : (updatedSettings.createdAt?.toDate?.()?.toISOString() || nowISO),
       updatedAt: nowISO
     };
-    
+
     response.json({
       success: true,
       data: responseData
