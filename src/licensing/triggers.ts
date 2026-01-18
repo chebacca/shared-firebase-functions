@@ -1,6 +1,7 @@
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
+import * as admin from 'firebase-admin';
 import { updateClipShowProClaimsInternal } from '../clipShowPro/clipShowProUpdateClaims';
 import { ClipShowProRole } from '../clipShowPro/clipShowProRoleDefaults';
 import { resolveUserAppRoles } from '../auth/dynamicRoleSync';
@@ -59,21 +60,55 @@ async function syncUserLicenseClaims(userId: string, organizationId?: string): P
 
         const activeLicenses = licensesSnapshot.docs.map(doc => doc.data());
 
-        // 2. Determine entitlements
-        let hasClipShowPro = false;
-        let hasCueSheet = false;
+        // 2. Map license types to appAccess keys
+        const licenseTypeToAppAccess: Record<string, string> = {
+            'CLIP_SHOW_PRO': 'clipShowPro',
+            'CUE_SHEET': 'cuesheet',
+            'CALLSHEET_PRO': 'callSheet',
+            'PRODUCTION_WORKFLOW': 'pws',
+            'DASHBOARD': 'pws', // Legacy alias
+            'IWM': 'iwm',
+            'INVENTORY_WAREHOUSE': 'iwm',
+            'TIMECARD': 'timecard',
+            'SECURITY_DESK': 'securityDesk',
+            'ADDRESS_BOOK': 'addressBook',
+            'DELIVERABLES': 'deliverables',
+            'CNS': 'cns',
+            'PARSER_BRAIN': 'cns'
+        };
+
+        // Build appAccess map from active licenses
+        const appAccess: Record<string, boolean> = {
+            hub: true, // Always true for licensed users
+            pws: false,
+            clipShowPro: false,
+            callSheet: false,
+            cuesheet: false,
+            iwm: false,
+            timecard: false,
+            securityDesk: false,
+            addressBook: false,
+            deliverables: false,
+            cns: false
+        };
 
         activeLicenses.forEach(license => {
-            if (license.type === 'CLIP_SHOW_PRO') hasClipShowPro = true;
-            if (license.type === 'CUE_SHEET') hasCueSheet = true;
-            // Check features array if needed
+            const appKey = licenseTypeToAppAccess[license.type];
+            if (appKey) {
+                appAccess[appKey] = true;
+            }
+            // Also check features array
             if (license.features && Array.isArray(license.features)) {
-                if (license.features.includes('CLIP_SHOW_PRO')) hasClipShowPro = true;
+                license.features.forEach((feature: string) => {
+                    const featureKey = licenseTypeToAppAccess[feature];
+                    if (featureKey) {
+                        appAccess[featureKey] = true;
+                    }
+                });
             }
         });
 
         // Also check subscriptions (legacy or alternative source)
-        // Some implementations might use a 'subscriptions' collection
         const subscriptionsSnapshot = await db.collection('subscriptions')
             .where('userId', '==', userId)
             .where('status', 'in', ['active', 'trialing'])
@@ -83,13 +118,46 @@ async function syncUserLicenseClaims(userId: string, organizationId?: string): P
             const sub = doc.data();
             // Check items or metadata for app access
             if (sub.items && Array.isArray(sub.items)) {
-                // simplified check
-                const itemsStr = JSON.stringify(sub.items);
-                if (itemsStr.includes('clip-show') || itemsStr.includes('clip_show')) hasClipShowPro = true;
+                sub.items.forEach((item: any) => {
+                    const itemType = item.productType || item.type || item.name;
+                    const appKey = licenseTypeToAppAccess[itemType];
+                    if (appKey) {
+                        appAccess[appKey] = true;
+                    }
+                });
+            }
+            // Check productType directly on subscription
+            if (sub.productType) {
+                const appKey = licenseTypeToAppAccess[sub.productType];
+                if (appKey) {
+                    appAccess[appKey] = true;
+                }
             }
         });
 
-        console.log(`✅ [LicenseTrigger] Entitlements for ${userId}: ClipShowPro=${hasClipShowPro}, CueSheet=${hasCueSheet}`);
+        console.log(`✅ [LicenseTrigger] App Access for ${userId}:`, appAccess);
+
+        // Update teamMember document with appAccess
+        if (organizationId) {
+            try {
+                const teamMemberSnapshot = await db.collection('teamMembers')
+                    .where('userId', '==', userId)
+                    .where('organizationId', '==', organizationId)
+                    .limit(1)
+                    .get();
+
+                if (!teamMemberSnapshot.empty) {
+                    const teamMemberDoc = teamMemberSnapshot.docs[0];
+                    await teamMemberDoc.ref.update({
+                        appAccess: appAccess,
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                    });
+                    console.log(`✅ [LicenseTrigger] Updated teamMember.appAccess for ${userId}`);
+                }
+            } catch (error) {
+                console.error(`❌ [LicenseTrigger] Error updating teamMember.appAccess:`, error);
+            }
+        }
 
         // 3. Get current user claims to preserve role
         let userRecord;
@@ -130,9 +198,10 @@ async function syncUserLicenseClaims(userId: string, organizationId?: string): P
             preserveExistingClaims: true,
             additionalClaims: {
                 subscriptionAddOns, // Valid source of truth from licenses
-                isClipShowProUser: hasClipShowPro, // Direct flag
-                clipShowProAccess: hasClipShowPro,    // Direct flag
-                appRoles: appRoles // Pass resolved app roles
+                isClipShowProUser: appAccess.clipShowPro, // Direct flag
+                clipShowProAccess: appAccess.clipShowPro,    // Direct flag
+                appRoles: appRoles, // Pass resolved app roles
+                appAccess: appAccess // NEW: Add appAccess to claims
             }
         });
 

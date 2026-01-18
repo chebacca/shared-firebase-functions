@@ -333,6 +333,10 @@ export async function updateClipShowProClaimsInternal(
       organizationId: currentClaims.organizationId,
       clipShowProAccess: currentClaims.clipShowProAccess,
       isClipShowProUser: currentClaims.isClipShowProUser,
+      // NEW: Preserve orgRole (primary organization role)
+      ...(currentClaims.orgRole && { orgRole: currentClaims.orgRole }),
+      // NEW: Preserve appAccess (derived from licenses)
+      ...(currentClaims.appAccess && { appAccess: currentClaims.appAccess }),
       // Preserve subscriptionAddOns if it exists (small, important)
       ...(currentClaims.subscriptionAddOns && {
         subscriptionAddOns: currentClaims.subscriptionAddOns
@@ -349,12 +353,11 @@ export async function updateClipShowProClaimsInternal(
       ...(currentClaims.appRoles && {
         appRoles: currentClaims.appRoles
       }),
-      // Preserve individual app role claims
+      // Preserve individual app role claims (legacy support)
       ...(currentClaims.clipShowProRole && { clipShowProRole: currentClaims.clipShowProRole }),
       ...(currentClaims.dashboardRole && { dashboardRole: currentClaims.dashboardRole }),
       ...(currentClaims.callSheetRole && { callSheetRole: currentClaims.callSheetRole }),
       ...(currentClaims.cuesheetRole && { cuesheetRole: currentClaims.cuesheetRole }),
-      // Preserve hierarchy level and sync effectiveHierarchy
       // Preserve hierarchy level and sync effectiveHierarchy
       ...(currentClaims.hierarchy !== undefined && {
         hierarchy: currentClaims.hierarchy,
@@ -366,6 +369,46 @@ export async function updateClipShowProClaimsInternal(
   // Core identity (always set)
   newClaims.role = clipShowRole;
   newClaims.organizationId = organizationId;
+  
+  // NEW: Set orgRole if provided in additionalClaims, otherwise preserve existing or derive from role
+  if (additionalClaims.orgRole) {
+    newClaims.orgRole = additionalClaims.orgRole;
+  } else if (!newClaims.orgRole) {
+    // Derive orgRole from existing claims or role
+    const existingOrgRole = currentClaims.orgRole || currentClaims.licensingRole;
+    if (existingOrgRole) {
+      newClaims.orgRole = existingOrgRole;
+    } else if (clipShowRole === 'OWNER' || clipShowRole === 'ADMIN' || clipShowRole === 'SUPERADMIN') {
+      // Map high-level roles to orgRole
+      newClaims.orgRole = clipShowRole === 'SUPERADMIN' ? 'ADMIN' : clipShowRole;
+    }
+  }
+  
+  // NEW: Set appAccess if provided in additionalClaims, otherwise preserve existing
+  if (additionalClaims.appAccess) {
+    newClaims.appAccess = additionalClaims.appAccess;
+  } else if (!newClaims.appAccess) {
+    // Preserve existing appAccess or derive from legacy flags
+    const existingAppAccess = currentClaims.appAccess;
+    if (existingAppAccess) {
+      newClaims.appAccess = existingAppAccess;
+    } else {
+      // Derive from legacy flags (will be updated by license sync)
+      newClaims.appAccess = {
+        hub: true,
+        clipShowPro: true, // This function is for Clip Show Pro, so always true
+        pws: !!currentClaims.dashboardRole,
+        callSheet: !!currentClaims.isCallSheetUser,
+        cuesheet: !!currentClaims.cuesheetRole,
+        iwm: false,
+        timecard: false,
+        securityDesk: false,
+        addressBook: false,
+        deliverables: false,
+        cns: false
+      };
+    }
+  }
 
   // Clip Show Pro access flags (REQUIRED for app access)
   newClaims.clipShowProAccess = true;

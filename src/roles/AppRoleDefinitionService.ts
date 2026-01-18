@@ -8,7 +8,19 @@
 import { db, createFieldValue } from '../shared/utils';
 
 // Type definitions
-export type AppName = 'dashboard' | 'clipShowPro' | 'callSheet' | 'cuesheet';
+export type AppName = 
+  | 'hub'           // Backbone Hub
+  | 'pws'           // Production Workflow System (dashboard)
+  | 'dashboard'     // Legacy alias for pws
+  | 'clipShowPro'   // Clip Show Pro
+  | 'callSheet'     // Call Sheet Pro
+  | 'cuesheet'      // Cuesheet & Budget Tools
+  | 'iwm'           // Inventory & Warehouse Management
+  | 'timecard'      // Timecard Management
+  | 'securityDesk'  // Security Desk
+  | 'addressBook'   // Address Book
+  | 'deliverables'  // Deliverables
+  | 'cns';          // CNS / Parser Brain
 
 export interface AppRoleDefinition {
   id: string;
@@ -45,20 +57,43 @@ const DashboardRole = {
   MEDIA_MANAGER: 'MEDIA_MANAGER',
   PRODUCTION_ASSISTANT: 'PRODUCTION_ASSISTANT',
   VIEWER: 'VIEWER',
-  // NEW roles
+  // Audio & Sound roles
   AUDIO_POST: 'AUDIO_POST',
   AUDIO_PRODUCTION: 'AUDIO_PRODUCTION',
   AUDIO_MIXER: 'AUDIO_MIXER',
   SOUND_ENGINEER: 'SOUND_ENGINEER',
+  SOUND_DESIGNER: 'SOUND_DESIGNER',
+  // Post-Production roles
   COLORIST: 'COLORIST',
   GFX_ARTIST: 'GFX_ARTIST',
+  VFX_SUPERVISOR: 'VFX_SUPERVISOR',
+  POST_PRODUCTION_ASSISTANT: 'POST_PRODUCTION_ASSISTANT',
+  POST_PA: 'POST_PA',
+  // Production roles
   CAMERA_OPERATOR: 'CAMERA_OPERATOR',
   QC_SPECIALIST: 'QC_SPECIALIST',
   DIT: 'DIT',
   LOCATION_MANAGER: 'LOCATION_MANAGER',
   PRODUCTION_MANAGER: 'PRODUCTION_MANAGER',
   POST_SUPERVISOR: 'POST_SUPERVISOR',
-  POST_PA: 'POST_PA',
+  UNIT_PRODUCTION_MANAGER: 'UNIT_PRODUCTION_MANAGER',
+  SCRIPT_SUPERVISOR: 'SCRIPT_SUPERVISOR',
+  // Set & Facility roles
+  MEDIC: 'MEDIC',
+  ON_SET_MEDIC: 'ON_SET_MEDIC',
+  STUNT_COORDINATOR: 'STUNT_COORDINATOR',
+  ANIMAL_WRANGLER: 'ANIMAL_WRANGLER',
+  CRAFT_SERVICE: 'CRAFT_SERVICE',
+  TRANSPORTATION_CAPTAIN: 'TRANSPORTATION_CAPTAIN',
+  BASE_CAMP_MANAGER: 'BASE_CAMP_MANAGER',
+  BUILDING_MANAGER: 'BUILDING_MANAGER',
+  FACILITY_COORDINATOR: 'FACILITY_COORDINATOR',
+  // Warehouse & Equipment roles
+  WAREHOUSE_MANAGER: 'WAREHOUSE_MANAGER',
+  EQUIPMENT_MANAGER: 'EQUIPMENT_MANAGER',
+  // Administrative roles
+  PRODUCTION_ACCOUNTANT: 'PRODUCTION_ACCOUNTANT',
+  // Guest/Viewer
   GUEST: 'GUEST'
 } as const;
 
@@ -85,7 +120,15 @@ const CallSheetRole = {
   ADMIN: 'ADMIN',
   PRODUCER: 'PRODUCER',
   COORDINATOR: 'COORDINATOR',
-  MEMBER: 'MEMBER'
+  MEMBER: 'MEMBER',
+  // Production roles
+  PRODUCTION_MANAGER: 'PRODUCTION_MANAGER',
+  LOCATION_MANAGER: 'LOCATION_MANAGER',
+  TRANSPORTATION_CAPTAIN: 'TRANSPORTATION_CAPTAIN',
+  // Set roles
+  MEDIC: 'MEDIC',
+  CRAFT_SERVICE: 'CRAFT_SERVICE',
+  BASE_CAMP_MANAGER: 'BASE_CAMP_MANAGER'
 } as const;
 
 const CuesheetRole = {
@@ -106,15 +149,56 @@ const CuesheetRole = {
   PRODUCTION_ASSISTANT: 'PRODUCTION_ASSISTANT',
   MEDIA_MANAGER: 'MEDIA_MANAGER',
   ADMIN: 'ADMIN',
+  VIEWER: 'VIEWER',
+  // Post-Production roles
+  COLORIST: 'COLORIST',
+  SOUND_DESIGNER: 'SOUND_DESIGNER',
+  POST_PRODUCTION_ASSISTANT: 'POST_PRODUCTION_ASSISTANT'
+} as const;
+
+const IWMRole = {
+  ADMIN: 'ADMIN',
+  MANAGER: 'MANAGER',
+  WAREHOUSE_MANAGER: 'WAREHOUSE_MANAGER',
+  EQUIPMENT_MANAGER: 'EQUIPMENT_MANAGER',
+  INVENTORY_COORDINATOR: 'INVENTORY_COORDINATOR',
+  ASSET_MANAGER: 'ASSET_MANAGER',
+  MEMBER: 'MEMBER',
+  VIEWER: 'VIEWER'
+} as const;
+
+const SecurityDeskRole = {
+  LEAD_SECURITY: 'LEAD_SECURITY',
+  SECURITY_GUARD: 'SECURITY_GUARD',
+  MEDIC: 'MEDIC',
+  BUILDING_MANAGER: 'BUILDING_MANAGER',
+  FACILITY_COORDINATOR: 'FACILITY_COORDINATOR',
+  MEMBER: 'MEMBER'
+} as const;
+
+const TimecardRole = {
+  ADMIN: 'ADMIN',
+  MANAGER: 'MANAGER',
+  PRODUCTION_ACCOUNTANT: 'PRODUCTION_ACCOUNTANT',
+  COORDINATOR: 'COORDINATOR',
+  MEMBER: 'MEMBER',
   VIEWER: 'VIEWER'
 } as const;
 
 // System default enum maps for fast validation
 const SYSTEM_DEFAULT_ENUMS: Record<AppName, Record<string, string>> = {
-  dashboard: DashboardRole as any,
+  hub: {} as any, // Hub doesn't have roles - it's just a launcher
+  pws: DashboardRole as any,
+  dashboard: DashboardRole as any, // Legacy alias
   clipShowPro: ClipShowProRole as any,
   callSheet: CallSheetRole as any,
-  cuesheet: CuesheetRole as any
+  cuesheet: CuesheetRole as any,
+  iwm: IWMRole as any,
+  timecard: TimecardRole as any,
+  securityDesk: SecurityDeskRole as any,
+  addressBook: {} as any, // Address Book doesn't have role-based access
+  deliverables: {} as any, // Deliverables uses project-based access
+  cns: {} as any // CNS uses different access model
 };
 
 // Validation function
@@ -163,8 +247,10 @@ export class AppRoleDefinitionService {
    * Check if a role value is a system default (using enum check)
    */
   isSystemDefaultRoleValue(roleValue: string, appName: AppName): boolean {
-    const enumMap = SYSTEM_DEFAULT_ENUMS[appName];
-    if (!enumMap) return false;
+    // Handle legacy 'dashboard' -> 'pws' mapping
+    const effectiveAppName = appName === 'dashboard' ? 'pws' : appName;
+    const enumMap = SYSTEM_DEFAULT_ENUMS[effectiveAppName];
+    if (!enumMap || Object.keys(enumMap).length === 0) return false;
     return Object.values(enumMap).includes(roleValue as any);
   }
 
@@ -231,8 +317,10 @@ export class AppRoleDefinitionService {
    * Fallback: Get system defaults from enum (if Firestore not available)
    */
   private getSystemDefaultsFromEnum(appName: AppName): AppRoleDefinition[] {
-    const enumMap = SYSTEM_DEFAULT_ENUMS[appName];
-    if (!enumMap) return [];
+    // Handle legacy 'dashboard' -> 'pws' mapping
+    const effectiveAppName = appName === 'dashboard' ? 'pws' : appName;
+    const enumMap = SYSTEM_DEFAULT_ENUMS[effectiveAppName];
+    if (!enumMap || Object.keys(enumMap).length === 0) return [];
 
     return Object.values(enumMap).map((roleValue: string) => ({
       id: `system-${appName}-${roleValue}`,
