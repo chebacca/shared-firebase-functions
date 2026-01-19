@@ -1211,7 +1211,7 @@ Current config: clientId=${usedClientId ? 'set (' + usedClientId.substring(0, 20
     // Most refresh calls do NOT return a new refresh token
     // Encrypt new tokens before saving for security and consistency
     const updateData: any = {
-      accessToken: encryptToken(credentials.access_token),
+      accessToken: encryptToken(credentials.access_token || ''),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       expiresAt: credentials.expiry_date ? admin.firestore.Timestamp.fromDate(new Date(credentials.expiry_date)) : null
     };
