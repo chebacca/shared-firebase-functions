@@ -181,8 +181,8 @@ async function syncUserLicenseClaims(userId: string, organizationId?: string): P
         }
 
         const subscriptionAddOns = {
-            clipShowPro: hasClipShowPro,
-            cuesheet: hasCueSheet
+            clipShowPro: appAccess.clipShowPro,
+            cuesheet: appAccess.cuesheet
         };
 
         // NEW: Resolve app roles to pass into claim update

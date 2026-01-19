@@ -14,6 +14,7 @@ import { Timestamp } from 'firebase-admin/firestore';
 import { encryptionKey, getEncryptionKey } from './secrets';
 
 import * as admin from 'firebase-admin';
+import axios from 'axios';
 import { encryptTokens } from '../integrations/encryption';
 import { FeatureAccessService } from '../integrations/unified-oauth/FeatureAccessService';
 
@@ -908,21 +909,28 @@ async function completeOAuthCallbackLogic(code: string, state: string, stateData
       console.warn('⚠️ [DropboxOAuth] Warning: account_info.read scope missing from token response. User info fetch might fail.');
     }
 
-    // Get user info using Dropbox SDK to ensure correct request formatting
-    console.log('🔄 [DropboxOAuth] Fetching user info via SDK...');
+    // Get user info using Axios directly to avoid SDK/fetch polyfill issues
+    console.log('🔄 [DropboxOAuth] Fetching user info via Axios...');
     let userInfoResponse;
+    // axios is imported at the top level
+
     try {
-      const { Dropbox } = require('dropbox');
-      const dbx = new Dropbox({ accessToken: tokenResponse.access_token });
-      const response = await dbx.usersGetCurrentAccount();
-      userInfoResponse = response.result;
+      const response = await axios.post('https://api.dropboxapi.com/2/users/get_current_account', null, {
+        headers: {
+          'Authorization': `Bearer ${tokenResponse.access_token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      userInfoResponse = response.data;
       console.log('✅ [DropboxOAuth] User info fetched successfully:', userInfoResponse.account_id);
     } catch (usersError: any) {
-      console.error('❌ [DropboxOAuth] SDK User info fetch failed:', usersError);
-      if (usersError.error) {
-        console.error('❌ [DropboxOAuth] Error body:', JSON.stringify(usersError.error, null, 2));
+      console.error('❌ [DropboxOAuth] Axios User info fetch failed:', usersError.message);
+      if (usersError.response) {
+        console.error('❌ [DropboxOAuth] Error status:', usersError.response.status);
+        console.error('❌ [DropboxOAuth] Error body:', JSON.stringify(usersError.response.data, null, 2));
       }
-      throw new Error(`Failed to get user info: ${usersError.message || 'Unknown SDK error'}`);
+      throw new Error(`Failed to get user info: ${usersError.message || 'Unknown error'}`);
     }
 
     // Encrypt tokens
@@ -947,6 +955,16 @@ async function completeOAuthCallbackLogic(code: string, state: string, stateData
     // Only add refreshToken if it exists
     if (encryptedRefreshToken) {
       connectionData.refreshToken = encryptedRefreshToken;
+    } else {
+      // 🔧 FIX: Dropbox should always provide refresh token when using 'token_access_type: offline'
+      console.warn('⚠️ [DropboxOAuth] No refresh token provided by Dropbox - automatic token refresh will not work!');
+      console.warn('⚠️ [DropboxOAuth] This usually means token_access_type=offline was not used in the OAuth URL');
+      console.warn('⚠️ [DropboxOAuth] Users will need to reconnect when access token expires');
+      // Store access token expiry for debugging
+      if (tokenResponse.expires_in) {
+        const expiryDate = new Date(Date.now() + tokenResponse.expires_in * 1000);
+        console.warn(`⚠️ [DropboxOAuth] Access token will expire at: ${expiryDate.toISOString()}`);
+      }
     }
 
     // Add expiry if available

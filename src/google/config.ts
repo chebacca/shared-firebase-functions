@@ -207,6 +207,8 @@ export async function getGoogleConfig(organizationId: string) {
 export const saveGoogleConfig = onCall(
   {
     region: 'us-central1',
+    invoker: 'public', // Required for CORS preflight requests
+    cors: true, // Enable CORS support
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -226,18 +228,61 @@ export const saveGoogleConfig = onCall(
     console.log(`💾 [GoogleConfig] Saving config for org: ${organizationId} by user: ${auth.uid}`);
 
     try {
-      // Verify user is admin of the organization
-      const userDoc = await db.collection('users').doc(auth.uid).get();
-      const userData = userDoc.data();
+      // Check custom claims first (most reliable)
+      const { getAuth } = await import('firebase-admin/auth');
+      const adminAuth = getAuth();
+      const userRecord = await adminAuth.getUser(auth.uid);
+      const customClaims = userRecord.customClaims || {};
+      const claimsRole = customClaims.role || customClaims.licensingRole;
+      const isAdminFromClaims = customClaims.isAdmin === true || 
+                                 customClaims.isOrganizationOwner === true ||
+                                 (claimsRole && ['OWNER', 'ADMIN', 'SUPERADMIN', 'ORGANIZATION_OWNER'].includes(claimsRole.toUpperCase()));
 
-      if (!userData || userData.organizationId !== organizationId) {
+      // Check teamMembers collection (primary source for org users)
+      let userData: any = null;
+      let userRole: string | null = null;
+      
+      const teamMemberQuery = await db.collection('teamMembers')
+        .where('userId', '==', auth.uid)
+        .where('organizationId', '==', organizationId)
+        .limit(1)
+        .get();
+
+      if (!teamMemberQuery.empty) {
+        userData = teamMemberQuery.docs[0].data();
+        userRole = userData.role;
+      } else {
+        // Fallback to users collection
+        const userDoc = await db.collection('users').doc(auth.uid).get();
+        if (userDoc.exists) {
+          userData = userDoc.data();
+          userRole = userData?.role;
+        }
+      }
+
+      // Verify user belongs to organization
+      const userOrgId = customClaims.organizationId || userData?.organizationId;
+      
+      if (!userOrgId) {
+        console.warn(`⚠️ [GoogleConfig] User ${auth.uid} has no organization ID in claims or database`);
+        throw new HttpsError('permission-denied', 'User organization not found. Please ensure you are properly assigned to an organization.');
+      }
+      
+      if (userOrgId !== organizationId) {
+        console.warn(`⚠️ [GoogleConfig] User ${auth.uid} org mismatch: ${userOrgId} !== ${organizationId}`);
         throw new HttpsError('permission-denied', 'User does not belong to this organization');
       }
 
-      // Check if user is admin
-      if (userData.role !== 'ADMIN' && userData.role !== 'OWNER') {
+      // Check if user is admin (check custom claims first, then database)
+      const isAdmin = isAdminFromClaims || 
+                     (userRole && ['OWNER', 'ADMIN', 'SUPERADMIN', 'ORGANIZATION_OWNER'].includes(userRole.toUpperCase()));
+
+      if (!isAdmin) {
+        console.warn(`⚠️ [GoogleConfig] User ${auth.uid} is not admin. Claims: ${JSON.stringify(customClaims)}, DB role: ${userRole}`);
         throw new HttpsError('permission-denied', 'Only organization admins can configure integrations');
       }
+      
+      console.log(`✅ [GoogleConfig] User ${auth.uid} verified as admin for org ${organizationId}`);
 
       // Encrypt sensitive fields
       const encryptedClientSecret = encryptToken(clientSecret);
@@ -300,9 +345,21 @@ export const saveGoogleConfigHttp = onRequest(
     secrets: [encryptionKey],
   },
   async (req, res) => {
-    // Set CORS headers
+    // Set CORS headers first (before any errors)
     const { setCorsHeaders } = await import('../shared/utils');
-    setCorsHeaders(req, res);
+    try {
+      setCorsHeaders(req, res);
+    } catch (corsError) {
+      console.warn('⚠️ [GoogleConfig] Error setting CORS headers:', corsError);
+      // Set basic CORS headers manually
+      const origin = req.headers.origin;
+      if (origin) {
+        res.set('Access-Control-Allow-Origin', origin);
+      }
+      res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.set('Access-Control-Allow-Credentials', 'true');
+    }
 
     // Handle preflight requests
     if (req.method === 'OPTIONS') {
@@ -341,20 +398,63 @@ export const saveGoogleConfigHttp = onRequest(
 
       console.log(`💾 [GoogleConfig] Saving config (HTTP) for org: ${organizationId} by user: ${userId}`);
 
-      // Verify user is admin of the organization
-      const userDoc = await db.collection('users').doc(userId).get();
-      const userData = userDoc.data();
+      // Check custom claims first (most reliable)
+      const userRecord = await auth.getUser(userId);
+      const customClaims = userRecord.customClaims || {};
+      const claimsRole = customClaims.role || customClaims.licensingRole;
+      const isAdminFromClaims = customClaims.isAdmin === true || 
+                                 customClaims.isOrganizationOwner === true ||
+                                 (claimsRole && ['OWNER', 'ADMIN', 'SUPERADMIN', 'ORGANIZATION_OWNER'].includes(claimsRole.toUpperCase()));
 
-      if (!userData || userData.organizationId !== organizationId) {
+      // Check teamMembers collection (primary source for org users)
+      let userData: any = null;
+      let userRole: string | null = null;
+      
+      const teamMemberQuery = await db.collection('teamMembers')
+        .where('userId', '==', userId)
+        .where('organizationId', '==', organizationId)
+        .limit(1)
+        .get();
+
+      if (!teamMemberQuery.empty) {
+        userData = teamMemberQuery.docs[0].data();
+        userRole = userData.role;
+      } else {
+        // Fallback to users collection
+        const userDoc = await db.collection('users').doc(userId).get();
+        if (userDoc.exists) {
+          userData = userDoc.data();
+          userRole = userData?.role;
+        }
+      }
+
+      // Verify user belongs to organization
+      // Check custom claims first, then database
+      const userOrgId = customClaims.organizationId || userData?.organizationId;
+      
+      if (!userOrgId) {
+        console.warn(`⚠️ [GoogleConfig] User ${userId} has no organization ID in claims or database`);
+        res.status(403).json({ success: false, error: 'User organization not found. Please ensure you are properly assigned to an organization.' });
+        return;
+      }
+      
+      if (userOrgId !== organizationId) {
+        console.warn(`⚠️ [GoogleConfig] User ${userId} org mismatch: ${userOrgId} !== ${organizationId}`);
         res.status(403).json({ success: false, error: 'User does not belong to this organization' });
         return;
       }
 
-      // Check if user is admin
-      if (userData.role !== 'ADMIN' && userData.role !== 'OWNER') {
+      // Check if user is admin (check custom claims first, then database)
+      const isAdmin = isAdminFromClaims || 
+                     (userRole && ['OWNER', 'ADMIN', 'SUPERADMIN', 'ORGANIZATION_OWNER'].includes(userRole.toUpperCase()));
+
+      if (!isAdmin) {
+        console.warn(`⚠️ [GoogleConfig] User ${userId} is not admin. Claims: ${JSON.stringify(customClaims)}, DB role: ${userRole}`);
         res.status(403).json({ success: false, error: 'Only organization admins can configure integrations' });
         return;
       }
+      
+      console.log(`✅ [GoogleConfig] User ${userId} verified as admin for org ${organizationId}`);
 
       // Encrypt sensitive fields
       const encryptedClientSecret = encryptToken(clientSecret);
@@ -396,6 +496,19 @@ export const saveGoogleConfigHttp = onRequest(
 
     } catch (error: any) {
       console.error(`❌ [GoogleConfig] Error saving config (HTTP):`, error);
+
+      // Ensure CORS headers are set even on error
+      try {
+        setCorsHeaders(req, res);
+      } catch (corsError) {
+        // If setCorsHeaders fails, set basic CORS manually
+        const origin = req.headers.origin;
+        if (origin) {
+          res.set('Access-Control-Allow-Origin', origin);
+        }
+        res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      }
 
       const errorMessage = error.message || 'Failed to save Google Drive configuration';
       res.status(500).json({

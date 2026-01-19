@@ -5,10 +5,10 @@
  * Add exports incrementally as needed
  */
 
-import * as admin from 'firebase-admin';
+import admin from 'firebase-admin';
 
 // Initialize Firebase Admin if not already initialized
-if (!admin.apps.length) {
+if (admin.apps.length === 0) {
   admin.initializeApp();
 }
 
@@ -478,7 +478,12 @@ export {
   respondToOvertimeRequest,
   certifyOvertimeRequest,
   approveOvertimeRequest,
-  rejectOvertimeRequest
+  rejectOvertimeRequest,
+  startOvertimeSession,
+  updateOvertimeSessionHours,
+  endOvertimeSession,
+  getActiveOvertimeSession,
+  checkOvertimeSessions
 } from './overtime';
 
 // NOTE: Other functions commented out due to TypeScript errors

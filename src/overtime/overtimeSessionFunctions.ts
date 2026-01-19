@@ -119,7 +119,7 @@ export const startOvertimeSession = onCall(
         userName,
         managerId: otRequest.managerId,
         timecardEntryId,
-        sessionStartTime: now,
+        sessionStartTime: now as any,
         approvedHours: approvedHours,
         hoursUsed: 0,
         hoursRemaining: approvedHours,
@@ -203,9 +203,9 @@ export const updateOvertimeSessionHours = onCall(
 
       // Calculate hours worked so far
       const sessionStart = session.sessionStartTime;
-      const startTime = sessionStart instanceof Timestamp
-        ? sessionStart.toDate()
-        : new Date(sessionStart);
+      const startTime = (sessionStart && typeof (sessionStart as any).toDate === 'function')
+        ? (sessionStart as any).toDate()
+        : new Date(sessionStart as any);
       const now = new Date();
       const elapsedMs = now.getTime() - startTime.getTime();
       const hoursUsed = elapsedMs / (1000 * 60 * 60);
@@ -291,9 +291,9 @@ export const endOvertimeSession = onCall(
 
       // 1. Calculate final hours
       const sessionStart = session.sessionStartTime;
-      const startTime = sessionStart instanceof Timestamp
-        ? sessionStart.toDate()
-        : new Date(sessionStart);
+      const startTime = (sessionStart && typeof (sessionStart as any).toDate === 'function')
+        ? (sessionStart as any).toDate()
+        : new Date(sessionStart as any);
       const now = new Date();
       const elapsedMs = now.getTime() - startTime.getTime();
       const finalHoursUsed = elapsedMs / (1000 * 60 * 60);
@@ -400,9 +400,9 @@ export const getActiveOvertimeSession = onCall(
 
       // Calculate real-time hours
       const sessionStart = session.sessionStartTime;
-      const startTime = sessionStart instanceof Timestamp
-        ? sessionStart.toDate()
-        : new Date(sessionStart);
+      const startTime = (sessionStart && typeof (sessionStart as any).toDate === 'function')
+        ? (sessionStart as any).toDate()
+        : new Date(sessionStart as any);
       const now = new Date();
       const elapsedMs = now.getTime() - startTime.getTime();
       const hoursUsed = elapsedMs / (1000 * 60 * 60);
@@ -410,8 +410,8 @@ export const getActiveOvertimeSession = onCall(
       const percentUsed = (hoursUsed / session.approvedHours) * 100;
 
       const sessionWithCalculatedHours = {
-        id: sessionDoc.id,
         ...session,
+        id: sessionDoc.id,
         hoursUsed: parseFloat(hoursUsed.toFixed(2)),
         hoursRemaining: parseFloat(hoursRemaining.toFixed(2)),
         percentUsed: parseFloat(percentUsed.toFixed(1))

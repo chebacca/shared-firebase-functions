@@ -24,10 +24,10 @@ export const checkOvertimeSessions = onSchedule(
   },
   async (event) => {
     const now = Timestamp.now();
-    
+
     try {
       console.log(`⏰ [OvertimeScheduler] Checking active overtime sessions at ${now.toDate().toISOString()}`);
-      
+
       // 1. Query all ACTIVE overtime sessions
       const activeSessions = await db
         .collection('overtimeSessions')
@@ -40,17 +40,17 @@ export const checkOvertimeSessions = onSchedule(
         try {
           const session = sessionDoc.data() as OvertimeSession;
           const sessionStart = session.sessionStartTime;
-          const startTime = sessionStart instanceof Timestamp
-            ? sessionStart.toDate()
-            : new Date(sessionStart);
-          
+          const startTime = (sessionStart && typeof (sessionStart as any).toDate === 'function')
+            ? (sessionStart as any).toDate()
+            : new Date(sessionStart as any);
+
           const elapsedMs = now.toMillis() - startTime.getTime();
           const elapsedHours = elapsedMs / (1000 * 60 * 60);
-          
+
           const approvedHours = session.approvedHours;
           const graceHours = (session.gracePeriodMinutes || 30) / 60;
           const maxHours = approvedHours + graceHours;
-          
+
           // Send warning at 90% of approved hours
           if (elapsedHours >= approvedHours * 0.9 && !session.managerNotifiedAt) {
             console.log(`📢 [OvertimeScheduler] Sending manager reminder for session ${sessionDoc.id}`);
@@ -59,7 +59,7 @@ export const checkOvertimeSessions = onSchedule(
               managerNotifiedAt: FieldValue.serverTimestamp()
             });
           }
-          
+
           // Send auto clock-out warning 15 min before limit
           if (elapsedHours >= (approvedHours - 0.25) && !session.autoClockOutWarningAt) {
             console.log(`⚠️ [OvertimeScheduler] Sending auto clock-out warning for session ${sessionDoc.id}`);
@@ -68,7 +68,7 @@ export const checkOvertimeSessions = onSchedule(
               autoClockOutWarningAt: FieldValue.serverTimestamp()
             });
           }
-          
+
           // Auto clock-out if exceeded limit + grace period
           if (elapsedHours >= maxHours) {
             console.log(`🛑 [OvertimeScheduler] Auto clocking out session ${sessionDoc.id} (exceeded limit)`);
@@ -205,7 +205,7 @@ async function autoClockOutUser(session: OvertimeSession, sessionId: string): Pr
     if (!timecardQuery.empty) {
       const timecardDoc = timecardQuery.docs[0];
       const now = Timestamp.now();
-      
+
       // Calculate final hours
       const clockInTime = timecardDoc.data().clockInTime?.toDate?.() || new Date(timecardDoc.data().clockInTime);
       const clockOutTime = now.toDate();
@@ -232,7 +232,7 @@ async function autoClockOutUser(session: OvertimeSession, sessionId: string): Pr
     // 2. Update session status
     const finalHoursUsed = session.hoursUsed || 0;
     const exceededBy = Math.max(0, finalHoursUsed - session.approvedHours);
-    
+
     await db.collection('overtimeSessions').doc(sessionId).update({
       status: 'AUTO_CLOCKED_OUT',
       sessionEndTime: FieldValue.serverTimestamp(),

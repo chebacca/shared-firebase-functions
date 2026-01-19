@@ -737,6 +737,14 @@ async function completeOAuthCallbackLogic(code: string, state: string, stateData
     // Only add refreshToken if it exists
     if (encryptedRefreshToken) {
       connectionData.refreshToken = encryptedRefreshToken;
+    } else {
+      // 🔧 FIX: Box should always provide refresh token - log warning if missing
+      console.warn('⚠️ [BoxOAuth] No refresh token provided by Box - automatic token refresh will not work!');
+      console.warn('⚠️ [BoxOAuth] Users will need to reconnect when access token expires');
+      // Store access token expiry for debugging
+      if (tokenInfo.expiresAt) {
+        console.warn(`⚠️ [BoxOAuth] Access token will expire at: ${new Date(tokenInfo.expiresAt).toISOString()}`);
+      }
     }
 
     // Add expiry if available

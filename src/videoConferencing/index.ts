@@ -262,9 +262,7 @@ export const getVideoConferencingProvidersHttp = onRequest(
     if (req.method === 'OPTIONS') {
       res.status(204).end();
       return;
-    }
-
-    // Only allow POST requests
+    }    // Only allow POST requests
     if (req.method !== 'POST') {
       res.status(405).json({ success: false, error: 'Method not allowed' });
       return;
@@ -277,9 +275,7 @@ export const getVideoConferencingProvidersHttp = onRequest(
           error: 'Organization ID is required',
         });
         return;
-      }      console.log(`🔍 [VideoConferencing HTTP] Checking providers for org: ${organizationId}`);
-
-      // Check Google Meet connection
+      }      console.log(`🔍 [VideoConferencing HTTP] Checking providers for org: ${organizationId}`);      // Check Google Meet connection
       const googleConnections = await db
         .collection('organizations')
         .doc(organizationId)
@@ -299,9 +295,7 @@ export const getVideoConferencingProvidersHttp = onRequest(
           const data = cloudIntegrationDoc.data() || {};
           hasGoogleConnection = data.isActive !== false && !!((data as any).tokens || (data as any).encryptedTokens);
         }
-      }
-
-      // Additional fallback: Check integrationConfigs collection
+      }      // Additional fallback: Check integrationConfigs collection
       if (!hasGoogleConnection) {
         const integrationConfigsQuery = await db
           .collection('organizations')

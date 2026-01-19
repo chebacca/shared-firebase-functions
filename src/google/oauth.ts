@@ -560,6 +560,15 @@ async function completeOAuthCallback(code: string, state: string, stateData: any
     // Only add refreshToken if it exists (Firestore doesn't accept undefined)
     if (encryptedRefreshToken) {
       connectionData.refreshToken = encryptedRefreshToken;
+    } else {
+      // 🔧 FIX: Google should always provide refresh token when using 'consent' prompt
+      console.warn('⚠️ [GoogleOAuth] No refresh token provided by Google - automatic token refresh will not work!');
+      console.warn('⚠️ [GoogleOAuth] This usually means prompt=\'consent\' was not used in the OAuth URL');
+      console.warn('⚠️ [GoogleOAuth] Users will need to reconnect when access token expires');
+      // Store access token expiry for debugging
+      if (tokens.expiry_date) {
+        console.warn(`⚠️ [GoogleOAuth] Access token will expire at: ${new Date(tokens.expiry_date).toISOString()}`);
+      }
     }
 
     // Add expiry if available
@@ -574,6 +583,49 @@ async function completeOAuthCallback(code: string, state: string, stateData: any
       .add(connectionData);
 
     const connectionId = connectionRef.id;
+
+    // ALSO save to the unified cloudIntegrations location for compatibility with existing UI
+    // This matches the Box implementation and ensures connection status checks work consistently
+    try {
+      const unifiedIntegrationRef = db
+        .collection('organizations')
+        .doc(organizationId)
+        .collection('cloudIntegrations')
+        .doc('google');
+
+      // Encrypt tokens using the shared binary-base64 format for unified access
+      const { encryptTokens } = await import('../integrations/encryption');
+      const unifiedTokens = {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresAt: tokens.expiry_date
+      };
+      const unifiedEncryptedTokens = encryptTokens(unifiedTokens);
+
+      // Prepare unified document format (matches Box pattern)
+      const unifiedDoc = {
+        userId: userId || 'system',
+        organizationId: organizationId,
+        provider: 'google',
+        accountEmail: userInfo.email,
+        accountName: userInfo.name,
+        accountId: userInfo.id,
+        accountPicture: userInfo.picture,
+        // We store both the connection ID and the unified encrypted tokens
+        connectionId: connectionId,
+        encryptedTokens: unifiedEncryptedTokens, // CRITICAL: Added for token refresh
+        isActive: true,
+        connectionMethod: 'oauth',
+        connectedAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+        tokenExpiresAt: tokens.expiry_date ? Timestamp.fromMillis(tokens.expiry_date) : null
+      };
+
+      await unifiedIntegrationRef.set(unifiedDoc, { merge: true });
+      console.log(`✅ [GoogleOAuth] Saved to cloudIntegrations/google with encryptedTokens for organization ${organizationId}`);
+    } catch (unifiedError) {
+      console.warn('⚠️ [GoogleOAuth] Failed to save to cloudIntegrations:', unifiedError);
+    }
 
     // Create or update integration record
     try {
