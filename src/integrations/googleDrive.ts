@@ -418,6 +418,7 @@ export const handleGoogleOAuthCallbackHttp = onRequest(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB',
     secrets: [encryptionKey],
   },
   async (req, res) => {
@@ -875,6 +876,7 @@ export const refreshGoogleAccessTokenCallable = onCall(
   {
     region: 'us-central1',
     cors: true, // Enable CORS support for localhost
+    memory: '512MiB',
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -1242,6 +1244,7 @@ export const listGoogleDriveFolders = onCall(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB',
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -1293,6 +1296,7 @@ export const getGoogleDriveFiles = onCall(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB',
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -1350,6 +1354,7 @@ export const createGoogleDriveFolder = onCall(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB',
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -1408,6 +1413,7 @@ export const uploadToGoogleDrive = onCall(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB',
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -1570,6 +1576,7 @@ export const getGoogleIntegrationStatus = onCall(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB',
   },
   async (request) => {
     try {
@@ -1650,6 +1657,7 @@ export const indexGoogleDriveFolder = onCall(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB',
     secrets: [encryptionKey],
   },
   async (request) => {

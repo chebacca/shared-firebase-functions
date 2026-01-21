@@ -22,13 +22,52 @@ export const exchangeHubToken = functions.https.onCall(async (data: any, context
         const decodedToken = await admin.auth().verifyIdToken(hubIdToken);
         const uid = decodedToken.uid;
 
-        // 2. Create a custom token for the same user
-        // We can optionally pass additional claims, but usually standard custom token 
-        // claims are sufficient as they trigger a refresh of the user's claims 
-        // from the backend anyway.
-        const customToken = await admin.auth().createCustomToken(uid, {
+        // 2. Determine claims to burn into the custom token
+        const claims: Record<string, any> = {
             authMethod: 'hub-sso'
-        });
+        };
+
+        const requestedOrgId = data.organizationId;
+        const requestedProjectId = data.projectId;
+
+        // Extract claims from the decoded token
+        const userClaims = decodedToken as any;
+        const isOwnerOrAdmin =
+            userClaims.role === 'OWNER' ||
+            userClaims.role === 'ADMIN' ||
+            userClaims.isAdmin === true ||
+            userClaims.isOrganizationOwner === true;
+
+        const allowedOrgs = userClaims.allowedOrganizations || [];
+
+        // Apply Organization ID if validated
+        if (requestedOrgId) {
+            // Check properly if user is allowed to access this org
+            const isAllowed =
+                isOwnerOrAdmin ||
+                userClaims.organizationId === requestedOrgId ||
+                allowedOrgs.includes(requestedOrgId) ||
+                (userClaims.appRoles && Object.values(userClaims.appRoles || {}).includes(`admin:${requestedOrgId}`)); // Hypothetical check
+
+            // For now, if Owner/Admin or explicitly allowed, permit the switch
+            // If checking fails, we DON'T set it, falling back to default user claims behavior
+            if (isAllowed) {
+                claims.organizationId = requestedOrgId;
+                console.log(`[Auth] Burning organizationId context: ${requestedOrgId}`);
+            } else {
+                console.warn(`[Auth] User ${uid} requested org ${requestedOrgId} but is not authorized. Claims:`, Object.keys(userClaims));
+            }
+        }
+
+        // Apply Project ID if requested (less strict validation for now, relies on Firestore rules later)
+        if (requestedProjectId) {
+            claims.projectId = requestedProjectId;
+            claims.currentProjectId = requestedProjectId; // Alias for safety
+            console.log(`[Auth] Burning projectId context: ${requestedProjectId}`);
+        }
+
+        // 3. Create a custom token with context claims
+        const customToken = await admin.auth().createCustomToken(uid, claims);
 
         console.log(`[Auth] Exchanged Hub token for Custom Token for user: ${uid}`);
 

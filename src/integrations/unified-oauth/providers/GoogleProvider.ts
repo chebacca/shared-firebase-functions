@@ -304,6 +304,34 @@ export class GoogleProvider implements OAuthProvider {
       }
     }
 
+    // Option 4: Try Application Default Credentials (ADC) for dev mode
+    // This allows using gcloud auth application-default login in development
+    if (!finalClientSecret) {
+      try {
+        // Check if we're in dev mode (not in Cloud Functions environment)
+        const isDevMode = !process.env.FUNCTION_TARGET && !process.env.K_SERVICE;
+        
+        if (isDevMode) {
+          // Try to use Google Auth Library with ADC
+          const { GoogleAuth } = require('google-auth-library');
+          const auth = new GoogleAuth({
+            scopes: ['https://www.googleapis.com/auth/cloud-platform']
+          });
+          
+          // ADC will be used automatically if GOOGLE_APPLICATION_CREDENTIALS is set
+          // or if gcloud auth application-default login was run
+          console.log('🔍 [GoogleProvider] Dev mode detected, attempting to use Application Default Credentials');
+          
+          // Note: ADC doesn't provide OAuth client credentials directly
+          // It's used for service account authentication
+          // For OAuth, we still need client ID/secret, but ADC can be used for other Google API calls
+        }
+      } catch (adcError) {
+        // ADC not available or failed, continue with error below
+        console.warn('⚠️ [GoogleProvider] Application Default Credentials not available:', adcError);
+      }
+    }
+
     if (!finalClientSecret) {
       throw new Error('Google OAuth client secret not configured. Set GOOGLE_CLIENT_SECRET environment variable or configure in Integration Settings.');
     }

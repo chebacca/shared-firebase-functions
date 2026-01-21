@@ -79,10 +79,8 @@ export class UnifiedOAuthService {
     // Determine the redirect URI for the provider
     // ALWAYS use Firebase Functions callback URL - it will redirect back to the client URL after processing
     // This ensures the redirect URI is always authorized in Google Cloud Console
-    // EXCEPTION: Dropbox needs its own callback for legacy/consistency reasons
-    const oauthCallbackUrl = providerName === 'dropbox'
-      ? 'https://us-central1-backbone-logic.cloudfunctions.net/dropboxOAuthCallbackHttp'
-      : 'https://us-central1-backbone-logic.cloudfunctions.net/handleOAuthCallback';
+    // All providers now use the unified callback
+    const oauthCallbackUrl = 'https://us-central1-backbone-logic.cloudfunctions.net/handleOAuthCallback';
 
     const redirectUriToUse = oauthCallbackUrl;
 
@@ -269,39 +267,6 @@ export class UnifiedOAuthService {
           connectedBy: userId,
           organizationId
         });
-    } else if (providerName === 'dropbox') {
-      // Dropbox-specific connection format
-      const dropboxConnectionData: any = {
-        organizationId,
-        type: 'organization',
-        userId: userId || null,
-        accountEmail: tokens.accountInfo.email || '',
-        accountName: tokens.accountInfo.name || 'Dropbox User',
-        accountId: tokens.accountInfo.id,
-        accessToken: encryptedAccessToken,
-        scopes: tokens.scopes,
-        connectedBy: userId || 'system',
-        isActive: true,
-        connectedAt: Timestamp.now(),
-        lastRefreshedAt: Timestamp.now()
-      };
-
-      if (encryptedRefreshToken) {
-        dropboxConnectionData.refreshToken = encryptedRefreshToken;
-      }
-
-      if (tokens.expiresAt) {
-        dropboxConnectionData.tokenExpiresAt = Timestamp.fromDate(tokens.expiresAt);
-      }
-
-      // Save to dropboxConnections collection
-      const dropboxConnectionRef = await db
-        .collection('organizations')
-        .doc(organizationId)
-        .collection('dropboxConnections')
-        .add(dropboxConnectionData);
-
-      console.log(`✅ [OAuthService] Saved Dropbox connection to dropboxConnections/${dropboxConnectionRef.id}`);
     }
 
     // Build connection data (for ALL providers, including Slack for multi-workspaces/backwards compatibility)

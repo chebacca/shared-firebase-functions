@@ -4,12 +4,16 @@
       "source": ".",
       "codebase": "default",
       "runtime": "nodejs20",
+      "packageManager": "pnpm",
       "ignore": [
-        "node_modules",
         ".git",
         "firebase-debug.log",
         "firebase-debug.*.log",
         "src/**",
+        "modules",
+        "temp-build",
+        "google-drive-deploy",
+        "temp-problematic-files",
         "*.local.js",
         "*.local.ts"
       ]

@@ -188,6 +188,7 @@ export const boxOAuthInitiate = onCall(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB',
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -298,6 +299,7 @@ export const boxOAuthRefresh = onCall(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB',
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -381,6 +383,7 @@ export const boxRevokeAccess = onCall(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB',
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -471,6 +474,7 @@ export const boxOAuthCallback = onCall(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB',
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -581,6 +585,7 @@ export const boxOAuthCallbackHttp = onRequest(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB',
     secrets: [encryptionKey],
   },
   async (req, res) => {

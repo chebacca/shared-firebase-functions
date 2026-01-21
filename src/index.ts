@@ -246,6 +246,7 @@ export {
 export {
   refreshAuthClaims,
   onUserLoginTrigger,
+  syncUserClaimsOnLogin,
   exchangeHubToken
 } from './auth';
 
@@ -423,6 +424,9 @@ export { getDocuSignEnvelopeStatus } from './clipShowPro/docusign/getDocuSignEnv
 export { downloadDocuSignEnvelopeDocument } from './clipShowPro/docusign/downloadDocuSignEnvelopeDocument';
 export { docuSignWebhookHandler } from './clipShowPro/docusign/webhookHandler';
 
+// QC Functions
+export * from './qc';
+
 // Export ML Services functions
 export {
   semanticSearch,
@@ -485,6 +489,9 @@ export {
   getActiveOvertimeSession,
   checkOvertimeSessions
 } from './overtime';
+
+// QC Functions
+export * from './qc';
 
 // NOTE: Other functions commented out due to TypeScript errors
 

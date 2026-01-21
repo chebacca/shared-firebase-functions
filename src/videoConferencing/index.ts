@@ -311,9 +311,7 @@ export const getVideoConferencingProvidersHttp = onRequest(
           hasGoogleConnection = config.connectionStatus === 'connected' ||
             !!(config.accountEmail || config.accountName || config.credentials?.clientId);
         }
-      }
-
-      // Additional fallback: Check integrationSettings collection
+      }      // Additional fallback: Check integrationSettings collection
       if (!hasGoogleConnection) {
         const integrationSettingsDoc = await db
           .collection('organizations')

@@ -191,6 +191,7 @@ export const dropboxOAuthInitiate = onCall(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB',
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -294,6 +295,7 @@ export const dropboxOAuthRefresh = onCall(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB',
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -418,6 +420,7 @@ export const dropboxRevokeAccess = onCall(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB',
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -508,6 +511,7 @@ export const dropboxOAuthCallback = onCall(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB',
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -684,6 +688,7 @@ export const dropboxOAuthCallbackHttp = onRequest(
     region: 'us-central1',
     cors: true,
     invoker: 'public',
+    memory: '512MiB',
     secrets: [encryptionKey],
   },
   async (req, res) => {
@@ -1103,6 +1108,7 @@ export const dropboxOAuthInitiateHttp = onRequest(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB',
     secrets: [encryptionKey],
   },
   async (req, res) => {

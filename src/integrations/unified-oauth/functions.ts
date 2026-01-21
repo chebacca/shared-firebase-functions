@@ -20,6 +20,7 @@ export const initiateOAuth = onCall(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB',
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -60,20 +61,20 @@ export const initiateOAuth = onCall(
       return result;
     } catch (error: any) {
       console.error(`❌ [initiateOAuth] Error initiating OAuth for ${provider}:`, error);
-      
+
       // Preserve HttpsError as-is
       if (error instanceof HttpsError) {
         throw error;
       }
-      
+
       // Convert regular errors to HttpsError with proper message
       const errorMessage = error?.message || 'Failed to initiate OAuth flow';
-      
+
       // Check for specific error types
       if (errorMessage.includes('not configured') || errorMessage.includes('credentials') || errorMessage.includes('clientId') || errorMessage.includes('client secret')) {
         throw new HttpsError('failed-precondition', errorMessage);
       }
-      
+
       // Generic internal error
       throw new HttpsError('internal', errorMessage);
     }
@@ -87,6 +88,7 @@ export const handleOAuthCallback = onRequest(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB',
     invoker: 'public', // Required for OAuth callbacks from Google/other providers
     secrets: [encryptionKey],
   },
@@ -337,6 +339,7 @@ export const refreshOAuthToken = onCall(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB',
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -408,6 +411,7 @@ export const updateOAuthAccountInfo = onCall(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB',
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -525,6 +529,7 @@ export const revokeOAuthConnection = onCall(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB',
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -560,6 +565,7 @@ export const disconnectIntegration = onCall(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB',
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -660,6 +666,7 @@ export const listAvailableProviders = onCall(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB',
   },
   async (request) => {
     const providers = providerRegistry.getAllProviders();
@@ -681,6 +688,7 @@ export const verifyIntegrationAccess = onCall(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB',
     secrets: [encryptionKey],
   },
   async (request) => {

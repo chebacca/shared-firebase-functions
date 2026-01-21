@@ -16,6 +16,6 @@ export {
   updateEDLConverterClaims,
   grantEDLConverterAccessToEnterpriseUsers
 } from './updateEDLConverterClaims';
-// Export unified auth functions (refreshAuthClaims, onUserLoginTrigger)
-export { refreshAuthClaims, onUserLoginTrigger } from './unifiedAuth';
+// Export unified auth functions (refreshAuthClaims, onUserLoginTrigger, syncUserClaimsOnLogin)
+export { refreshAuthClaims, onUserLoginTrigger, syncUserClaimsOnLogin } from './unifiedAuth';
 export { exchangeHubToken } from './exchangeHubToken';

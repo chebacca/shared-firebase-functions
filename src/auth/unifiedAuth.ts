@@ -194,6 +194,9 @@ export const onUserLoginTrigger = functions.auth.user().onCreate(async (user: an
  * 🔄 SYNC USER CLAIMS ON LOGIN
  * Ensures user claims (especially organizationId) are up-to-date when user logs in
  * This helps ensure Storage rules can properly validate organization access
+ * 
+ * Note: onCall functions automatically handle CORS. If CORS errors occur,
+ * ensure the function is deployed and the Firebase project allows localhost origins.
  */
 export const syncUserClaimsOnLogin = functions.https.onCall(async (data: any, context: any) => {
     if (!context.auth) {

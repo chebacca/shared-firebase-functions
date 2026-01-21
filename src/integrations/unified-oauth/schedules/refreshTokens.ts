@@ -20,6 +20,7 @@ export const refreshExpiredTokens = onSchedule(
   {
     schedule: 'every 1 hours',
     region: 'us-central1',
+    memory: '512MiB',
     secrets: [encryptionKey],
     timeZone: 'America/Los_Angeles'
   },
@@ -111,23 +112,56 @@ export const refreshExpiredTokens = onSchedule(
             const errorMessage = error instanceof Error ? error.message : String(error);
             console.error(`❌ Failed to refresh ${providerName} token for org ${orgId}:`, errorMessage);
 
-            // Check if this is a PERMANENT error that requires reconnection
-            // vs a TEMPORARY error that should be retried
+            // CLASSIFY ERROR TYPES
+
+            // 1. Temporary Network/Server Errors
+            // These should NOT count against the failure limit at all, or very leniently
+            const isTemporaryError =
+              errorMessage.includes('ETIMEDOUT') ||
+              errorMessage.includes('ECONNREFUSED') ||
+              errorMessage.includes('ENOTFOUND') ||
+              errorMessage.includes('network socket disconnected') ||
+              errorMessage.includes('Network request failed') ||
+              errorMessage.includes('timeout') ||
+              errorMessage.includes('500') || // Internal Server Error
+              errorMessage.includes('502') || // Bad Gateway
+              errorMessage.includes('503') || // Service Unavailable
+              errorMessage.includes('504');   // Gateway Timeout
+
+            // 2. Permanent Auth Errors
+            // These mean the user needs to re-authenticate
             const isPermanentError =
               errorMessage.includes('invalid_grant') ||
               errorMessage.includes('Token has been expired or revoked') ||
               errorMessage.includes('refresh token is invalid or revoked') ||
               errorMessage.includes('token_revoked') ||
               errorMessage.includes('invalid_client') ||
-              errorMessage.includes('unauthorized_client');
+              errorMessage.includes('unauthorized_client') ||
+              errorMessage.includes('usage_limit'); // Usage limit might be permanent if quota exceeded
 
-            // Track consecutive failures
+            if (isTemporaryError) {
+              console.warn(`⚠️ [refreshTokens] Temporary network error for ${providerName} in org ${orgId} - will retry without penalty`);
+              // Update last error but DO NOT increment failure count
+              // This ensures we never disconnect due to bad internet/server issues
+              await connectionDoc.ref.update({
+                lastRefreshError: errorMessage,
+                lastRefreshErrorAt: Timestamp.now()
+                // connection remains active, failure count unchanged
+              });
+              continue;
+            }
+
+            // Track consecutive failures for non-transient errors
             const failureCount = (connectionData.consecutiveRefreshFailures || 0) + 1;
-            const maxRetries = 3; // Allow 3 failures before marking inactive
+
+            // INCREASED RETRY LIMIT
+            // Previous: 3 (too low)
+            // New: 15 (allows ~15 hours of recurring non-transient failures)
+            const maxRetries = 15;
 
             if (isPermanentError) {
               // Permanent error - mark as inactive immediately
-              console.error(`🚫 [refreshTokens] Permanent error for ${providerName} in org ${orgId} - marking inactive`);
+              console.error(`🚫 [refreshTokens] Permanent auth error for ${providerName} in org ${orgId} - marking inactive`);
               await connectionDoc.ref.update({
                 isActive: false,
                 refreshError: errorMessage,
@@ -143,16 +177,35 @@ export const refreshExpiredTokens = onSchedule(
                 refreshError: `${failureCount} consecutive refresh failures: ${errorMessage}`,
                 refreshErrorAt: Timestamp.now(),
                 consecutiveRefreshFailures: failureCount,
-                requiresReconnection: false // May recover on next attempt
+                requiresReconnection: false
               });
             } else {
-              // Temporary error - log but keep active, will retry next hour
-              console.warn(`⚠️ [refreshTokens] Temporary error for ${providerName} in org ${orgId} (attempt ${failureCount}/${maxRetries}) - will retry`);
+              // EXPONENTIAL BACKOFF
+              // If we have some failures, check if we should wait before trying again
+              // Failures 1-4: Try every hour (normal schedule)
+              // Failures 5-9: Wait ~3 hours between tries
+              // Failures 10+: Wait ~6 hours between tries
+
+              const hoursSinceLastError = connectionData.lastRefreshErrorAt
+                ? (Date.now() - connectionData.lastRefreshErrorAt.toMillis()) / (1000 * 60 * 60)
+                : 1; // Default to 1 hour if no prev error
+
+              let shouldSkip = false;
+              if (failureCount >= 10 && hoursSinceLastError < 6) shouldSkip = true;
+              else if (failureCount >= 5 && hoursSinceLastError < 3) shouldSkip = true;
+
+              if (shouldSkip) {
+                console.warn(`⏳ [refreshTokens] Backing off for ${providerName} in org ${orgId} (${failureCount} failures) - skipping retry`);
+                continue;
+              }
+
+              // Standard retry logic
+              console.warn(`⚠️ [refreshTokens] Refresh failed for ${providerName} in org ${orgId} (attempt ${failureCount}/${maxRetries}) - will retry`);
               await connectionDoc.ref.update({
                 lastRefreshError: errorMessage,
                 lastRefreshErrorAt: Timestamp.now(),
                 consecutiveRefreshFailures: failureCount
-                // Keep isActive: true - will retry next hour
+                // Keep isActive: true
               });
             }
           }
