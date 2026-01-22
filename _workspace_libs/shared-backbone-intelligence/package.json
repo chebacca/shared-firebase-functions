@@ -1,0 +1,22 @@
+{
+  "name": "shared-backbone-intelligence",
+  "version": "1.0.0",
+  "description": "Unified standard logic and tools for Backbone Ecosystem Intelligence",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "firebase-admin": "^13.5.0",
+    "shared-firebase-models": "file:../shared-firebase-models",
+    "zod": "^3.23.0",
+    "@modelcontextprotocol/sdk": "^0.6.0"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/node": "^20.10.5",
+    "typescript": "^5.3.3"
+  }
+}

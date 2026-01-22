@@ -39,7 +39,8 @@ export function getGoogleMapsApiKey(): string {
       console.warn('GOOGLE_MAPS_API_KEY secret not found. Maps features may fail.');
       return '';
     }
-    return key;
+    // Trim whitespace and newlines that might be in the secret
+    return key.trim();
   } catch (error) {
     console.warn('Error accessing GOOGLE_MAPS_API_KEY secret:', error);
     return '';

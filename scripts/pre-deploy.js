@@ -2,7 +2,7 @@
 /**
  * Pre-deploy script for Firebase Functions
  * 
- * This script bundles workspace dependencies into node_modules before deployment
+ * This script bundles workspace dependencies into _workspace_libs before deployment
  * since Cloud Build doesn't support pnpm workspace protocol.
  */
 
@@ -12,7 +12,7 @@ const { execSync } = require('child_process');
 
 const ROOT_DIR = path.resolve(__dirname, '../..');
 const FUNCTIONS_DIR = path.resolve(__dirname, '..');
-const NODE_MODULES_DIR = path.join(FUNCTIONS_DIR, 'node_modules');
+const LOCAL_LIBS_DIR = path.join(FUNCTIONS_DIR, '_workspace_libs');
 
 // Workspace packages to bundle
 const WORKSPACE_PACKAGES = [
@@ -30,12 +30,12 @@ for (const pkgName of WORKSPACE_PACKAGES) {
   if (!fs.existsSync(sourceDir)) {
     continue;
   }
-  
+
   const pkgJsonPath = path.join(sourceDir, 'package.json');
   if (!fs.existsSync(pkgJsonPath)) {
     continue;
   }
-  
+
   const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
   if (pkgJson.scripts && pkgJson.scripts.build) {
     console.log(`Building ${pkgName}...`);
@@ -47,72 +47,47 @@ for (const pkgName of WORKSPACE_PACKAGES) {
   }
 }
 
-console.log('\n📦 Copying workspace packages to node_modules...\n');
+console.log(`\n📦 Copying workspace packages to _workspace_libs (excluding node_modules)...\n`);
 
-// Ensure node_modules exists
-if (!fs.existsSync(NODE_MODULES_DIR)) {
-  fs.mkdirSync(NODE_MODULES_DIR, { recursive: true });
+// Ensure local libs dir exists
+if (!fs.existsSync(LOCAL_LIBS_DIR)) {
+  fs.mkdirSync(LOCAL_LIBS_DIR, { recursive: true });
 }
 
 // Copy each workspace package
 for (const pkgName of WORKSPACE_PACKAGES) {
   const sourceDir = path.join(ROOT_DIR, pkgName);
-  const targetDir = path.join(NODE_MODULES_DIR, pkgName);
-  
   if (!fs.existsSync(sourceDir)) {
     console.warn(`⚠️  Warning: ${pkgName} not found at ${sourceDir}`);
     continue;
   }
-  
-  // Read package.json to get the actual package name
+
   const pkgJsonPath = path.join(sourceDir, 'package.json');
   if (!fs.existsSync(pkgJsonPath)) {
     console.warn(`⚠️  Warning: package.json not found for ${pkgName}`);
     continue;
   }
-  
+
   const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8'));
   const actualPkgName = pkgJson.name || pkgName;
-  const finalTargetDir = path.join(NODE_MODULES_DIR, actualPkgName);
-  
+  const targetDir = path.join(LOCAL_LIBS_DIR, actualPkgName);
+
   // Remove existing if present
-  if (fs.existsSync(finalTargetDir)) {
-    fs.rmSync(finalTargetDir, { recursive: true, force: true });
+  if (fs.existsSync(targetDir)) {
+    fs.rmSync(targetDir, { recursive: true, force: true });
   }
-  
+
   // Create directory
-  fs.mkdirSync(finalTargetDir, { recursive: true });
-  
-  // Copy package.json
-  fs.copyFileSync(pkgJsonPath, path.join(finalTargetDir, 'package.json'));
-  
-  // Copy lib directory if it exists
-  const libDir = path.join(sourceDir, 'lib');
-  if (fs.existsSync(libDir)) {
-    execSync(`cp -r "${libDir}" "${finalTargetDir}/"`, { stdio: 'inherit' });
+  fs.mkdirSync(targetDir, { recursive: true });
+
+  // Use rsync to copy, EXCLUDING node_modules and .git
+  console.log(`Copying ${actualPkgName}...`);
+  try {
+    execSync(`rsync -a --exclude 'node_modules' --exclude '.git' --exclude 'src' "${sourceDir}/" "${targetDir}/"`, { stdio: 'inherit' });
+    console.log(`✅ Bundled ${actualPkgName}`);
+  } catch (error) {
+    console.error(`❌ Error bundling ${actualPkgName}:`, error.message);
   }
-  
-  // Copy dist directory if it exists (for shared-backbone-intelligence)
-  const distDir = path.join(sourceDir, 'dist');
-  if (fs.existsSync(distDir)) {
-    execSync(`cp -r "${distDir}" "${finalTargetDir}/"`, { stdio: 'inherit' });
-  }
-  
-  // Copy src directory if lib/dist doesn't exist (for development)
-  if (!fs.existsSync(libDir) && !fs.existsSync(distDir)) {
-    const srcDir = path.join(sourceDir, 'src');
-    if (fs.existsSync(srcDir)) {
-      execSync(`cp -r "${srcDir}" "${finalTargetDir}/"`, { stdio: 'inherit' });
-    }
-  }
-  
-  // Copy README if exists
-  const readmePath = path.join(sourceDir, 'README.md');
-  if (fs.existsSync(readmePath)) {
-    fs.copyFileSync(readmePath, path.join(finalTargetDir, 'README.md'));
-  }
-  
-  console.log(`✅ Bundled ${actualPkgName}`);
 }
 
 // Update package.json to use file: references instead of workspace:*
@@ -122,14 +97,83 @@ const functionsPkgJson = JSON.parse(fs.readFileSync(functionsPkgJsonPath, 'utf8'
 let modified = false;
 for (const pkgName of WORKSPACE_PACKAGES) {
   if (functionsPkgJson.dependencies && functionsPkgJson.dependencies[pkgName] === 'workspace:*') {
-    functionsPkgJson.dependencies[pkgName] = `file:./node_modules/${pkgName}`;
+    functionsPkgJson.dependencies[pkgName] = `file:./_workspace_libs/${pkgName}`;
     modified = true;
   }
 }
 
-if (modified) {
-  fs.writeFileSync(functionsPkgJsonPath, JSON.stringify(functionsPkgJson, null, 2) + '\n');
-  console.log('\n✅ Updated package.json to use file: references');
+// Replace catalog: references in bundled packages with actual versions
+console.log('\n🔧 Replacing catalog: references with actual versions...\n');
+for (const pkgName of WORKSPACE_PACKAGES) {
+  const targetPkgJsonPath = path.join(LOCAL_LIBS_DIR, pkgName, 'package.json');
+  if (!fs.existsSync(targetPkgJsonPath)) {
+    continue;
+  }
+
+  const targetPkgJson = JSON.parse(fs.readFileSync(targetPkgJsonPath, 'utf8'));
+  let pkgModified = false;
+
+  // Version map for catalog references
+  const versionMap = {
+    'firebase-admin': '^13.5.0',
+    'typescript': '^5.3.3'
+  };
+
+  // Replace catalog: references in dependencies
+  if (targetPkgJson.dependencies) {
+    for (const [dep, version] of Object.entries(targetPkgJson.dependencies)) {
+      if (typeof version === 'string' && version.startsWith('catalog:') && versionMap[dep]) {
+        targetPkgJson.dependencies[dep] = versionMap[dep];
+        pkgModified = true;
+        console.log(`  Replaced ${pkgName}/${dep}: ${version} -> ${versionMap[dep]}`);
+      }
+    }
+  }
+
+  // Replace catalog: references in devDependencies
+  if (targetPkgJson.devDependencies) {
+    for (const [dep, version] of Object.entries(targetPkgJson.devDependencies)) {
+      if (typeof version === 'string' && version.startsWith('catalog:') && versionMap[dep]) {
+        targetPkgJson.devDependencies[dep] = versionMap[dep];
+        pkgModified = true;
+        console.log(`  Replaced ${pkgName}/${dep}: ${version} -> ${versionMap[dep]}`);
+      }
+    }
+  }
+
+  if (pkgModified) {
+    fs.writeFileSync(targetPkgJsonPath, JSON.stringify(targetPkgJson, null, 2) + '\n');
+  }
+}
+
+// Replace workspace:* references in bundled packages with file: references
+console.log('\n🔧 Replacing workspace:* references with file: references...\n');
+for (const pkgName of WORKSPACE_PACKAGES) {
+  const targetPkgJsonPath = path.join(LOCAL_LIBS_DIR, pkgName, 'package.json');
+  if (!fs.existsSync(targetPkgJsonPath)) {
+    continue;
+  }
+
+  const targetPkgJson = JSON.parse(fs.readFileSync(targetPkgJsonPath, 'utf8'));
+  let pkgModified = false;
+
+  // Replace workspace:* references in dependencies
+  if (targetPkgJson.dependencies) {
+    for (const [dep, version] of Object.entries(targetPkgJson.dependencies)) {
+      if (typeof version === 'string' && version === 'workspace:*') {
+        // Check if this dependency is one of our bundled packages
+        if (WORKSPACE_PACKAGES.includes(dep)) {
+          targetPkgJson.dependencies[dep] = `file:../${dep}`;
+          pkgModified = true;
+          console.log(`  Replaced ${pkgName}/${dep}: workspace:* -> file:../${dep}`);
+        }
+      }
+    }
+  }
+
+  if (pkgModified) {
+    fs.writeFileSync(targetPkgJsonPath, JSON.stringify(targetPkgJson, null, 2) + '\n');
+  }
 }
 
 console.log('\n✨ Pre-deploy bundling complete!\n');

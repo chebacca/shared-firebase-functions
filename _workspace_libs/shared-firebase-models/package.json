@@ -1,0 +1,33 @@
+{
+  "name": "shared-firebase-models",
+  "version": "1.0.0",
+  "description": "Shared Firebase data models for unified architecture",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./integrations": {
+      "types": "./lib/integrations/index.d.ts",
+      "default": "./lib/integrations/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "dev": "npm run build:watch"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/react": "^18.3.27",
+    "firebase": "^12.7.0",
+    "react": "^18.2.0",
+    "typescript": "^5.3.3"
+  },
+  "peerDependencies": {
+    "firebase": "^12.7.0",
+    "react": "^18.2.0"
+  }
+}

@@ -17,36 +17,20 @@ import { encryptionKey } from '../google/secrets';
 
 // Google OAuth configuration - Use environment variables (Firebase Functions v2 compatible)
 const getGoogleConfig = () => {
-  // Try environment variables first (Firebase Functions v2)
-  let configClientId: string | undefined;
-  let configClientSecret: string | undefined;
-  let configRedirectUri: string | undefined;
-
-  try {
-    // Try functions.config() for backward compatibility (may not be available in v2)
-    const config = functions.config();
-    configClientId = config.google?.client_id;
-    configClientSecret = config.google?.client_secret;
-    configRedirectUri = config.google?.redirect_uri;
-  } catch (error) {
-    // functions.config() not available (Firebase Functions v2) - use environment variables only
-    console.log('[googleDrive] functions.config() not available, using environment variables only');
-  }
-
-  const clientId = process.env.GOOGLE_CLIENT_ID || configClientId;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET || configClientSecret;
+  // Use environment variables (Firebase Functions v2)
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   // NOTE: redirectUri is now always provided by the client request, not from env/config
   // This allows dynamic redirect URIs for dev (localhost) vs production
-  const redirectUri = process.env.GOOGLE_REDIRECT_URI || configRedirectUri || 'https://backbone-logic.web.app/dashboard/integrations';
+  const redirectUri = process.env.GOOGLE_REDIRECT_URI || 'https://backbone-logic.web.app/dashboard/integrations';
 
   // Log config source for debugging
   console.log('[googleDrive] getGoogleConfig:', {
     hasEnvClientId: !!process.env.GOOGLE_CLIENT_ID,
-    hasConfigClientId: !!configClientId,
-    clientIdSource: process.env.GOOGLE_CLIENT_ID ? 'env' : (configClientId ? 'config' : 'none'),
+    clientIdSource: process.env.GOOGLE_CLIENT_ID ? 'env' : 'none',
     clientIdPrefix: clientId ? clientId.substring(0, 30) + '...' : 'missing',
     hasClientSecret: !!clientSecret,
-    redirectUriSource: process.env.GOOGLE_REDIRECT_URI ? 'env' : (configRedirectUri ? 'config' : 'default')
+    redirectUriSource: process.env.GOOGLE_REDIRECT_URI ? 'env' : 'default'
   });
 
   return { clientId, clientSecret, redirectUri };

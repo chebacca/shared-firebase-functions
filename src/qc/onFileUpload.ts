@@ -65,11 +65,13 @@ async function triggerQCAnalysis(
   metadata: { size?: number; contentType?: string }
 ): Promise<void> {
   try {
-    // Call the QC analysis function
-    const { httpsCallable } = await import('firebase-functions/v2/https');
-    const analyzeFile = httpsCallable({ region: 'us-central1' }, 'triggerQCAnalysis');
+    // Import and call the QC analysis function directly
+    // Note: Since triggerQCAnalysis is an onCall function, we need to call it via HTTP
+    // Using Firebase Functions HTTP endpoint
+    const functions = require('firebase-admin').functions();
+    const triggerQCAnalysisFunction = functions.httpsCallable('triggerQCAnalysis');
     
-    await analyzeFile({
+    await triggerQCAnalysisFunction({
       botId,
       filePath,
       fileUrl,
@@ -81,7 +83,8 @@ async function triggerQCAnalysis(
     logger.info(`[onQCFileUpload] Triggered QC analysis for bot ${botId}, file: ${filePath}`);
   } catch (error) {
     logger.error(`[onQCFileUpload] Failed to trigger QC analysis:`, error);
-    throw error;
+    // Don't throw - allow file upload to complete even if QC analysis fails
+    logger.warn(`[onQCFileUpload] Continuing despite QC analysis error`);
   }
 }
 

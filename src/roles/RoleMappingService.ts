@@ -4,7 +4,7 @@
  * Validates role assignments and calculates effective permissions
  */
 
-import { LicensingRole, DashboardRole, ClipShowProRole, CallSheetRole, CuesheetRole } from '../../../shared-firebase-models/src/role-types';
+import { LicensingRole, DashboardRole, ClipShowProRole, CallSheetRole, CuesheetRole } from 'shared-firebase-models/role-types';
 
 /**
  * Licensing Role → Available Dashboard Roles Mapping
@@ -40,7 +40,7 @@ export const LICENSING_TO_DASHBOARD_MAP: Record<LicensingRole, DashboardRole[]> 
     DashboardRole.VIEWER,
     DashboardRole.GUEST
   ],
-  
+
   [LicensingRole.ADMIN]: [
     // Management & production leadership roles
     DashboardRole.ADMIN,
@@ -55,7 +55,7 @@ export const LICENSING_TO_DASHBOARD_MAP: Record<LicensingRole, DashboardRole[]> 
     DashboardRole.POST_PRODUCER,
     DashboardRole.PRODUCTION_MANAGER
   ],
-  
+
   [LicensingRole.MEMBER]: [
     // Crew and technical roles
     DashboardRole.EDITOR,
@@ -74,7 +74,7 @@ export const LICENSING_TO_DASHBOARD_MAP: Record<LicensingRole, DashboardRole[]> 
     DashboardRole.PRODUCTION_ASSISTANT,
     DashboardRole.POST_PA
   ],
-  
+
   [LicensingRole.ACCOUNTING]: [
     DashboardRole.ADMIN,
     DashboardRole.MANAGER
@@ -169,13 +169,13 @@ export const LICENSING_TO_CUESHEET_MAP: Record<LicensingRole, CuesheetRole[]> = 
 // Build ROLE_HIERARCHY using Object.assign to avoid duplicate key issues
 const buildRoleHierarchy = (): Record<string, number> => {
   const hierarchy: Record<string, number> = {};
-  
+
   // Licensing Roles
   hierarchy[`licensing:${LicensingRole.OWNER}`] = 100;
   hierarchy[`licensing:${LicensingRole.ADMIN}`] = 90;
   hierarchy[`licensing:${LicensingRole.MEMBER}`] = 50;
   hierarchy[`licensing:${LicensingRole.ACCOUNTING}`] = 80;
-  
+
   // Dashboard Roles
   hierarchy[`dashboard:${DashboardRole.ADMIN}`] = 100;
   hierarchy[`dashboard:${DashboardRole.EXEC}`] = 90;
@@ -188,7 +188,7 @@ const buildRoleHierarchy = (): Record<string, number> => {
   hierarchy[`dashboard:${DashboardRole.POST_PRODUCER}`] = 50;
   hierarchy[`dashboard:${DashboardRole.PRODUCTION_ASSISTANT}`] = 40;
   hierarchy[`dashboard:${DashboardRole.VIEWER}`] = 10;
-  
+
   // Dashboard Roles - NEW additions
   hierarchy[`dashboard:${DashboardRole.POST_SUPERVISOR}`] = 68;
   hierarchy[`dashboard:${DashboardRole.MEDIA_MANAGER}`] = 65;
@@ -205,7 +205,7 @@ const buildRoleHierarchy = (): Record<string, number> => {
   hierarchy[`dashboard:${DashboardRole.LOCATION_MANAGER}`] = 50;
   hierarchy[`dashboard:${DashboardRole.POST_PA}`] = 40;
   hierarchy[`dashboard:${DashboardRole.GUEST}`] = 10;
-  
+
   // Clip Show Pro Roles
   hierarchy[`clipShowPro:${ClipShowProRole.PRODUCER}`] = 70;
   hierarchy[`clipShowPro:${ClipShowProRole.SUPERVISING_PRODUCER}`] = 75;
@@ -218,13 +218,13 @@ const buildRoleHierarchy = (): Record<string, number> => {
   hierarchy[`clipShowPro:${ClipShowProRole.LICENSING_SPECIALIST}`] = 70;
   hierarchy[`clipShowPro:${ClipShowProRole.POST_PRODUCER}`] = 50;
   hierarchy[`clipShowPro:${ClipShowProRole.PRODUCTION_ASSISTANT}`] = 40;
-  
+
   // Call Sheet Roles
   hierarchy[`callSheet:${CallSheetRole.ADMIN}`] = 100;
   hierarchy[`callSheet:${CallSheetRole.PRODUCER}`] = 70;
   hierarchy[`callSheet:${CallSheetRole.COORDINATOR}`] = 60;
   hierarchy[`callSheet:${CallSheetRole.MEMBER}`] = 50;
-  
+
   // Cuesheet Roles
   hierarchy[`cuesheet:${CuesheetRole.ADMIN}`] = 100;
   hierarchy[`cuesheet:${CuesheetRole.PRODUCER}`] = 70;
@@ -239,7 +239,7 @@ const buildRoleHierarchy = (): Record<string, number> => {
   hierarchy[`cuesheet:${CuesheetRole.POST_PRODUCER}`] = 50;
   hierarchy[`cuesheet:${CuesheetRole.PRODUCTION_ASSISTANT}`] = 40;
   hierarchy[`cuesheet:${CuesheetRole.VIEWER}`] = 10;
-  
+
   return hierarchy;
 };
 
@@ -323,7 +323,7 @@ export class RoleMappingService {
     if (role.includes(':')) {
       return ROLE_HIERARCHY[role] || 0;
     }
-    
+
     // If appName provided, try with prefix
     if (appName) {
       const prefixed = `${appName}:${role}`;
@@ -331,7 +331,7 @@ export class RoleMappingService {
         return ROLE_HIERARCHY[prefixed];
       }
     }
-    
+
     // Try common prefixes as fallback
     const prefixes = ['dashboard', 'clipShowPro', 'callSheet', 'cuesheet', 'licensing'];
     for (const prefix of prefixes) {
@@ -340,7 +340,7 @@ export class RoleMappingService {
         return ROLE_HIERARCHY[prefixed];
       }
     }
-    
+
     return 0;
   }
 
@@ -356,7 +356,7 @@ export class RoleMappingService {
    */
   private static normalizeLicensingRole(role: LicensingRole | string): LicensingRole {
     const normalized = String(role).toUpperCase().trim();
-    
+
     // Handle legacy lowercase values
     if (normalized === 'OWNER' || normalized === 'ORGANIZATION_OWNER') {
       return LicensingRole.OWNER;
@@ -370,7 +370,7 @@ export class RoleMappingService {
     if (normalized === 'ACCOUNTING' || normalized === 'ACCOUNTANT') {
       return LicensingRole.ACCOUNTING;
     }
-    
+
     // Default to MEMBER if unknown
     return LicensingRole.MEMBER;
   }
@@ -380,7 +380,7 @@ export class RoleMappingService {
    */
   static convertTeamMemberRoleToLicensingRole(teamMemberRole: string): LicensingRole {
     const normalized = String(teamMemberRole).toLowerCase().trim();
-    
+
     switch (normalized) {
       case 'owner':
         return LicensingRole.OWNER;

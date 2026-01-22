@@ -1,12 +1,8 @@
-import { onRequest, onCall, HttpsError } from 'firebase-functions/v2/https';
-import { defineSecret } from 'firebase-functions/params';
+import * as functions from 'firebase-functions';
 import express from 'express';
 import cors from 'cors';
 import { authenticateToken } from '../shared/middleware';
 import { db, createSuccessResponse, createErrorResponse, getUserOrganizationId } from '../shared/utils';
-
-// Define encryption key secret for API key decryption (required for network delivery and other AI features)
-const encryptionKeySecret = defineSecret('INTEGRATIONS_ENCRYPTION_KEY');
 
 // Import refactored routes
 import healthRouter from './routes/health';
@@ -19,6 +15,7 @@ import productionRouter from './routes/production';
 import workflowRouter from './routes/workflow';
 import networkDeliveryRouter, { uploadNetworkDeliveryBible, getNetworkDeliveryDeliverables } from './routes/networkDelivery';
 import serverRouter from './routes/servers';
+import authRouter from './routes/auth';
 import { googleMapsRoutes } from '../workflow';
 
 // Create Express app
@@ -47,6 +44,7 @@ app.use('/production', productionRouter);
 app.use('/workflow', workflowRouter);
 app.use('/network-delivery', networkDeliveryRouter);
 app.use('/server', serverRouter);
+app.use('/auth', authRouter);
 app.use('/google-maps', googleMapsRoutes);
 
 // Documentation endpoint
@@ -55,7 +53,7 @@ app.get('/docs', (req, res) => {
     title: 'BACKBONE Unified API',
     version: '2.0.0',
     description: 'Refactored Modular API for all BACKBONE projects',
-    routers: ['/health', '/timecard-approval', '/timecard', '/infrastructure', '/contacts', '/sessions', '/production', '/workflow', '/network-delivery', '/google-maps']
+    routers: ['/health', '/auth', '/timecard-approval', '/timecard', '/infrastructure', '/contacts', '/sessions', '/production', '/workflow', '/network-delivery', '/google-maps']
   });
 });
 
@@ -69,15 +67,23 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   });
 });
 
-// Export the API function
-export const api = onRequest({
-  memory: '1GiB',
-  timeoutSeconds: 300,
-  cpu: 1,
-  minInstances: 0,
-  invoker: 'public',
-  cors: false, // Handled by middleware
-  secrets: [encryptionKeySecret] // Required for decrypting AI API keys from Firestore
-}, app);
-// Export onCall functions
+/**
+ * 🚀 Main Unified API Function (Firebase Functions v1)
+ * 
+ * Using v1 to maintain the stable URL format for existing clients:
+ * https://us-central1-backbone-logic.cloudfunctions.net/api
+ */
+export const api = functions
+  .runWith({
+    timeoutSeconds: 300,
+    memory: '2GB',
+    secrets: [
+      'INTEGRATIONS_ENCRYPTION_KEY',
+      'GOOGLE_MAPS_API_KEY',
+      'GEMINI_API_KEY'
+    ]
+  })
+  .https.onRequest(app);
+
+// Export onCall functions (kept as shortcuts)
 export { uploadNetworkDeliveryBible, getNetworkDeliveryDeliverables };

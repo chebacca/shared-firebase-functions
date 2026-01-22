@@ -147,33 +147,14 @@ export async function getGoogleConfig(organizationId: string) {
   }
 
   // Fallback to environment variables for backward compatibility
-  let envClientId = process.env.GOOGLE_CLIENT_ID;
-  let envClientSecret = process.env.GOOGLE_CLIENT_SECRET;
-  let envRedirectUri = process.env.GOOGLE_REDIRECT_URI;
-
-  // 🔥 CRITICAL FIX: Also check functions.config() for Firebase Functions v1 compatibility
-  // This is where the credentials are actually stored in the current deployment
-  if (!envClientId || !envClientSecret) {
-    try {
-      // Access v1 functions.config() - imported at top level
-      const functionsConfig = functions.config();
-      if (functionsConfig && functionsConfig.google) {
-        envClientId = envClientId || functionsConfig.google.client_id;
-        envClientSecret = envClientSecret || functionsConfig.google.client_secret;
-        envRedirectUri = envRedirectUri || functionsConfig.google.redirect_uri;
-        console.log(`🔍 [GoogleConfig] Found credentials in functions.config().google`);
-      }
-    } catch (error: any) {
-      console.log(`⚠️ [GoogleConfig] functions.config() not available:`, error?.message || error);
-    }
-  }
-
+  const envClientId = process.env.GOOGLE_CLIENT_ID;
+  const envClientSecret = process.env.GOOGLE_CLIENT_SECRET;
   // NOTE: redirectUri should come from the client request, not env/config
   // This is a fallback only - the actual redirect URI is provided by the client
-  envRedirectUri = envRedirectUri || 'https://backbone-logic.web.app/integration-settings';
+  const envRedirectUri = process.env.GOOGLE_REDIRECT_URI || 'https://backbone-logic.web.app/integration-settings';
 
   if (envClientId && envClientSecret) {
-    console.log(`⚠️ [GoogleConfig] Using environment/functions.config variables (legacy mode) for org: ${organizationId}`);
+    console.log(`⚠️ [GoogleConfig] Using environment variables (legacy mode) for org: ${organizationId}`);
     return {
       clientId: envClientId,
       clientSecret: envClientSecret,

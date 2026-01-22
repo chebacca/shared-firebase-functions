@@ -7,6 +7,7 @@ echo "📦 Includes: shared functions + IWM-specific functions"
 
 cd "$(dirname "$0")"
 
-firebase deploy --only functions:iwmUpdateClaims
+# Deploy IWM functions
+firebase deploy --only functions:iwmUpdateClaims,functions:iwmApi
 
 echo "✅ IWM functions deployment complete!"

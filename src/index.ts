@@ -62,10 +62,15 @@ export {
   clipShowProUpdateClaims
 } from './clipShowPro/clipShowProUpdateClaims';
 
-// Export IWM claims management
+// Export IWM functions
 export {
   iwmUpdateClaims
 } from './iwm/iwmUpdateClaims';
+
+// Export IWM API
+export {
+  iwmApi
+} from './iwm/index';
 
 // Export license email function
 export {

@@ -1,0 +1,50 @@
+{
+  "name": "shared-firebase-types",
+  "version": "1.0.0",
+  "description": "Shared TypeScript type definitions for Firebase Auth custom claims and user models",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js",
+      "require": "./lib/index.js",
+      "default": "./lib/index.js"
+    },
+    "./claims": "./src/claims.ts",
+    "./user": "./src/user.ts",
+    "./guest": "./src/guest.ts",
+    "./securityGuard": "./src/securityGuard.ts",
+    "./accessControl": "./src/accessControl.ts",
+    "./utils": "./src/utils.ts",
+    "./workflow": "./src/workflow.ts",
+    "./notifications": "./src/notifications.ts",
+    "./travel": "./src/travel.types.ts",
+    "./hubAuthAdapter": "./src/hubAuthAdapter.ts"
+  },
+  "scripts": {
+    "type-check": "tsc --noEmit",
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "@types/glob": "^9.0.0",
+    "@types/node": "^20.19.26",
+    "@types/uuid": "^11.0.0",
+    "firebase": "^12.7.0",
+    "typescript": "^5.3.3"
+  },
+  "peerDependencies": {
+    "firebase": "^12.7.0"
+  },
+  "keywords": [
+    "firebase",
+    "typescript",
+    "types",
+    "claims",
+    "authentication",
+    "shared",
+    "backbone"
+  ],
+  "author": "BACKBONE Team",
+  "license": "MIT"
+}

@@ -10,18 +10,7 @@ import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { encryptTokens, decryptTokens, generateSecureState, verifyState, hashForLogging } from './encryption';
 import { createSuccessResponse, createErrorResponse, setCorsHeaders } from '../shared/utils';
-
-// Google OAuth configuration
-const GOOGLE_CLIENT_ID = functions.config().google?.client_id;
-const GOOGLE_CLIENT_SECRET = functions.config().google?.client_secret;
-const REDIRECT_URI = functions.config().google?.redirect_uri || 'https://backbone-client.web.app/auth/google/callback';
-
-// OAuth2 client
-const oauth2Client = new google.auth.OAuth2(
-  GOOGLE_CLIENT_ID,
-  GOOGLE_CLIENT_SECRET,
-  REDIRECT_URI
-);
+import { getGoogleConfig } from '../google/config';
 
 // Google API scopes (Drive + Calendar for video conferencing)
 const SCOPES = [
@@ -35,6 +24,13 @@ const SCOPES = [
   'https://www.googleapis.com/auth/meetings.space.created',
   'https://www.googleapis.com/auth/meetings.space.readonly'
 ];
+
+/**
+ * Create OAuth2 client with config
+ */
+function createOAuth2Client(clientId: string, clientSecret: string, redirectUri: string) {
+  return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+}
 
 /**
  * Verify Firebase Auth token from Authorization header
@@ -80,6 +76,14 @@ export const initiateGoogleOAuthHttp = functions.https.onRequest(async (req, res
 
     // Verify user authentication
     const { userId, organizationId } = await verifyAuthToken(req);
+
+    // Get Google OAuth config
+    const googleConfig = await getGoogleConfig(organizationId);
+    const oauth2Client = createOAuth2Client(
+      googleConfig.clientId,
+      googleConfig.clientSecret,
+      googleConfig.redirectUri
+    );
 
     // Get client-provided return URL (where to redirect after OAuth completes)
     const body = req.body || {};
@@ -185,9 +189,17 @@ export const handleGoogleOAuthCallbackHttp = functions.https.onRequest(async (re
       throw new Error('State parameter has expired');
     }
 
+    // Get Google OAuth config
+    const googleConfig = await getGoogleConfig(organizationId);
+    const oauth2Client = createOAuth2Client(
+      googleConfig.clientId,
+      googleConfig.clientSecret,
+      googleConfig.redirectUri
+    );
+
     // Use the specific Google redirect URI stored in state, or fallback to redirectUrl
     // This allows dynamic redirect URIs (e.g. for localhost vs production)
-    const redirectUri = stateData.googleRedirectUri || stateData.redirectUrl || REDIRECT_URI;
+    const redirectUri = stateData.googleRedirectUri || stateData.redirectUrl || googleConfig.redirectUri;
 
     console.log(`Exchanging Google code for tokens using redirectUri: ${redirectUri}`);
 
@@ -323,6 +335,9 @@ export const getGoogleIntegrationStatusHttp = functions.https.onRequest(async (r
     // Check if tokens are still valid
     try {
       const tokens = decryptTokens(integrationData.tokens);
+      
+      // Create OAuth2 client for token validation (doesn't need full config)
+      const oauth2Client = new google.auth.OAuth2();
       oauth2Client.setCredentials(tokens);
 
       // Test the connection by getting user info
@@ -436,6 +451,9 @@ export const listGoogleDriveFoldersHttp = functions.https.onRequest(async (req, 
 
     const integrationData = integrationDoc.data()!;
     const tokens = decryptTokens(integrationData.tokens);
+    
+    // Create OAuth2 client with stored tokens
+    const oauth2Client = new google.auth.OAuth2();
     oauth2Client.setCredentials(tokens);
 
     // Initialize Google Drive API
@@ -533,6 +551,9 @@ export const getGoogleDriveFilesHttp = functions.https.onRequest(async (req, res
 
     const integrationData = integrationDoc.data()!;
     const tokens = decryptTokens(integrationData.tokens);
+    
+    // Create OAuth2 client with stored tokens
+    const oauth2Client = new google.auth.OAuth2();
     oauth2Client.setCredentials(tokens);
 
     // Initialize Google Drive API
@@ -609,6 +630,9 @@ export const createGoogleDriveFolderHttp = functions.https.onRequest(async (req,
 
     const integrationData = integrationDoc.data()!;
     const tokens = decryptTokens(integrationData.tokens);
+    
+    // Create OAuth2 client with stored tokens
+    const oauth2Client = new google.auth.OAuth2();
     oauth2Client.setCredentials(tokens);
 
     // Initialize Google Drive API
@@ -686,6 +710,9 @@ export const uploadToGoogleDriveHttp = functions.https.onRequest(async (req, res
 
     const integrationData = integrationDoc.data()!;
     const tokens = decryptTokens(integrationData.tokens);
+    
+    // Create OAuth2 client with stored tokens
+    const oauth2Client = new google.auth.OAuth2();
     oauth2Client.setCredentials(tokens);
 
     // Initialize Google Drive API

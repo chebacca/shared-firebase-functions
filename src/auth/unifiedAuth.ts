@@ -60,7 +60,7 @@ const SUPER_USERS: Record<string, Partial<UnifiedClaims>> = {
  * Computes the unified claims for a given user.
  * This logic is the SINGLE SOURCE OF TRUTH for "Who is this user?".
  */
-async function computeUserClaims(user: { uid: string; email?: string }): Promise<UnifiedClaims> {
+export async function computeUserClaims(user: { uid: string; email?: string }): Promise<UnifiedClaims> {
     const { uid, email } = user;
     const safeEmail = email?.toLowerCase() || '';
 
@@ -147,7 +147,12 @@ async function computeUserClaims(user: { uid: string; email?: string }): Promise
  * Client calls this to force-refresh their ID token claims.
  * This function is available to all apps via shared-firebase-functions.
  */
-export const refreshAuthClaims = functions.https.onCall(async (data: any, context: any) => {
+/**
+ * ⚡️ ON CALLABLE: REFRESH CLAIMS
+ * Client calls this to force-refresh their ID token claims.
+ * This function is available to all apps via shared-firebase-functions.
+ */
+export const refreshAuthClaims = functions.https.onCall(async (data, context) => {
     if (!context.auth) {
         throw new functions.https.HttpsError('unauthenticated', 'User must be logged in to refresh claims.');
     }
@@ -184,7 +189,7 @@ export const refreshAuthClaims = functions.https.onCall(async (data: any, contex
 // });
 
 // Note: For now, we export a background trigger as a fallback if blocking functions aren't enabled
-export const onUserLoginTrigger = functions.auth.user().onCreate(async (user: any) => {
+export const onUserLoginTrigger: any = functions.auth.user().onCreate(async (user: any) => {
     console.log(`🆕 [UnifiedAuth] New user created: ${user.email}. Minting initial claims.`);
     const claims = await computeUserClaims({ uid: user.uid, email: user.email });
     await admin.auth().setCustomUserClaims(user.uid, claims);
@@ -198,7 +203,7 @@ export const onUserLoginTrigger = functions.auth.user().onCreate(async (user: an
  * Note: onCall functions automatically handle CORS. If CORS errors occur,
  * ensure the function is deployed and the Firebase project allows localhost origins.
  */
-export const syncUserClaimsOnLogin = functions.https.onCall(async (data: any, context: any) => {
+export const syncUserClaimsOnLogin = functions.https.onCall(async (data, context) => {
     if (!context.auth) {
         throw new functions.https.HttpsError('unauthenticated', 'User must be logged in to sync claims.');
     }

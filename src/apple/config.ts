@@ -73,30 +73,11 @@ export async function getAppleConnectConfig(organizationId: string) {
     let envLdapBindPassword = process.env.APPLE_CONNECT_LDAP_BIND_PASSWORD;
     let envLdapBaseDn = process.env.APPLE_CONNECT_LDAP_BASE_DN;
     
-    // Check functions.config() for Firebase Functions v1 compatibility
-    if (!envClientId || !envTeamId || !envKeyId || !envPrivateKey) {
-      try {
-        const functionsConfig = functions.config();
-        if (functionsConfig && functionsConfig.apple_connect) {
-          envClientId = envClientId || functionsConfig.apple_connect.client_id;
-          envTeamId = envTeamId || functionsConfig.apple_connect.team_id;
-          envKeyId = envKeyId || functionsConfig.apple_connect.key_id;
-          envPrivateKey = envPrivateKey || functionsConfig.apple_connect.private_key;
-          envRedirectUri = envRedirectUri || functionsConfig.apple_connect.redirect_uri;
-          envLdapUrl = envLdapUrl || functionsConfig.apple_connect.ldap_url;
-          envLdapBindDn = envLdapBindDn || functionsConfig.apple_connect.ldap_bind_dn;
-          envLdapBindPassword = envLdapBindPassword || functionsConfig.apple_connect.ldap_bind_password;
-          envLdapBaseDn = envLdapBaseDn || functionsConfig.apple_connect.ldap_base_dn;
-        }
-      } catch (error: any) {
-        console.log(`⚠️ [AppleConnectConfig] functions.config() not available:`, error?.message || error);
-      }
-    }
-    
+    // Use environment variables only
     envRedirectUri = envRedirectUri || 'https://backbone-logic.web.app/dashboard/integrations';
     
     if (envClientId && envTeamId && envKeyId && envPrivateKey) {
-      console.log(`⚠️ [AppleConnectConfig] Using environment/functions.config variables (legacy mode) for org: ${organizationId}`);
+      console.log(`⚠️ [AppleConnectConfig] Using environment variables (legacy mode) for org: ${organizationId}`);
       return {
         clientId: envClientId,
         teamId: envTeamId,

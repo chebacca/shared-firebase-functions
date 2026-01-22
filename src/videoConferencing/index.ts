@@ -380,9 +380,7 @@ export const getVideoConferencingProvidersHttp = onRequest(
         });
       }
 
-      console.log(`✅ [VideoConferencing HTTP] Returning ${providers.length} provider(s) for org: ${organizationId}`);
-
-      res.status(200).json({
+      console.log(`✅ [VideoConferencing HTTP] Returning ${providers.length} provider(s) for org: ${organizationId}`);      res.status(200).json({
         success: true,
         providers,
         defaultProvider: providers.find(p => p.isDefault)?.type || null,

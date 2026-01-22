@@ -1,26 +1,7 @@
 {
-  "functions": [
-    {
-      "source": ".",
-      "codebase": "default",
-      "runtime": "nodejs20",
-      "packageManager": "pnpm",
-      "ignore": [
-        ".git",
-        "firebase-debug.log",
-        "firebase-debug.*.log",
-        "src/**",
-        "modules",
-        "temp-build",
-        "google-drive-deploy",
-        "temp-problematic-files",
-        "*.local.js",
-        "*.local.ts"
-      ]
-    }
-  ],
   "firestore": {
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
-  }
+  },
+  "note": "Functions configuration is in root firebase.json. This file is kept for local emulator configuration only."
 }

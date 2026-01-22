@@ -6,22 +6,54 @@
 
 import { Router } from 'express';
 import { getApiServiceConfig } from '../utils/environment';
+import { getGoogleMapsApiKey } from '../../google/secrets';
 import { db } from '../../shared/utils';
 import { FieldValue } from 'firebase-admin/firestore';
+import { authenticateToken } from '../../shared/middleware';
+import { Client } from '@googlemaps/google-maps-services-js';
 
 const router: Router = Router();
+const mapsClient = new Client({});
 
-// Google Maps API configuration endpoint
+// Google Maps API configuration endpoint (public - no auth required)
 router.get('/config', async (req, res) => {
   try {
-    const config = getApiServiceConfig();
+    // Try to get API key from Firebase Secrets first (preferred method)
+    let apiKey = '';
+    try {
+      apiKey = getGoogleMapsApiKey();
+      // Trim whitespace/newlines that might be in the secret
+      if (apiKey) {
+        apiKey = apiKey.trim();
+      }
+    } catch (secretError) {
+      // Fallback to environment variables if secret not available
+      console.warn('🗺️ [Workflow Google Maps] Secret not available, trying env var:', secretError);
+      const config = getApiServiceConfig();
+      apiKey = (config.googleMaps.apiKey || '').trim();
+    }
     
-    res.json({
-      success: true,
-      hasApiKey: !!config.googleMaps.apiKey,
-      isConfigured: !!config.googleMaps.apiKey,
-      timestamp: new Date().toISOString()
+    console.log('🗺️ [Workflow Google Maps Config] API key check:', {
+      hasKey: !!apiKey,
+      keyLength: apiKey?.length || 0,
+      keyPrefix: apiKey ? `${apiKey.substring(0, 10)}...` : 'none',
+      source: apiKey ? 'secret-or-env' : 'none'
     });
+    
+    // Build response with API key if available
+    const responseData: any = {
+      success: true,
+      hasApiKey: !!apiKey,
+      isConfigured: !!apiKey && apiKey.length > 0,
+      timestamp: new Date().toISOString()
+    };
+    
+    // Only include apiKey if it exists (for security, don't send empty strings)
+    if (apiKey && apiKey.length > 0) {
+      responseData.apiKey = apiKey;
+    }
+    
+    res.json(responseData);
   } catch (error) {
     console.error('Google Maps config error:', error);
     res.status(500).json({
@@ -33,12 +65,13 @@ router.get('/config', async (req, res) => {
 });
 
 // Get entity locations for a map layout
-router.get('/locations/:mapLayoutId', async (req, res) => {
+router.get('/locations/:mapLayoutId', authenticateToken, async (req, res) => {
   try {
-    const { mapLayoutId } = req.params;
+    const mapLayoutId = Array.isArray(req.params.mapLayoutId) ? req.params.mapLayoutId[0] : req.params.mapLayoutId;
+    const { entityType } = req.query;
     const userId = req.user?.uid;
     
-    console.log('🗺️ Getting entity locations for map layout:', mapLayoutId, 'user:', userId);
+    console.log('🗺️ Getting entity locations for map layout:', mapLayoutId, 'entityType:', entityType, 'user:', userId);
     
     if (!mapLayoutId) {
       return res.status(400).json({
@@ -47,12 +80,15 @@ router.get('/locations/:mapLayoutId', async (req, res) => {
       });
     }
 
-    // Get entity locations from Firestore
-    const locationsQuery = await db
-      .collection('entityLocations')
-      .where('mapLayoutId', '==', mapLayoutId)
-      .get();
+    // Build query with optional entityType filter
+    let query = db.collection('entityLocations')
+      .where('mapLayoutId', '==', mapLayoutId);
+
+    if (entityType) {
+      query = query.where('entityType', '==', entityType);
+    }
     
+    const locationsQuery = await query.get();
     const locations = locationsQuery.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
@@ -72,9 +108,9 @@ router.get('/locations/:mapLayoutId', async (req, res) => {
 });
 
 // Save entity location
-router.post('/locations', async (req, res) => {
+router.post('/locations', authenticateToken, async (req, res) => {
   try {
-    const { mapLayoutId, entityType, entityId, latitude, longitude, metadata } = req.body;
+    const { mapLayoutId, entityType, entityId, latitude, longitude, address, placeId, positionX, positionY, metadata } = req.body;
     const userId = req.user?.uid;
     
     console.log('🗺️ Saving entity location:', {
@@ -92,6 +128,27 @@ router.post('/locations', async (req, res) => {
       });
     }
 
+    // If address is not provided, try to reverse geocode
+    let finalAddress = address;
+    if (!finalAddress) {
+      try {
+        const config = getApiServiceConfig();
+        if (config.googleMaps.apiKey) {
+          const response = await mapsClient.reverseGeocode({
+            params: {
+              latlng: { lat: latitude, lng: longitude },
+              key: config.googleMaps.apiKey
+            }
+          });
+          if (response.data.results && response.data.results.length > 0) {
+            finalAddress = response.data.results[0].formatted_address;
+          }
+        }
+      } catch (geocodeError) {
+        console.warn('Reverse geocoding failed, continuing without address:', geocodeError);
+      }
+    }
+
     // Create or update entity location
     const locationData: any = {
       mapLayoutId,
@@ -99,6 +156,10 @@ router.post('/locations', async (req, res) => {
       entityId,
       latitude,
       longitude,
+      address: finalAddress,
+      placeId,
+      positionX,
+      positionY,
       metadata: metadata || {},
       updatedAt: FieldValue.serverTimestamp(),
       updatedBy: userId
@@ -118,16 +179,22 @@ router.post('/locations', async (req, res) => {
       // Update existing location
       locationDoc = existingQuery.docs[0];
       await locationDoc.ref.update(locationData);
+      // Fetch the updated document to get actual timestamp values
+      locationDoc = await locationDoc.ref.get();
     } else {
       // Create new location
       locationData.createdAt = FieldValue.serverTimestamp();
       locationData.createdBy = userId;
       locationDoc = await db.collection('entityLocations').add(locationData);
+      // Fetch the newly created document to get actual timestamp values
+      locationDoc = await locationDoc.get();
     }
     
+    // Get the document data (this will have actual timestamps, not FieldValue objects)
+    const docData = locationDoc.data();
     const savedLocation = {
       id: locationDoc.id,
-      ...locationData
+      ...docData
     };
     
     console.log('🗺️ Saved entity location:', savedLocation.id);
@@ -147,24 +214,39 @@ router.post('/locations', async (req, res) => {
 });
 
 // Delete entity location
-router.delete('/locations/:locationId', async (req, res) => {
+router.delete('/locations/:mapLayoutId/:entityType/:entityId', authenticateToken, async (req, res) => {
   try {
-    const { locationId } = req.params;
+    const { mapLayoutId, entityType, entityId } = req.params;
     const userId = req.user?.uid;
     
-    console.log('🗺️ Deleting entity location:', locationId, 'by user:', userId);
+    console.log('🗺️ Deleting entity location:', { mapLayoutId, entityType, entityId }, 'by user:', userId);
     
-    if (!locationId) {
+    if (!mapLayoutId || !entityType || !entityId) {
       return res.status(400).json({
         success: false,
-        error: 'Location ID is required'
+        error: 'Map layout ID, entity type, and entity ID are required'
       });
     }
 
-    // Delete the location
-    await db.collection('entityLocations').doc(locationId).delete();
+    // Find and delete the location
+    const existingQuery = await db
+      .collection('entityLocations')
+      .where('mapLayoutId', '==', mapLayoutId)
+      .where('entityType', '==', entityType)
+      .where('entityId', '==', entityId)
+      .limit(1)
+      .get();
+
+    if (existingQuery.empty) {
+      return res.status(404).json({
+        success: false,
+        error: 'Entity location not found'
+      });
+    }
+
+    await existingQuery.docs[0].ref.delete();
     
-    console.log('🗺️ Deleted entity location:', locationId);
+    console.log('🗺️ Deleted entity location:', { mapLayoutId, entityType, entityId });
     
     return res.json({
       success: true,
@@ -181,7 +263,7 @@ router.delete('/locations/:locationId', async (req, res) => {
 });
 
 // Geocoding endpoint (using Google Maps API)
-router.post('/geocode', async (req, res) => {
+router.post('/geocode', authenticateToken, async (req, res) => {
   try {
     const { address } = req.body;
     const config = getApiServiceConfig();
@@ -202,26 +284,29 @@ router.post('/geocode', async (req, res) => {
 
     console.log('🗺️ Geocoding address:', address);
     
-    // Mock geocoding response for now
-    // TODO: Implement actual Google Maps Geocoding API call
-    const mockResult = {
-      success: true,
-      results: [{
-        formatted_address: address,
-        geometry: {
-          location: {
-            lat: 34.0522 + (Math.random() - 0.5) * 0.1, // Los Angeles area with some variation
-            lng: -118.2437 + (Math.random() - 0.5) * 0.1
-          }
-        },
-        place_id: `mock_place_id_${Date.now()}`,
-        types: ['establishment']
-      }],
-      status: 'OK',
-      isDemo: true
-    };
-    
-    return res.json(mockResult);
+    // Use real Google Maps Geocoding API
+    const response = await mapsClient.geocode({
+      params: {
+        address,
+        key: config.googleMaps.apiKey
+      }
+    });
+
+    if (response.data.results && response.data.results.length > 0) {
+      const result = response.data.results[0];
+      return res.json({
+        success: true,
+        latitude: result.geometry.location.lat,
+        longitude: result.geometry.location.lng,
+        formatted_address: result.formatted_address,
+        place_id: result.place_id
+      });
+    } else {
+      return res.status(404).json({
+        success: false,
+        error: 'Address not found'
+      });
+    }
   } catch (error) {
     console.error('Google Maps geocode error:', error);
     return res.status(500).json({
@@ -232,8 +317,61 @@ router.post('/geocode', async (req, res) => {
   }
 });
 
+// Reverse geocoding endpoint (coordinates to address)
+router.post('/reverse-geocode', authenticateToken, async (req, res) => {
+  try {
+    const { latitude, longitude } = req.body;
+    const config = getApiServiceConfig();
+    
+    if (latitude === undefined || longitude === undefined) {
+      return res.status(400).json({
+        success: false,
+        error: 'Latitude and longitude are required'
+      });
+    }
+
+    if (!config.googleMaps.apiKey) {
+      return res.status(500).json({
+        success: false,
+        error: 'Google Maps API key not configured'
+      });
+    }
+
+    console.log('🗺️ Reverse geocoding coordinates:', { latitude, longitude });
+    
+    // Use real Google Maps Reverse Geocoding API
+    const response = await mapsClient.reverseGeocode({
+      params: {
+        latlng: { lat: latitude, lng: longitude },
+        key: config.googleMaps.apiKey
+      }
+    });
+
+    if (response.data.results && response.data.results.length > 0) {
+      return res.json({
+        success: true,
+        address: response.data.results[0].formatted_address,
+        place_id: response.data.results[0].place_id,
+        location: response.data.results[0].geometry.location
+      });
+    } else {
+      return res.status(404).json({
+        success: false,
+        error: 'Location not found'
+      });
+    }
+  } catch (error) {
+    console.error('Google Maps reverse geocode error:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to reverse geocode coordinates',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
 // Place autocomplete endpoint
-router.get('/places/autocomplete', async (req, res) => {
+router.get('/places/autocomplete', authenticateToken, async (req, res) => {
   try {
     const { input } = req.query;
     const config = getApiServiceConfig();

@@ -82,19 +82,9 @@ function decryptTokens(encryptedData) {
   const SALT_LENGTH = 64;
   const TAG_LENGTH = 16;
   
-  // Get encryption key
-  const envKey = process.env.INTEGRATIONS_ENCRYPTION_KEY || process.env.ENCRYPTION_KEY;
-  let masterKey = envKey;
-  
-  if (!masterKey) {
-    try {
-      const functions = require('firebase-functions');
-      const config = functions.config();
-      masterKey = config?.integrations?.encryption_key;
-    } catch (e) {
-      // Ignore
-    }
-  }
+  // Get encryption key from environment variables
+  // NOTE: functions.config() is deprecated - use environment variables or Secret Manager
+  const masterKey = process.env.INTEGRATIONS_ENCRYPTION_KEY || process.env.ENCRYPTION_KEY;
   
   if (!masterKey) {
     throw new Error('Encryption key not found');

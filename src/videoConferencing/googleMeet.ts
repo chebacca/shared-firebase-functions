@@ -30,18 +30,7 @@ import { google } from 'googleapis';
 import * as crypto from 'crypto';
 import * as admin from 'firebase-admin';
 
-/**
- * Helper to get Firebase Functions v1 config (for backward compatibility)
- */
-function getFunctionsConfig(): any {
-  try {
-    // Access v1 functions.config() - this works even in v2 functions when imported at top level
-    return functions.config();
-  } catch (error: any) {
-    console.log(`⚠️ [GoogleMeet] Could not access functions.config():`, error?.message || error);
-    return null;
-  }
-}
+// Removed getFunctionsConfig() - no longer using functions.config()
 
 /**
  * Decrypt token (reuse from google/oauth pattern)
@@ -405,19 +394,10 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
     let envClientSecret = process.env.GOOGLE_CLIENT_SECRET;
     let envRedirectUri = process.env.GOOGLE_REDIRECT_URI;
 
-    // 🔥 CRITICAL FIX: Also check functions.config() for Firebase Functions v1 compatibility
-    if (!envClientId || !envClientSecret) {
-      const functionsConfig = getFunctionsConfig();
-      if (functionsConfig && functionsConfig.google) {
-        envClientId = envClientId || functionsConfig.google.client_id;
-        envClientSecret = envClientSecret || functionsConfig.google.client_secret;
-        envRedirectUri = envRedirectUri || functionsConfig.google.redirect_uri;
-        console.log(`🔍 [GoogleMeet] Found credentials in functions.config().google`);
-      }
-    }
+    // Use environment variables only
 
     if (envClientId === connection.clientId && envClientSecret) {
-      console.log(`✅ [GoogleMeet] Found matching credentials in environment/functions.config variables`);
+      console.log(`✅ [GoogleMeet] Found matching credentials in environment variables`);
       config = {
         clientId: envClientId,
         clientSecret: envClientSecret,
@@ -495,19 +475,10 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
         let envClientSecret = process.env.GOOGLE_CLIENT_SECRET;
         let envRedirectUri = process.env.GOOGLE_REDIRECT_URI;
 
-        // 🔥 CRITICAL FIX: Also check functions.config() for Firebase Functions v1 compatibility
-        if (!envClientId || !envClientSecret) {
-          const functionsConfig = getFunctionsConfig();
-          if (functionsConfig && functionsConfig.google) {
-            envClientId = envClientId || functionsConfig.google.client_id;
-            envClientSecret = envClientSecret || functionsConfig.google.client_secret;
-            envRedirectUri = envRedirectUri || functionsConfig.google.redirect_uri;
-            console.log(`🔍 [GoogleMeet] Found credentials in functions.config().google (fallback)`);
-          }
-        }
+        // Use environment variables only
 
         if (envClientId && envClientSecret) {
-          console.log(`✅ [GoogleMeet] Using environment/functions.config variables as fallback`);
+          console.log(`✅ [GoogleMeet] Using environment variables as fallback`);
           config = {
             clientId: envClientId,
             clientSecret: envClientSecret,
@@ -528,7 +499,7 @@ async function getAuthenticatedGoogleClient(organizationId: string) {
           // No credentials found anywhere
           throw new HttpsError(
             'failed-precondition',
-            'Google OAuth credentials not found. Please ensure GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set in Firebase Functions environment variables or functions.config().google, or configure in Integration Settings.'
+            'Google OAuth credentials not found. Please ensure GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are set in Firebase Functions environment variables or Secret Manager, or configure in Integration Settings.'
           );
         }
       } else {

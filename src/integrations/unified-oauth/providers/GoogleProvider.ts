@@ -287,22 +287,9 @@ export class GoogleProvider implements OAuthProvider {
     const clientId = process.env.GOOGLE_CLIENT_ID || '749245129278-vnepq570jrh5ji94c9olshc282bj1l86';
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
 
-    // Option 3: Try Firebase Functions config (v1 compatibility)
-    let finalClientId = clientId;
-    let finalClientSecret = clientSecret;
-
-    if (!finalClientSecret) {
-      try {
-        const functions = require('firebase-functions');
-        const config = functions.config();
-        if (config?.google) {
-          finalClientId = finalClientId || config.google.client_id;
-          finalClientSecret = finalClientSecret || config.google.client_secret;
-        }
-      } catch (error) {
-        // Config not available (v2 functions)
-      }
-    }
+    // Use environment variables
+    const finalClientId = clientId;
+    const finalClientSecret = clientSecret;
 
     // Option 4: Try Application Default Credentials (ADC) for dev mode
     // This allows using gcloud auth application-default login in development

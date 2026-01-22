@@ -15,35 +15,20 @@ const SALT_LENGTH = 64;
 const TAG_LENGTH = 16;
 
 /**
- * Get encryption key from Firebase Config or Environment Variable
- * Supports both Firebase Functions v1 (config) and v2 (env vars/secrets)
- * In production, this should be stored securely in Firebase Config or as an environment variable
+ * Get encryption key from Environment Variable or Secret Manager
+ * Supports environment variables and Secret Manager via defineSecret
  */
 function getEncryptionKey(): string {
-  // Try environment variable first (Firebase Functions v2 - secrets are automatically available as env vars)
+  // Try environment variable first (for backward compatibility and local development)
   const envKey = process.env.INTEGRATIONS_ENCRYPTION_KEY || process.env.ENCRYPTION_KEY;
   if (envKey && envKey.trim().length > 0) {
     console.log('✅ [encryption] Using encryption key from environment variable');
     return envKey;
   }
 
-  // Fall back to Firebase Config (Firebase Functions v1)
-  try {
-    const config = functions.config();
-    const key = config?.integrations?.encryption_key;
-
-    if (key && key.trim().length > 0) {
-      console.log('✅ [encryption] Using encryption key from Firebase Config');
-      return key;
-    }
-  } catch (error) {
-    // Config might not be available in v2 functions
-    console.warn('⚠️ [encryption] functions.config() not available, trying environment variables');
-  }
-
-  console.error('❌ [encryption] Encryption key not found in environment variables or config');
+  console.error('❌ [encryption] Encryption key not found in environment variables');
   console.error('   Available env vars:', Object.keys(process.env).filter(k => k.includes('ENCRYPTION') || k.includes('INTEGRATION')));
-  throw new Error('Encryption key not configured. Please set INTEGRATIONS_ENCRYPTION_KEY or ENCRYPTION_KEY environment variable, or configure integrations.encryption_key in Firebase Config.');
+  throw new Error('Encryption key not configured. Please set INTEGRATIONS_ENCRYPTION_KEY or ENCRYPTION_KEY environment variable, or configure in Secret Manager.');
 }
 
 /**
