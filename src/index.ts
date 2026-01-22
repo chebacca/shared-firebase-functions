@@ -410,6 +410,14 @@ export {
   getProjectTeamMembersCallable
 } from './team';
 
+// Export org hierarchy functions
+export {
+  createOrgHierarchyRelationship,
+  updateOrgHierarchyRelationship,
+  getOrgHierarchy,
+  deleteOrgHierarchyRelationship
+} from './orgHierarchy';
+
 // Export duplicate user cleanup function
 export {
   cleanupDuplicateUsers

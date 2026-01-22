@@ -325,9 +325,7 @@ export const getVideoConferencingProvidersHttp = onRequest(
           hasGoogleConnection = data.isConfigured === true ||
             !!(data.clientId && (data.tokens || data.encryptedTokens));
         }
-      }
-
-      // Check Webex connection
+      }      // Check Webex connection
       const webexConnections = await db
         .collection('organizations')
         .doc(organizationId)

@@ -32,6 +32,12 @@
       ],
       "shared-firebase-models/*": [
         "../shared-firebase-models/lib/*"
+      ],
+      "shared-firebase-types": [
+        "../shared-firebase-types/lib/index"
+      ],
+      "shared-firebase-types/*": [
+        "../shared-firebase-types/lib/*"
       ]
     }
   },
