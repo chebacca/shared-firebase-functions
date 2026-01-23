@@ -12,7 +12,7 @@ import { syncApprovedTimecardToBudget, updateCommittedAmount, revertCommittedAmo
  * Trigger when timecard document is updated
  */
 export const onTimecardStatusChange = onDocumentUpdated(
-  'timecards/{timecardId}',
+  'timecard_entries/{timecardId}',
   async (event) => {
     try {
       const timecardId = event.params.timecardId;

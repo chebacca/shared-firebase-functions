@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { OllamaAnalysisService } from './OllamaAnalysisService';
 
 export interface TeamMember {
     id?: string;
@@ -81,17 +82,108 @@ export interface AnalysisOptions {
 }
 
 export class DocumentAnalysisService {
-    private genAI: GoogleGenerativeAI;
+    private genAI: GoogleGenerativeAI | null = null;
+    private useOllama: boolean;
+    private ollamaService: any = null;
 
     constructor() {
-        const apiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
-        if (!apiKey) {
-            throw new Error('GOOGLE_API_KEY or GEMINI_API_KEY environment variable is not set');
+        // Check if Ollama should be used
+        this.useOllama = process.env.REPORT_USE_OLLAMA === 'true' || process.env.OLLAMA_ENABLED === 'true';
+        
+        console.log('[DocumentAnalysisService] 🔧 Initializing DocumentAnalysisService...');
+        console.log('[DocumentAnalysisService] 📋 Environment check:');
+        console.log(`   REPORT_USE_OLLAMA: ${process.env.REPORT_USE_OLLAMA || 'not set'}`);
+        console.log(`   OLLAMA_ENABLED: ${process.env.OLLAMA_ENABLED || 'not set'}`);
+        console.log(`   OLLAMA_BASE_URL: ${process.env.OLLAMA_BASE_URL || 'not set (default: http://localhost:11434)'}`);
+        console.log(`   OLLAMA_MODEL_FAST: ${process.env.OLLAMA_MODEL_FAST || 'not set (default: phi4-mini)'}`);
+        console.log(`   OLLAMA_MODEL_QUALITY: ${process.env.OLLAMA_MODEL_QUALITY || 'not set (default: gemma3:12b)'}`);
+        
+        if (this.useOllama) {
+            try {
+                console.log('[DocumentAnalysisService] 🤖 Initializing Ollama service...');
+                this.ollamaService = new OllamaAnalysisService();
+                console.log('[DocumentAnalysisService] ✅ Ollama service initialized successfully');
+                console.log('[DocumentAnalysisService] 🎯 Ollama will be used for report analysis (preferred over Gemini)');
+            } catch (error) {
+                console.warn('[DocumentAnalysisService] ⚠️ Ollama initialization failed, falling back to Gemini:', error);
+                this.useOllama = false;
+            }
+        } else {
+            console.log('[DocumentAnalysisService] ℹ️ Ollama not enabled - will use Gemini for report analysis');
         }
-        this.genAI = new GoogleGenerativeAI(apiKey);
+
+        // Initialize Gemini as fallback or primary
+        if (!this.useOllama) {
+            const apiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
+            if (!apiKey) {
+                // If Ollama was requested but failed, and no Gemini key, that's an error
+                if (process.env.REPORT_USE_OLLAMA === 'true') {
+                    throw new Error('Ollama requested but unavailable, and no Gemini API key found. Please ensure Ollama is running or set GEMINI_API_KEY.');
+                }
+                throw new Error('GOOGLE_API_KEY or GEMINI_API_KEY environment variable is not set');
+            }
+            this.genAI = new GoogleGenerativeAI(apiKey);
+            console.log('[DocumentAnalysisService] ✅ Using Gemini for report analysis');
+        } else {
+            // Initialize Gemini as fallback even if Ollama is primary
+            const apiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
+            if (apiKey) {
+                this.genAI = new GoogleGenerativeAI(apiKey);
+                console.log('[DocumentAnalysisService] ✅ Gemini initialized as fallback');
+            } else {
+                console.warn('[DocumentAnalysisService] ⚠️ No Gemini API key - Ollama-only mode (no fallback)');
+            }
+        }
     }
 
     async analyzeProject(projectData: ProjectData, options: AnalysisOptions): Promise<ProjectInsights> {
+        const startTime = Date.now();
+        console.log('[DocumentAnalysisService] 📊 Starting project analysis...');
+        console.log(`[DocumentAnalysisService] 📋 Report type: ${options.reportType}`);
+        console.log(`[DocumentAnalysisService] 📋 Project: ${projectData.projectName} (${projectData.projectId})`);
+        console.log(`[DocumentAnalysisService] 📋 Data points: ${projectData.sessions?.length || 0} sessions, ${projectData.team?.length || 0} team members, ${projectData.deliverables?.length || 0} deliverables`);
+        
+        // Try Ollama first if enabled
+        if (this.useOllama && this.ollamaService) {
+            try {
+                console.log('[DocumentAnalysisService] 🤖 Attempting to use Ollama for analysis...');
+                console.log('[DocumentAnalysisService] 🔍 Checking Ollama availability...');
+                
+                const isOllamaAvailable = await this.ollamaService.checkAvailability();
+                
+                if (isOllamaAvailable) {
+                    console.log('[DocumentAnalysisService] ✅ Ollama is available - using Ollama for analysis');
+                    console.log('[DocumentAnalysisService] 🎯 Ollama will automatically select best model (phi4-mini or gemma3:12b) based on report type');
+                    
+                    const insights = await this.ollamaService.analyzeProject(projectData, options);
+                    const duration = Date.now() - startTime;
+                    
+                    console.log('[DocumentAnalysisService] ✅ Ollama analysis complete');
+                    console.log(`[DocumentAnalysisService] ⏱️ Analysis duration: ${duration}ms`);
+                    console.log(`[DocumentAnalysisService] 📊 Generated insights: ${insights.keyHighlights?.length || 0} highlights, ${insights.risks?.length || 0} risks, ${insights.recommendations?.length || 0} recommendations`);
+                    console.log('[DocumentAnalysisService] 🎉 Report analysis completed using OLLAMA (local, private, $0 cost)');
+                    
+                    return insights;
+                } else {
+                    console.warn('[DocumentAnalysisService] ⚠️ Ollama service initialized but not available (Ollama server may not be running)');
+                    console.warn('[DocumentAnalysisService] 🔄 Falling back to Gemini...');
+                }
+            } catch (error) {
+                console.error('[DocumentAnalysisService] ❌ Ollama analysis failed:', error);
+                console.error('[DocumentAnalysisService] 🔄 Falling back to Gemini...');
+                // Fall through to Gemini
+            }
+        } else {
+            console.log('[DocumentAnalysisService] ℹ️ Ollama not enabled or not initialized');
+        }
+
+        // Use Gemini (primary or fallback)
+        if (!this.genAI) {
+            throw new Error('Neither Ollama nor Gemini is available. Please ensure Ollama is running or set GEMINI_API_KEY.');
+        }
+        
+        console.log('[DocumentAnalysisService] 🔵 Using Gemini for analysis (cloud service)');
+        console.log('[DocumentAnalysisService] ⚠️ NOTE: Data will be sent to Google cloud for processing');
         const model = this.genAI.getGenerativeModel({
             model: process.env.GEMINI_REPORT_MODEL || 'gemini-2.0-flash'
         });
@@ -262,9 +354,11 @@ ${Object.entries(analytics.workflowStepStatus || {}).map(([status, count]: [stri
       }
     `;
 
+        const geminiStartTime = Date.now();
         const result = await model.generateContent(prompt);
         const response = await result.response;
         const text = response.text();
+        const geminiDuration = Date.now() - geminiStartTime;
 
         // Extract JSON from response (handling potential markdown formatting)
         const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -272,7 +366,16 @@ ${Object.entries(analytics.workflowStepStatus || {}).map(([status, count]: [stri
             throw new Error('Failed to parse AI response as JSON');
         }
 
-        return JSON.parse(jsonMatch[0]);
+        const insights = JSON.parse(jsonMatch[0]);
+        const totalDuration = Date.now() - startTime;
+        
+        console.log('[DocumentAnalysisService] ✅ Gemini analysis complete');
+        console.log(`[DocumentAnalysisService] ⏱️ Gemini generation duration: ${geminiDuration}ms`);
+        console.log(`[DocumentAnalysisService] ⏱️ Total analysis duration: ${totalDuration}ms`);
+        console.log(`[DocumentAnalysisService] 📊 Generated insights: ${insights.keyHighlights?.length || 0} highlights, ${insights.risks?.length || 0} risks, ${insights.recommendations?.length || 0} recommendations`);
+        console.log('[DocumentAnalysisService] 🔵 Report analysis completed using GEMINI (cloud, ~$0.01-0.05 cost)');
+        
+        return insights;
     }
 
     async generateExecutiveSummary(projectData: ProjectData): Promise<string> {

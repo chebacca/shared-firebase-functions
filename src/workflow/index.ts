@@ -13,6 +13,7 @@ export { default as geminiRoutes } from './routes/gemini.routes';
 export { default as googleMapsRoutes } from './routes/google-maps.routes';
 export { default as unifiedTeamMembersRoutes } from './routes/unifiedTeamMembers';
 export { default as weatherRoutes } from './routes/weather.routes';
+export { default as ollamaRoutes } from './routes/ollama.routes';
 
 // Export delivery functions
 export { sendDeliveryPackageEmail } from './delivery/sendDeliveryPackageEmail';

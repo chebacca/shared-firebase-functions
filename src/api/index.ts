@@ -16,7 +16,7 @@ import workflowRouter from './routes/workflow';
 import networkDeliveryRouter, { uploadNetworkDeliveryBible, getNetworkDeliveryDeliverables } from './routes/networkDelivery';
 import serverRouter from './routes/servers';
 import authRouter from './routes/auth';
-import { googleMapsRoutes } from '../workflow';
+import { googleMapsRoutes, ollamaRoutes } from '../workflow';
 
 // Create Express app
 const app = express();
@@ -46,6 +46,7 @@ app.use('/network-delivery', networkDeliveryRouter);
 app.use('/server', serverRouter);
 app.use('/auth', authRouter);
 app.use('/google-maps', googleMapsRoutes);
+app.use('/ollama', ollamaRoutes);
 
 // Documentation endpoint
 app.get('/docs', (req, res) => {
@@ -53,7 +54,7 @@ app.get('/docs', (req, res) => {
     title: 'BACKBONE Unified API',
     version: '2.0.0',
     description: 'Refactored Modular API for all BACKBONE projects',
-    routers: ['/health', '/auth', '/timecard-approval', '/timecard', '/infrastructure', '/contacts', '/sessions', '/production', '/workflow', '/network-delivery', '/google-maps']
+    routers: ['/health', '/auth', '/timecard-approval', '/timecard', '/infrastructure', '/contacts', '/sessions', '/production', '/workflow', '/network-delivery', '/google-maps', '/ollama']
   });
 });
 

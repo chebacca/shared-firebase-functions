@@ -49,12 +49,23 @@ export class ReportGeneratorService {
         // 2. Collect Project Data
         const projectData = await this.dataCollectionService.collectData(rOrganizationId, projectId);
 
-        // 3. Analyze with Gemini
+        // 3. Analyze with AI (Ollama preferred, Gemini fallback)
+        console.log(`[ReportGeneratorService] 📊 Starting ${reportType} report generation...`);
+        console.log(`[ReportGeneratorService] 📋 Project: ${projectData.projectName} (${projectData.projectId})`);
+        console.log(`[ReportGeneratorService] 📋 Organization: ${rOrganizationId}`);
+        console.log(`[ReportGeneratorService] 🔍 AI Service: DocumentAnalysisService will select Ollama (if available) or Gemini`);
+        
+        const analysisStartTime = Date.now();
         const insights = await this.analysisService.analyzeProject(projectData, {
             reportType,
             includeRisks: true,
             includeRecommendations: true
         });
+        const analysisDuration = Date.now() - analysisStartTime;
+        
+        console.log(`[ReportGeneratorService] ✅ AI Analysis complete in ${analysisDuration}ms`);
+        console.log(`[ReportGeneratorService] 📊 Generated insights: ${insights.keyHighlights?.length || 0} highlights, ${insights.risks?.length || 0} risks, ${insights.recommendations?.length || 0} recommendations`);
+        console.log(`[ReportGeneratorService] 📝 Executive summary length: ${insights.executiveSummary?.length || 0} characters`);
 
         // 4. Generate Visualizations
         const renderedCharts: Record<string, string> = {};
