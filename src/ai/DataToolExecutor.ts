@@ -62,9 +62,9 @@ export class DataToolExecutor {
                     return this.exportReport(args, organizationId, userId);
 
                 default:
-                    // 🚀 UNIFIED INTELLIGENCE: Fallback to shared library (Generic Actions)
-                    console.log(`📡 [DataToolExecutor] Fallback to shared registry for: ${toolName}`);
-                    return this.executeSharedTool(toolName, args, organizationId, userId);
+                    // 🚀 UNIFIED TOOL REGISTRY: Fallback to UnifiedToolRegistry (MCP + Shared + Local)
+                    console.log(`📡 [DataToolExecutor] Fallback to UnifiedToolRegistry for: ${toolName}`);
+                    return this.executeUnifiedTool(toolName, args, organizationId, userId);
             }
         } catch (error: any) {
             console.error(`❌ [DataToolExecutor] Error executing ${toolName}:`, error);
@@ -76,56 +76,67 @@ export class DataToolExecutor {
     }
 
     /**
-     * Executes a tool from the shared registry
+     * Executes a tool from the Unified Tool Registry (MCP + Shared + Local)
      */
-    private static async executeSharedTool(
+    private static async executeUnifiedTool(
         toolName: string,
         args: any,
         organizationId: string,
         userId: string
     ): Promise<ToolExecutionResult> {
         try {
-            const { allTools } = await import('shared-backbone-intelligence');
-            const tool = allTools.find((t: any) => t.name === toolName);
+            // Import UnifiedToolRegistry (lazy to avoid circular deps)
+            const { unifiedToolRegistry } = await import('./services/UnifiedToolRegistry');
+            const registry = unifiedToolRegistry();
 
-            if (!tool) {
+            // Check if tool exists
+            const hasTool = await registry.hasTool(toolName);
+            if (!hasTool) {
                 return {
                     success: false,
-                    error: `Unknown tool: ${toolName}. (Checked local switch and shared registry)`
+                    error: `Unknown tool: ${toolName}. (Checked local switch, MCP server, and shared registry)`
                 };
             }
 
-            console.log(`✅ [DataToolExecutor] Executing SHARED tool: ${toolName}`);
+            // Execute via UnifiedToolRegistry
+            console.log(`✅ [DataToolExecutor] Executing tool via UnifiedToolRegistry: ${toolName}`);
+            
+            const result = await registry.executeTool(toolName, args, {
+                userId,
+                organizationId,
+                projectId: args.projectId
+            });
 
-            // Inject organizationId and userId into args if they are missing or required by the shared tool
-            const toolArgs = {
-                ...args,
-                organizationId: args.organizationId || organizationId,
-                userId: args.userId || userId
-            };
-
-            const result = await tool.execute(toolArgs);
-
-            if (result.isError) {
+            // Normalize result format
+            if (!result.success) {
                 return {
                     success: false,
-                    error: result.content?.[0]?.text || 'Shared tool execution failed'
+                    error: result.error || 'Tool execution failed',
+                    data: result.data
                 };
             }
 
-            // Extract data from shared tool response
-            const responseText = result.content?.[0]?.text;
-            const responseData = responseText ? JSON.parse(responseText) : {};
+            // Parse content if it's JSON
+            let data = result.data;
+            if (result.content && result.content[0]?.text) {
+                try {
+                    const parsed = JSON.parse(result.content[0].text);
+                    data = parsed;
+                } catch {
+                    // Not JSON, use as-is
+                    data = result.data || { text: result.content[0].text };
+                }
+            }
 
             return {
                 success: true,
-                data: responseData
+                data: data
             };
         } catch (error: any) {
-            console.error(`❌ [DataToolExecutor] Shared tool execution error:`, error);
+            console.error(`❌ [DataToolExecutor] UnifiedToolRegistry execution error:`, error);
             return {
                 success: false,
-                error: `Shared tool execution failed: ${error.message}`
+                error: `Tool execution failed: ${error.message}`
             };
         }
     }

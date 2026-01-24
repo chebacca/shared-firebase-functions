@@ -61,10 +61,25 @@ export class OllamaToolCallingService extends OllamaAnalysisService {
         console.log(`[OllamaToolCallingService] 📝 Messages: ${messages.length}`);
         console.log(`[OllamaToolCallingService] 🔧 Tools available: ${tools?.length || 'all'}`);
 
+        // Check Ollama availability first
+        try {
+            const isAvailable = await (this as any).checkAvailability();
+            if (!isAvailable) {
+                console.error('[OllamaToolCallingService] ❌ Ollama availability check returned false');
+                throw new Error('Ollama service is not available');
+            }
+        } catch (error: any) {
+            console.error('[OllamaToolCallingService] ❌ Ollama not available:', error?.message || error);
+            // Re-throw with a specific error that can be caught by fallback logic
+            const unavailableError = new Error('Ollama service is not available. Please ensure Ollama is running and accessible.');
+            (unavailableError as any).isOllamaUnavailable = true; // Flag for fallback detection
+            throw unavailableError;
+        }
+
         // Get available tools
         const availableTools = tools && tools.length > 0
-            ? tools.map(name => this.toolRegistry.getTool(name)).filter(Boolean)
-            : this.toolRegistry.getAllTools();
+            ? (await Promise.all(tools.map(name => this.toolRegistry.getTool(name)))).filter(Boolean)
+            : await this.toolRegistry.getAllTools();
 
         if (availableTools.length === 0) {
             console.warn('[OllamaToolCallingService] ⚠️ No tools available, falling back to simple chat');
@@ -92,7 +107,14 @@ export class OllamaToolCallingService extends OllamaAnalysisService {
             console.log(`[OllamaToolCallingService] 🔄 ReAct iteration ${iteration}/${this.maxIterations}`);
 
             // Step 1: Generate response (with potential tool calls)
-            const response = await this.callOllamaChat(currentMessages, toolSchemas);
+            let response: ChatResponse;
+            try {
+                response = await this.callOllamaChat(currentMessages, toolSchemas);
+            } catch (ollamaError: any) {
+                // If Ollama fails during execution, throw error to trigger fallback
+                console.error('[OllamaToolCallingService] ❌ Ollama chat failed:', ollamaError?.message || ollamaError);
+                throw new Error('Ollama service is not available. Please ensure Ollama is running and accessible.');
+            }
 
             // Step 2: Check if model wants to call tools
             if (response.tool_calls && response.tool_calls.length > 0) {
@@ -113,10 +135,22 @@ export class OllamaToolCallingService extends OllamaAnalysisService {
                 } as any);
 
                 // Step 3: Execute tools
-                const toolResults = await this.executeToolCalls(
-                    response.tool_calls,
-                    context
-                );
+                let toolResults: any[];
+                try {
+                    toolResults = await this.executeToolCalls(
+                        response.tool_calls,
+                        context
+                    );
+                } catch (toolError: any) {
+                    console.error('[OllamaToolCallingService] ❌ Tool execution failed:', toolError?.message || toolError);
+                    // Continue with error message as observation
+                    toolResults = [{
+                        tool_call_id: response.tool_calls?.[0]?.id,
+                        tool_name: response.tool_calls?.[0]?.name || 'unknown',
+                        content: JSON.stringify({ error: toolError?.message || 'Tool execution failed' }),
+                        success: false
+                    }];
+                }
 
                 // Step 4: Add tool results back to conversation
                 for (const result of toolResults) {
@@ -413,6 +447,12 @@ Always explain what you're doing and why.`;
      * Simple chat without tools (fallback)
      */
     private async simpleChat(messages: ChatMessage[]): Promise<ChatResponse> {
+        // Check availability before attempting chat
+        const isAvailable = await (this as any).checkAvailability();
+        if (!isAvailable) {
+            throw new Error('Ollama service is not available. Please ensure Ollama is running and accessible.');
+        }
+
         const activeUrl = await this.resolveOllamaBaseUrl();
         const models = this.getModelConfig();
         const model = models.fast;
@@ -432,7 +472,8 @@ Always explain what you're doing and why.`;
         });
 
         if (!response.ok) {
-            throw new Error(`Ollama API error: ${response.status}`);
+            const errorText = await response.text();
+            throw new Error(`Ollama API error: ${response.status} - ${errorText}`);
         }
 
         const data = await response.json();

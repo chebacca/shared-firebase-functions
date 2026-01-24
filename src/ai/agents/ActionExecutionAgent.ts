@@ -29,14 +29,17 @@ export class ActionExecutionAgent {
     ) {
         this.ollamaService = ollamaService;
         this.toolRegistry = toolRegistry;
-        this.initializeActionTools();
+        // Initialize tools asynchronously (will be ready by first use)
+        this.initializeActionTools().catch(err => {
+            console.error('[ActionExecutionAgent] ⚠️ Failed to initialize action tools:', err);
+        });
     }
 
     /**
      * Initialize list of action tools
      */
-    private initializeActionTools(): void {
-        const allTools = this.toolRegistry.getAllTools();
+    private async initializeActionTools(): Promise<void> {
+        const allTools = await this.toolRegistry.getAllTools();
         
         allTools.forEach(tool => {
             const name = tool.name.toLowerCase();
@@ -77,6 +80,11 @@ export class ActionExecutionAgent {
         data: any;
     }> {
         console.log(`[ActionExecutionAgent] 🔨 Executing action: ${userRequest.substring(0, 100)}...`);
+
+        // Ensure tools are initialized
+        if (this.actionTools.length === 0) {
+            await this.initializeActionTools();
+        }
 
         // Check if request involves destructive actions
         const requiresConfirmation = this.checkRequiresConfirmation(userRequest);

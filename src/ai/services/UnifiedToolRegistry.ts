@@ -1,17 +1,25 @@
 /**
  * Unified Tool Registry
  * 
- * Loads tools directly from shared-backbone-intelligence library.
- * This provides a single source of truth for all 240+ tools accessible by:
- * - Firebase Functions (direct import, 0ms latency)
- * - MCP Server (import from library)
- * - Local Scripts (direct import)
+ * Merges tools from multiple sources:
+ * 1. MCP Server (240+ tools) - Primary source, highest priority
+ * 2. shared-backbone-intelligence (20 tools) - Fallback for tools not in MCP
+ * 3. Local tools (DataToolExecutor) - Legacy tools
  * 
- * No stdio spawning required - all tools are native TypeScript functions.
+ * Provides unified access to all Backbone ecosystem tools.
  */
 
 import type { SharedTool } from 'shared-backbone-intelligence';
 import { z } from 'zod';
+import { MCPClientAdapter, mcpClientAdapter } from '../MCPClientAdapter';
+
+export interface UnifiedTool {
+    name: string;
+    description: string;
+    parameters: z.ZodType<any>;
+    execute: (args: any) => Promise<any>;
+    source: 'mcp' | 'shared' | 'local';
+}
 
 export interface ToolExecutionResult {
     success: boolean;
@@ -22,32 +30,84 @@ export interface ToolExecutionResult {
 }
 
 export class UnifiedToolRegistry {
-    private tools: Map<string, SharedTool> = new Map();
+    private tools: Map<string, UnifiedTool> = new Map();
+    private mcpClient: MCPClientAdapter | null = null;
     private initialized: boolean = false;
+    private initializationPromise: Promise<void> | null = null;
 
     constructor() {
         // Lazy initialization to avoid circular dependencies at module load
     }
 
     /**
-     * Initialize the registry by loading all tools from shared-backbone-intelligence
+     * Initialize the registry by loading tools from all sources
      */
-    private initialize(): void {
+    private async initialize(): Promise<void> {
         if (this.initialized) return;
+        if (this.initializationPromise) {
+            return this.initializationPromise;
+        }
 
+        this.initializationPromise = this.doInitialize();
+        await this.initializationPromise;
+    }
+
+    private async doInitialize(): Promise<void> {
         try {
-            // Lazy import to avoid circular dependencies
-            const { allTools } = require('shared-backbone-intelligence');
-            
-            console.log(`[UnifiedToolRegistry] 🔧 Initializing with ${allTools.length} tools from shared-backbone-intelligence`);
+            console.log(`[UnifiedToolRegistry] 🔧 Initializing unified tool registry...`);
 
-            for (const tool of allTools) {
-                this.tools.set(tool.name, tool);
+            // 1. Connect to MCP server and load MCP tools (highest priority)
+            try {
+                this.mcpClient = mcpClientAdapter();
+                await this.mcpClient.connect();
+                const mcpTools = await this.mcpClient.discoverTools();
+                
+                console.log(`[UnifiedToolRegistry] 📡 Loaded ${mcpTools.length} tools from MCP server`);
+                
+                // Convert MCP tools to UnifiedTool format
+                for (const mcpTool of mcpTools) {
+                    this.tools.set(mcpTool.name, {
+                        name: mcpTool.name,
+                        description: mcpTool.description,
+                        parameters: z.any(), // MCP tools use JSON Schema, convert as needed
+                        execute: async (args: any) => {
+                            const result = await this.mcpClient!.callTool(mcpTool.name, args);
+                            return result;
+                        },
+                        source: 'mcp'
+                    });
+                }
+            } catch (mcpError: any) {
+                console.warn(`[UnifiedToolRegistry] ⚠️ Failed to load MCP tools: ${mcpError.message}`);
+                console.warn(`[UnifiedToolRegistry] ⚠️ Continuing with shared tools only`);
+            }
+
+            // 2. Load shared-backbone-intelligence tools (fallback, lower priority)
+            try {
+                const { allTools } = require('shared-backbone-intelligence');
+                
+                console.log(`[UnifiedToolRegistry] 📚 Loading ${allTools.length} tools from shared-backbone-intelligence`);
+
+                for (const tool of allTools) {
+                    // Only add if not already in registry (MCP takes priority)
+                    if (!this.tools.has(tool.name)) {
+                        this.tools.set(tool.name, {
+                            name: tool.name,
+                            description: tool.description || '',
+                            parameters: tool.parameters,
+                            execute: tool.execute,
+                            source: 'shared'
+                        });
+                    }
+                }
+            } catch (error: any) {
+                console.error(`[UnifiedToolRegistry] ❌ Error loading shared tools:`, error);
             }
 
             this.initialized = true;
-            console.log(`[UnifiedToolRegistry] ✅ Registered ${this.tools.size} tools`);
-        } catch (error) {
+            console.log(`[UnifiedToolRegistry] ✅ Registered ${this.tools.size} tools total`);
+            console.log(`[UnifiedToolRegistry] 📊 Breakdown: ${Array.from(this.tools.values()).filter(t => t.source === 'mcp').length} MCP, ${Array.from(this.tools.values()).filter(t => t.source === 'shared').length} shared`);
+        } catch (error: any) {
             console.error(`[UnifiedToolRegistry] ❌ Error initializing:`, error);
             // Continue with empty registry
             this.initialized = true;
@@ -57,33 +117,33 @@ export class UnifiedToolRegistry {
     /**
      * Ensure registry is initialized (lazy initialization)
      */
-    private ensureInitialized(): void {
+    private async ensureInitialized(): Promise<void> {
         if (!this.initialized) {
-            this.initialize();
+            await this.initialize();
         }
     }
 
     /**
      * Get all available tools
      */
-    public getAllTools(): SharedTool[] {
-        this.ensureInitialized();
+    public async getAllTools(): Promise<UnifiedTool[]> {
+        await this.ensureInitialized();
         return Array.from(this.tools.values());
     }
 
     /**
      * Get a tool by name
      */
-    public getTool(name: string): SharedTool | undefined {
-        this.ensureInitialized();
+    public async getTool(name: string): Promise<UnifiedTool | undefined> {
+        await this.ensureInitialized();
         return this.tools.get(name);
     }
 
     /**
      * Check if a tool exists
      */
-    public hasTool(name: string): boolean {
-        this.ensureInitialized();
+    public async hasTool(name: string): Promise<boolean> {
+        await this.ensureInitialized();
         return this.tools.has(name);
     }
 
@@ -99,8 +159,8 @@ export class UnifiedToolRegistry {
             projectId?: string;
         }
     ): Promise<ToolExecutionResult> {
-        this.ensureInitialized();
-        const tool = this.getTool(toolName);
+        await this.ensureInitialized();
+        const tool = await this.getTool(toolName);
 
         if (!tool) {
             return {
@@ -115,11 +175,18 @@ export class UnifiedToolRegistry {
         }
 
         try {
-            // Validate arguments against tool schema
-            const validatedArgs = this.validateArgs(tool, args, context);
+            // Enrich args with context
+            const enrichedArgs = this.enrichArgsWithContext(args, context);
+
+            // For MCP tools, skip Zod validation (they use JSON Schema)
+            // For shared tools, validate with Zod
+            let validatedArgs = enrichedArgs;
+            if (tool.source === 'shared' && tool.parameters instanceof z.ZodObject) {
+                validatedArgs = this.validateArgs(tool, enrichedArgs, context);
+            }
 
             // Execute the tool
-            console.log(`[UnifiedToolRegistry] 🔨 Executing tool: ${toolName}`);
+            console.log(`[UnifiedToolRegistry] 🔨 Executing tool: ${toolName} (source: ${tool.source})`);
             const result = await tool.execute(validatedArgs);
 
             // Normalize result format
@@ -130,6 +197,26 @@ export class UnifiedToolRegistry {
                     error: result.content?.[0]?.text || 'Tool execution failed',
                     content: result.content
                 };
+            }
+
+            // Parse MCP result format
+            if (tool.source === 'mcp' && result.content) {
+                try {
+                    const contentText = result.content[0]?.text || '';
+                    const parsed = JSON.parse(contentText);
+                    return {
+                        success: parsed.success !== false,
+                        data: parsed,
+                        content: result.content
+                    };
+                } catch {
+                    // Not JSON, return as-is
+                    return {
+                        success: true,
+                        data: result,
+                        content: result.content
+                    };
+                }
             }
 
             return {
@@ -152,10 +239,9 @@ export class UnifiedToolRegistry {
     }
 
     /**
-     * Validate and enrich arguments with context
+     * Enrich arguments with context (for all tool types)
      */
-    private validateArgs(
-        tool: SharedTool,
+    private enrichArgsWithContext(
         args: Record<string, any>,
         context?: {
             userId?: string;
@@ -163,7 +249,39 @@ export class UnifiedToolRegistry {
             projectId?: string;
         }
     ): Record<string, any> {
-        // Parse the Zod schema
+        const enriched = { ...args };
+        
+        // Always add context if provided (tools can use it)
+        if (context?.userId && !enriched.userId) {
+            enriched.userId = context.userId;
+        }
+        if (context?.organizationId && !enriched.organizationId) {
+            enriched.organizationId = context.organizationId;
+        }
+        if (context?.projectId && !enriched.projectId) {
+            enriched.projectId = context.projectId;
+        }
+        
+        return enriched;
+    }
+
+    /**
+     * Validate and enrich arguments with context (for shared tools with Zod schemas)
+     */
+    private validateArgs(
+        tool: UnifiedTool,
+        args: Record<string, any>,
+        context?: {
+            userId?: string;
+            organizationId?: string;
+            projectId?: string;
+        }
+    ): Record<string, any> {
+        // Only validate if tool has Zod schema
+        if (!(tool.parameters instanceof z.ZodObject)) {
+            return args;
+        }
+
         const schema = tool.parameters as z.ZodObject<any>;
 
         // Add context if tool schema supports it
@@ -191,10 +309,19 @@ export class UnifiedToolRegistry {
     /**
      * Get tool schema in Ollama-compatible JSON format
      */
-    public getToolSchemaForOllama(toolName: string): any | null {
-        const tool = this.getTool(toolName);
+    public async getToolSchemaForOllama(toolName: string): Promise<any | null> {
+        const tool = await this.getTool(toolName);
         if (!tool) return null;
 
+        // For MCP tools, we need to get schema from MCP client
+        if (tool.source === 'mcp' && this.mcpClient) {
+            const mcpTool = this.mcpClient.getTools().find(t => t.name === toolName);
+            if (mcpTool) {
+                return this.convertJsonSchemaToOllama(mcpTool.inputSchema, tool.name, tool.description);
+            }
+        }
+
+        // For shared tools, convert Zod to Ollama
         return this.convertZodToOllamaSchema(tool.parameters, tool.name, tool.description);
     }
 
@@ -225,25 +352,50 @@ export class UnifiedToolRegistry {
     /**
      * Get all tool schemas in Ollama format
      */
-    public getAllToolSchemasForOllama(): any[] {
-        return this.getAllTools()
-            .map(tool => this.getToolSchemaForOllama(tool.name))
-            .filter((schema): schema is any => schema !== null);
+    public async getAllToolSchemasForOllama(): Promise<any[]> {
+        const tools = await this.getAllTools();
+        const schemas = await Promise.all(
+            tools.map(tool => this.getToolSchemaForOllama(tool.name))
+        );
+        return schemas.filter((schema): schema is any => schema !== null);
+    }
+
+    /**
+     * Convert JSON Schema (from MCP) to Ollama format
+     */
+    private convertJsonSchemaToOllama(
+        jsonSchema: any,
+        name: string,
+        description: string
+    ): any {
+        return {
+            type: 'function',
+            function: {
+                name,
+                description,
+                parameters: jsonSchema || {
+                    type: 'object',
+                    properties: {},
+                    required: []
+                }
+            }
+        };
     }
 
     /**
      * Get tools by category (based on tool name patterns)
      */
-    public getToolsByCategory(): Record<string, SharedTool[]> {
-        this.ensureInitialized();
-        const categories: Record<string, SharedTool[]> = {
+    public async getToolsByCategory(): Promise<Record<string, UnifiedTool[]>> {
+        await this.ensureInitialized();
+        const categories: Record<string, UnifiedTool[]> = {
             query: [],
             action: [],
             report: [],
             workflow: []
         };
 
-        for (const tool of this.getAllTools()) {
+        const tools = await this.getAllTools();
+        for (const tool of tools) {
             const name = tool.name.toLowerCase();
             if (name.includes('query') || name.includes('search') || name.includes('get') || name.includes('list')) {
                 categories.query.push(tool);
@@ -260,6 +412,18 @@ export class UnifiedToolRegistry {
         }
 
         return categories;
+    }
+
+    /**
+     * Get tools by source
+     */
+    public async getToolsBySource(): Promise<{ mcp: UnifiedTool[]; shared: UnifiedTool[] }> {
+        await this.ensureInitialized();
+        const tools = await this.getAllTools();
+        return {
+            mcp: tools.filter(t => t.source === 'mcp'),
+            shared: tools.filter(t => t.source === 'shared')
+        };
     }
 }
 

@@ -626,10 +626,10 @@ Generate the analysis now. Return ONLY valid JSON, no explanations.`;
      * Generate fallback summary if parsing fails
      */
     private generateFallbackSummary(projectData: ProjectData, options: AnalysisOptions): string {
-        const budget = projectData.budget || {};
-        const allocated = budget.allocated || 0;
-        const spent = budget.spent || 0;
-        const variance = allocated > 0 ? ((spent - allocated) / allocated * 100).toFixed(1) : '0';
+        const budget = projectData.budget;
+        const allocated = budget?.allocated || 0;
+        const spent = budget?.spent || 0;
+        const variance = (allocated > 0) ? ((spent - allocated) / allocated * 100).toFixed(1) : '0';
 
         return `This ${options.reportType} report analyzes ${projectData.projectName}. ` +
             `Budget status: ${variance}% variance ($${allocated.toLocaleString()} allocated, $${spent.toLocaleString()} spent). ` +

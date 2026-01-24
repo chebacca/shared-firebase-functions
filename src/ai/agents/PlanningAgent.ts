@@ -28,14 +28,17 @@ export class PlanningAgent {
     ) {
         this.ollamaService = ollamaService;
         this.toolRegistry = toolRegistry;
-        this.initializeWorkflowTools();
+        // Initialize tools asynchronously (will be ready by first use)
+        this.initializeWorkflowTools().catch(err => {
+            console.error('[PlanningAgent] ⚠️ Failed to initialize workflow tools:', err);
+        });
     }
 
     /**
      * Initialize list of workflow/planning tools
      */
-    private initializeWorkflowTools(): void {
-        const allTools = this.toolRegistry.getAllTools();
+    private async initializeWorkflowTools(): Promise<void> {
+        const allTools = await this.toolRegistry.getAllTools();
         this.workflowTools = allTools
             .filter(tool => {
                 const name = tool.name.toLowerCase();
@@ -67,6 +70,11 @@ export class PlanningAgent {
         data: any;
     }> {
         console.log(`[PlanningAgent] 📋 Creating plan: ${userRequest.substring(0, 100)}...`);
+
+        // Ensure tools are initialized
+        if (this.workflowTools.length === 0) {
+            await this.initializeWorkflowTools();
+        }
 
         const messages: ChatMessage[] = [
             {

@@ -68,47 +68,54 @@ export class SupervisorAgent {
     }> {
         console.log(`[SupervisorAgent] 🎯 Routing request: ${userRequest.substring(0, 100)}...`);
 
-        // Step 1: Classify intent
-        const routing = await this.classifyIntent(userRequest);
+        try {
+            // Step 1: Classify intent
+            const routing = await this.classifyIntent(userRequest);
 
-        console.log(`[SupervisorAgent] ✅ Routed to ${routing.agent} agent (confidence: ${routing.confidence})`);
+            console.log(`[SupervisorAgent] ✅ Routed to ${routing.agent} agent (confidence: ${routing.confidence})`);
 
-        // Step 2: Execute with appropriate agent
-        let result: any;
+            // Step 2: Execute with appropriate agent
+            let result: any;
 
-        switch (routing.agent) {
-            case 'query':
-                result = await this.queryAgent.executeQuery(userRequest, context);
-                break;
+            switch (routing.agent) {
+                case 'query':
+                    result = await this.queryAgent.executeQuery(userRequest, context);
+                    break;
 
-            case 'action':
-                result = await this.actionAgent.executeAction(userRequest, context);
-                break;
+                case 'action':
+                    result = await this.actionAgent.executeAction(userRequest, context);
+                    break;
 
-            case 'planning':
-                result = await this.planningAgent.createPlan(userRequest, context);
-                break;
+                case 'planning':
+                    result = await this.planningAgent.createPlan(userRequest, context);
+                    break;
 
-            case 'report':
-                if (!context.projectData) {
-                    throw new Error('Project data required for report generation');
-                }
-                result = await this.reportAgent.generateReport(
-                    userRequest,
-                    context.projectData,
-                    context
-                );
-                break;
+                case 'report':
+                    if (!context.projectData) {
+                        throw new Error('Project data required for report generation');
+                    }
+                    result = await this.reportAgent.generateReport(
+                        userRequest,
+                        context.projectData,
+                        context
+                    );
+                    break;
 
-            default:
-                throw new Error(`Unknown agent type: ${routing.agent}`);
+                default:
+                    throw new Error(`Unknown agent type: ${routing.agent}`);
+            }
+
+            return {
+                agent: routing.agent,
+                result,
+                routing
+            };
+        } catch (error: any) {
+            // Re-throw all errors to let masterAgentV2 handle fallback logic
+            // Don't catch and convert to responses here - let errors propagate
+            console.error('[SupervisorAgent] ❌ Error in routeRequest, re-throwing for fallback:', error?.message || error);
+            throw error;
         }
-
-        return {
-            agent: routing.agent,
-            result,
-            routing
-        };
     }
 
     /**
@@ -214,8 +221,14 @@ Respond with ONLY a JSON object in this format:
                     reasoning: parsed.reasoning || 'LLM classification'
                 };
             }
-        } catch (error) {
-            console.warn('[SupervisorAgent] ⚠️ LLM classification failed, using rule-based:', error);
+        } catch (error: any) {
+            // If Ollama error during classification, re-throw to trigger fallback
+            const errorMessage = error?.message || String(error);
+            if (errorMessage.includes('Ollama') || errorMessage.includes('ollama')) {
+                console.error('[SupervisorAgent] ❌ Ollama error during classification, re-throwing for fallback:', errorMessage);
+                throw error; // Re-throw to trigger Gemini fallback
+            }
+            console.warn('[SupervisorAgent] ⚠️ LLM classification failed (non-Ollama error), using rule-based:', error);
         }
 
         // Fallback to rule-based

@@ -3,6 +3,11 @@
  * 
  * Uses SupervisorAgent to route requests to specialized agents.
  * Integrates with UnifiedToolRegistry and OllamaToolCallingService.
+ * 
+ * LLM Selection Strategy:
+ * - Supervisor (Ollama) as DEFAULT: Cost-effective for data queries, actions, reports
+ * - Gemini for CREATIVE WRITING: Superior quality for script writing and planning
+ *   Modes: plan_mode, script, scripting
  */
 
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
@@ -13,6 +18,7 @@ import { OllamaToolCallingService } from './services/OllamaToolCallingService';
 import { unifiedToolRegistry } from './services/UnifiedToolRegistry';
 import { agentMemoryService } from './services/AgentMemoryService';
 import { ProjectData } from './services/DocumentAnalysisService';
+import { createGeminiService } from './GeminiService';
 
 // Initialize Firebase Admin if not already initialized
 if (!admin.apps.length) {
@@ -29,6 +35,7 @@ interface MasterAgentRequest {
   sessionId?: string;
   conversationId?: string;
   context?: {
+    activeMode?: string; // Mode from frontend: 'plan_mode', 'script', 'scripting', etc.
     projectData?: ProjectData;
     [key: string]: any;
   };
@@ -54,7 +61,7 @@ interface MasterAgentResponse {
  */
 export const masterAgentV2 = onCall(async (request) => {
   try {
-    const { message, organizationId, userId, projectId, sessionId, conversationId, context } = 
+    const { message, organizationId, userId, projectId, sessionId, conversationId, context } =
       request.data as MasterAgentRequest;
 
     // Validate request
@@ -81,26 +88,74 @@ export const masterAgentV2 = onCall(async (request) => {
     console.log(`[MasterAgentV2] 🚀 Processing request from user ${userId} in org ${organizationId}`);
     console.log(`[MasterAgentV2] 💬 Message: ${message.substring(0, 100)}...`);
 
-    // Initialize services
-    const ollamaService = new OllamaToolCallingService();
-    const supervisorAgent = new SupervisorAgent(ollamaService, unifiedToolRegistry());
+    // Determine active mode from context
+    const activeMode = context?.activeMode || 'none';
+    console.log(`[MasterAgentV2] 🎯 Active mode: ${activeMode}`);
 
-    // Check Ollama availability
-    const isOllamaAvailable = await ollamaService.checkAvailability();
-    if (!isOllamaAvailable) {
-      console.warn('[MasterAgentV2] ⚠️ Ollama not available, falling back to basic response');
-      return {
-        success: false,
-        response: 'Ollama service is not available. Please ensure Ollama is running and accessible.',
-        agent: 'query' as const,
-        routing: {
-          agent: 'query',
-          confidence: 0.5,
-          reasoning: 'Ollama unavailable'
-        },
-        error: 'Ollama service unavailable'
-      } as MasterAgentResponse;
+    // Modes that require Gemini for creative writing quality:
+    // - plan_mode: Architect planning requires superior reasoning
+    // - script: Script writing requires creative writing quality (Gemini outperforms Ollama/Qwen)
+    // - scripting: Script editing/refinement requires creative writing quality
+    const geminiOnlyModes = ['plan_mode', 'script', 'scripting'];
+    const requiresGemini = geminiOnlyModes.includes(activeMode);
+
+    // Route to Gemini for creative writing modes
+    if (requiresGemini) {
+      console.log(`[MasterAgentV2] 🧠 Using Gemini for creative writing mode: ${activeMode}`);
+
+      try {
+        // Use callAIAgentInternal which has the full Gemini integration with Architect mode support
+        const { callAIAgentInternal } = await import('../aiAgent/callAgent');
+
+        // Create a mock request object that matches callAIAgent's expected format
+        const mockRequest = {
+          auth: request.auth,
+          data: {
+            agentId: 'master-agent',
+            message,
+            context: {
+              activeMode,
+              projectId,
+              conversationHistory: [],
+              ...context
+            }
+          }
+        } as any;
+
+        // Call the internal handler which handles Gemini routing
+        const geminiResult = await callAIAgentInternal(mockRequest);
+        const geminiData = geminiResult.data as any;
+
+        // Format response to match MasterAgentV2 format
+        return {
+          success: true,
+          response: geminiData.response || geminiData.message || 'Response generated',
+          agent: 'planning' as const, // Creative writing is handled by planning agent
+          routing: {
+            agent: 'planning',
+            confidence: 0.9,
+            reasoning: `Using Gemini for creative writing mode: ${activeMode}`
+          },
+          toolsUsed: geminiData.contextData?.toolsUsed || [],
+          requiresConfirmation: false,
+          conversationId: conversationId
+        } as MasterAgentResponse;
+      } catch (geminiError: any) {
+        console.error('[MasterAgentV2] ❌ Gemini routing failed:', geminiError);
+        // Fall through to Supervisor fallback
+      }
     }
+
+    // Use Supervisor (Ollama) for all other modes - TRY OLLAMA FIRST
+    console.log(`[MasterAgentV2] 🎯 Using Supervisor Agent (Ollama) for mode: ${activeMode}`);
+    console.log(`[MasterAgentV2] 🔄 Attempting Ollama first, will fallback to Gemini if Ollama fails during execution`);
+
+    // Initialize services
+    const toolRegistry = unifiedToolRegistry();
+    const ollamaService = new OllamaToolCallingService(undefined, toolRegistry);
+    const supervisorAgent = new SupervisorAgent(ollamaService, toolRegistry);
+
+    // No upfront availability check - try Ollama first and catch errors during execution
 
     // Get or create session ID
     const activeSessionId = sessionId || `session_${userId}_${Date.now()}`;
@@ -127,8 +182,131 @@ export const masterAgentV2 = onCall(async (request) => {
       projectData: context?.projectData
     };
 
-    // Route request through SupervisorAgent
-    const result = await supervisorAgent.routeRequest(message, supervisorContext);
+    // Route request through SupervisorAgent (with fallback if Ollama fails during execution)
+    let result: any;
+    try {
+      console.log('[MasterAgentV2] 🚀 Attempting to route request through SupervisorAgent...');
+      console.log('[MasterAgentV2] 🔍 Message:', message.substring(0, 100));
+      console.log('[MasterAgentV2] 🔍 Context:', JSON.stringify(supervisorContext, null, 2).substring(0, 300));
+      result = await supervisorAgent.routeRequest(message, supervisorContext);
+      console.log('[MasterAgentV2] ✅ SupervisorAgent completed successfully');
+      console.log('[MasterAgentV2] 🔍 Result structure:', JSON.stringify(result, null, 2).substring(0, 1000));
+
+      // Check if result itself is an error response object (MasterAgentResponse format)
+      if (result && typeof result === 'object' && 'success' in result && result.success === false) {
+        const errorResponse = result as any;
+        if (errorResponse.error && (errorResponse.error.includes('Ollama') || errorResponse.error.includes('ollama'))) {
+          console.error('[MasterAgentV2] ❌ Result is error response with Ollama error, triggering fallback:', errorResponse.error);
+          throw new Error(errorResponse.error || errorResponse.response || 'Ollama service unavailable');
+        }
+        if (errorResponse.response && (errorResponse.response.includes('Ollama') || errorResponse.response.includes('ollama'))) {
+          console.error('[MasterAgentV2] ❌ Result is error response with Ollama message, triggering fallback');
+          throw new Error(errorResponse.response);
+        }
+      }
+
+      // Check if result contains an error response (some agents might return error responses instead of throwing)
+      if (result && result.result) {
+        const resultData = result.result;
+        // Check if the result itself indicates an Ollama error
+        if (resultData.error && (resultData.error.includes('Ollama') || resultData.error.includes('ollama'))) {
+          console.error('[MasterAgentV2] ❌ Result contains Ollama error, triggering fallback:', resultData.error);
+          throw new Error(resultData.error);
+        }
+        // Check if the answer/response indicates Ollama unavailable
+        const answer = resultData.answer || resultData.response || '';
+        if (answer.includes('Ollama service is not available') || answer.includes('Ollama service unavailable')) {
+          console.error('[MasterAgentV2] ❌ Result answer indicates Ollama unavailable, triggering fallback');
+          throw new Error('Ollama service is not available. Please ensure Ollama is running and accessible.');
+        }
+      }
+
+      // Also check if result.routing.reasoning indicates Ollama unavailable (in case error was converted to routing)
+      if (result && result.routing && result.routing.reasoning) {
+        const reasoning = result.routing.reasoning.toLowerCase();
+        if (reasoning.includes('ollama unavailable') || reasoning.includes('ollama not available')) {
+          console.error('[MasterAgentV2] ❌ Routing reasoning indicates Ollama unavailable, triggering fallback');
+          throw new Error('Ollama service is not available. Please ensure Ollama is running and accessible.');
+        }
+      }
+    } catch (supervisorError: any) {
+      console.error('[MasterAgentV2] ❌ CAUGHT ERROR from SupervisorAgent - starting fallback logic');
+      const errorMessage = supervisorError?.message || String(supervisorError);
+      const errorString = String(supervisorError).toLowerCase();
+
+      // Enhanced Ollama error detection - check for various Ollama error patterns
+      const isOllamaError =
+        errorMessage.includes('Ollama') ||
+        errorMessage.includes('ollama') ||
+        errorString.includes('ollama') ||
+        errorMessage.includes('Ollama service is not available') ||
+        errorMessage.includes('Ollama service unavailable') ||
+        supervisorError?.isOllamaUnavailable === true ||
+        (supervisorError?.code && (supervisorError.code === 'ECONNREFUSED' || supervisorError.code === 'ENOTFOUND'));
+
+      console.error('[MasterAgentV2] ❌ SupervisorAgent execution failed:', errorMessage);
+      console.error('[MasterAgentV2] 🔍 Full error object:', JSON.stringify(supervisorError, Object.getOwnPropertyNames(supervisorError)));
+      console.log(`[MasterAgentV2] 🔍 Error type: ${isOllamaError ? 'Ollama unavailable - will fallback to Gemini' : 'Other error - will re-throw'}`);
+
+      // If SupervisorAgent fails due to Ollama issue, fallback to Gemini
+      if (isOllamaError) {
+        console.log('[MasterAgentV2] 🔄 Ollama error detected, automatically falling back to Gemini...');
+        try {
+          const { callAIAgentInternal } = await import('../aiAgent/callAgent');
+          const mockRequest = {
+            auth: request.auth,
+            data: {
+              agentId: 'master-agent',
+              message,
+              context: {
+                activeMode,
+                projectId,
+                conversationHistory: [],
+                ...context
+              }
+            }
+          } as any;
+
+          console.log('[MasterAgentV2] 🧠 Calling Gemini via callAIAgentInternal fallback...');
+
+          const geminiResult = await callAIAgentInternal(mockRequest);
+          const geminiResultData = geminiResult.data || geminiResult;
+          const geminiData = geminiResultData?.data || geminiResultData;
+
+          console.log('[MasterAgentV2] ✅ Gemini fallback successful');
+
+          // Format as SupervisorAgent response for consistency
+          return {
+            success: true,
+            response: geminiData.response || geminiData.message || 'Response generated',
+            agent: 'query' as const,
+            routing: {
+              agent: 'query',
+              confidence: 0.8,
+              reasoning: 'Ollama unavailable, automatically using Gemini fallback'
+            },
+            toolsUsed: geminiData.contextData?.toolsUsed || [],
+            conversationId: conversationId
+          } as MasterAgentResponse;
+        } catch (fallbackError: any) {
+          console.error('[MasterAgentV2] ❌ Gemini fallback also failed:', fallbackError?.message || fallbackError);
+          return {
+            success: false,
+            response: 'AI services are temporarily unavailable. Please try again in a moment.',
+            agent: 'query' as const,
+            routing: {
+              agent: 'query',
+              confidence: 0.5,
+              reasoning: 'Both Ollama and Gemini unavailable'
+            },
+            error: 'AI services unavailable'
+          } as MasterAgentResponse;
+        }
+      } else {
+        // Non-Ollama error, re-throw
+        throw supervisorError;
+      }
+    }
 
     // Add assistant response to session memory
     agentMemoryService.addSessionMessage(activeSessionId, {
@@ -183,7 +361,7 @@ export const masterAgentV2 = onCall(async (request) => {
 
   } catch (error: any) {
     console.error('[MasterAgentV2] ❌ Error:', error);
-    
+
     if (error instanceof HttpsError) {
       throw error;
     }

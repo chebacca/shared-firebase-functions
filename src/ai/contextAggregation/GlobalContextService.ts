@@ -38,6 +38,7 @@ export interface GlobalContext {
   activeMode?: string;
   conversationHistory?: any[];
   currentProjectId?: string | null;
+  projectData?: any; // For report generation analysis contexts
 
   // App-specific contexts (composed from existing services)
   dashboard: DashboardContext;

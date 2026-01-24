@@ -28,14 +28,17 @@ export class ReportGenerationAgent {
     ) {
         this.ollamaService = ollamaService;
         this.toolRegistry = toolRegistry;
-        this.initializeReportTools();
+        // Initialize tools asynchronously (will be ready by first use)
+        this.initializeReportTools().catch(err => {
+            console.error('[ReportGenerationAgent] ⚠️ Failed to initialize report tools:', err);
+        });
     }
 
     /**
      * Initialize list of report/analytics tools
      */
-    private initializeReportTools(): void {
-        const allTools = this.toolRegistry.getAllTools();
+    private async initializeReportTools(): Promise<void> {
+        const allTools = await this.toolRegistry.getAllTools();
         this.reportTools = allTools
             .filter(tool => {
                 const name = tool.name.toLowerCase();

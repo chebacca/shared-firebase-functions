@@ -267,7 +267,7 @@ export {
 
 // Export AI functions
 // export * from './ai'; // Commented out to prevent stack overflow during deployment analysis
-export { aiChatAssistant, aiWorkflowAnalysis, aiAutomationSuggestions, storeAIApiKey } from './ai';
+export { aiChatAssistant, aiWorkflowAnalysis, aiAutomationSuggestions } from './ai';
 export { createScriptPackage } from './ai/scriptTools';
 export { createWorkflow } from './ai/workflowCloudFunctions';
 export { executeAIAction } from './ai/executeAIAction';

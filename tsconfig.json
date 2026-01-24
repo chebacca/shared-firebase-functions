@@ -48,6 +48,8 @@
     "node_modules",
     "lib",
     "google-drive-deploy",
-    "**/*.test.ts"
+    "**/*.test.ts",
+    "src/ai/storeAIApiKey.ts",
+    "src/ai/testApiKey.ts"
   ]
 }

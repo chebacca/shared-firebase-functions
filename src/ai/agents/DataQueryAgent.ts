@@ -27,14 +27,17 @@ export class DataQueryAgent {
     ) {
         this.ollamaService = ollamaService;
         this.toolRegistry = toolRegistry;
-        this.initializeQueryTools();
+        // Initialize tools asynchronously (will be ready by first use)
+        this.initializeQueryTools().catch(err => {
+            console.error('[DataQueryAgent] ⚠️ Failed to initialize query tools:', err);
+        });
     }
 
     /**
      * Initialize list of read-only query tools
      */
-    private initializeQueryTools(): void {
-        const allTools = this.toolRegistry.getAllTools();
+    private async initializeQueryTools(): Promise<void> {
+        const allTools = await this.toolRegistry.getAllTools();
         this.queryTools = allTools
             .filter(tool => {
                 const name = tool.name.toLowerCase();
@@ -63,6 +66,11 @@ export class DataQueryAgent {
     }> {
         console.log(`[DataQueryAgent] 🔍 Executing query: ${userQuery.substring(0, 100)}...`);
 
+        // Ensure tools are initialized
+        if (this.queryTools.length === 0) {
+            await this.initializeQueryTools();
+        }
+
         const messages: ChatMessage[] = [
             {
                 role: 'user',
@@ -70,17 +78,23 @@ export class DataQueryAgent {
             }
         ];
 
-        const response = await this.ollamaService.generateChatResponse(
-            messages,
-            this.queryTools,
-            context
-        );
+        try {
+            const response = await this.ollamaService.generateChatResponse(
+                messages,
+                this.queryTools,
+                context
+            );
 
-        return {
-            answer: response.message,
-            toolsUsed: [], // Track in future iterations
-            data: response
-        };
+            return {
+                answer: response.message,
+                toolsUsed: [], // Track in future iterations
+                data: response
+            };
+        } catch (error: any) {
+            // Re-throw Ollama errors so they can be caught by masterAgentV2 fallback logic
+            console.error('[DataQueryAgent] ❌ Ollama error in executeQuery:', error?.message || error);
+            throw error; // Let error propagate to trigger Gemini fallback
+        }
     }
 
     /**
