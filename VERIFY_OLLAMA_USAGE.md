@@ -4,11 +4,12 @@
 
 When generating a report in CNS Master Agent, check the Firebase Functions logs for these indicators:
 
-## ✅ Ollama is Being Used (Look for these logs):
+## ✅ Ollama is Being Used (Look for these logs)
 
 ```
 [DocumentAnalysisService] 🔧 Initializing DocumentAnalysisService...
 [DocumentAnalysisService] ✅ Ollama service initialized successfully
+[DocumentAnalysisService] 🤖 Lazy initializing Ollama service (requested by options)...
 [DocumentAnalysisService] 🎯 Ollama will be used for report analysis (preferred over Gemini)
 [DocumentAnalysisService] 🤖 Attempting to use Ollama for analysis...
 [DocumentAnalysisService] ✅ Ollama is available - using Ollama for analysis
@@ -18,12 +19,20 @@ When generating a report in CNS Master Agent, check the Firebase Functions logs 
 [DocumentAnalysisService] 🎉 Report analysis completed using OLLAMA (local, private, $0 cost)
 ```
 
+## Guaranteeing Ollama Usage
+
+The CNS Master Agent is now configured to explicitly request Ollama for all reports via `useOllama: true` in the report options. This guarantees that **if Ollama is running**, it will be prioritized, even if the server environment variable isn't explicitly set (though setting `REPORT_USE_OLLAMA=true` is still recommended).
+
+```
+
 ## ❌ Gemini is Being Used (Look for these logs):
 
 ```
+
 [DocumentAnalysisService] 🔵 Using Gemini for analysis (cloud service)
 [DocumentAnalysisService] ⚠️ NOTE: Data will be sent to Google cloud for processing
 [DocumentAnalysisService] 🔵 Report analysis completed using GEMINI (cloud, ~$0.01-0.05 cost)
+
 ```
 
 ## Environment Variables Required
@@ -48,27 +57,31 @@ The system automatically selects the best model:
 
 ## Troubleshooting
 
-### If Gemini is being used instead of Ollama:
+### If Gemini is being used instead of Ollama
 
 1. **Check environment variables:**
+
    ```bash
    firebase functions:config:get
    # Should show REPORT_USE_OLLAMA=true
    ```
 
 2. **Check Ollama is running:**
+
    ```bash
    curl http://localhost:11434/api/tags
    # Should return list of models
    ```
 
 3. **Check logs for errors:**
+
    ```
    [DocumentAnalysisService] ⚠️ Ollama initialization failed
    [OllamaAnalysisService] ❌ Ollama is not available
    ```
 
 4. **Verify models are installed:**
+
    ```bash
    ollama list
    # Should show phi4-mini and/or gemma3:12b

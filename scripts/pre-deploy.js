@@ -92,6 +92,15 @@ for (const pkgName of WORKSPACE_PACKAGES) {
 
 // Update package.json to use file: references instead of workspace:*
 const functionsPkgJsonPath = path.join(FUNCTIONS_DIR, 'package.json');
+const functionsPkgJsonBackup = path.join(FUNCTIONS_DIR, 'package.json.backup');
+
+// Create backup of package.json before modifying
+if (fs.existsSync(functionsPkgJsonPath) && !fs.existsSync(functionsPkgJsonBackup)) {
+  console.log('📋 Creating backup of package.json...');
+  fs.copyFileSync(functionsPkgJsonPath, functionsPkgJsonBackup);
+  console.log('✅ Backup created\n');
+}
+
 const functionsPkgJson = JSON.parse(fs.readFileSync(functionsPkgJsonPath, 'utf8'));
 
 let modified = false;
@@ -113,11 +122,32 @@ for (const pkgName of WORKSPACE_PACKAGES) {
   const targetPkgJson = JSON.parse(fs.readFileSync(targetPkgJsonPath, 'utf8'));
   let pkgModified = false;
 
-  // Version map for catalog references
-  const versionMap = {
-    'firebase-admin': '^13.5.0',
-    'typescript': '^5.3.3'
-  };
+  // Read catalog versions from pnpm-workspace.yaml
+  const workspaceYamlPath = path.join(ROOT_DIR, 'pnpm-workspace.yaml');
+  let versionMap = {};
+  if (fs.existsSync(workspaceYamlPath)) {
+    const workspaceYaml = fs.readFileSync(workspaceYamlPath, 'utf8');
+    // Parse YAML-like structure to extract catalog versions
+    const catalogMatch = workspaceYaml.match(/catalogs:\s*\n\s*default:\s*\n([\s\S]*?)(?=\n\w|\n$)/);
+    if (catalogMatch) {
+      const catalogSection = catalogMatch[1];
+      const versionMatches = catalogSection.matchAll(/(\S+):\s*(\S+)/g);
+      for (const match of versionMatches) {
+        const depName = match[1].trim();
+        const version = match[2].trim();
+        versionMap[depName] = version;
+      }
+    }
+  }
+  
+  // Fallback to hardcoded versions if catalog parsing fails
+  if (Object.keys(versionMap).length === 0) {
+    versionMap = {
+      'firebase-admin': '^13.5.0',
+      'firebase-functions': '^5.1.1',
+      'typescript': '^5.3.3'
+    };
+  }
 
   // Replace catalog: references in dependencies
   if (targetPkgJson.dependencies) {
@@ -174,6 +204,12 @@ for (const pkgName of WORKSPACE_PACKAGES) {
   if (pkgModified) {
     fs.writeFileSync(targetPkgJsonPath, JSON.stringify(targetPkgJson, null, 2) + '\n');
   }
+}
+
+// Write modified package.json if changes were made
+if (modified) {
+  fs.writeFileSync(functionsPkgJsonPath, JSON.stringify(functionsPkgJson, null, 2) + '\n');
+  console.log('✅ Updated package.json with file: references\n');
 }
 
 console.log('\n✨ Pre-deploy bundling complete!\n');

@@ -8,6 +8,7 @@
 
 import { ProjectData, AnalysisOptions, ProjectInsights, Risk, KeyMetrics } from './DocumentAnalysisService';
 import { OllamaModelSelector, TaskRequirements } from './OllamaModelSelector';
+import * as admin from 'firebase-admin';
 
 export class OllamaAnalysisService {
     private ollamaBaseUrl: string;
@@ -17,19 +18,58 @@ export class OllamaAnalysisService {
     };
     private model: string;
     private timeout: number;
+    private source: string = 'default';
 
-    constructor() {
-        this.ollamaBaseUrl = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
-        
+    constructor(baseUrl?: string) {
+        this.ollamaBaseUrl = baseUrl || process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
+
+        if (baseUrl) {
+            this.source = 'explicitly provided';
+        } else if (process.env.OLLAMA_BASE_URL) {
+            this.source = 'environment variable';
+        } else {
+            this.source = 'fallback default';
+        }
+
+        console.log(`[OllamaAnalysisService] 🔧 Initialized with base URL: ${this.ollamaBaseUrl} (Source: ${this.source})`);
+
         // Support multiple models
         this.availableModels = {
             fast: process.env.OLLAMA_MODEL_FAST || 'phi4-mini',
             quality: process.env.OLLAMA_MODEL_QUALITY || 'gemma3:12b'
         };
-        
+
         // Default to quality model for reports (can be overridden per task)
         this.model = this.availableModels.quality;
         this.timeout = parseInt(process.env.OLLAMA_TIMEOUT || '120000', 10); // 2 min for gemma3
+    }
+
+    /**
+     * Resolve the base URL, checking Firestore if needed
+     */
+    private async resolveBaseUrl(): Promise<string> {
+        // If it's already a specific URL (not localhost), just return it
+        if (this.ollamaBaseUrl && !this.ollamaBaseUrl.includes('localhost') && !this.ollamaBaseUrl.includes('127.0.0.1')) {
+            return this.ollamaBaseUrl;
+        }
+
+        // Try to fetch from Firestore as a dynamic override
+        try {
+            console.log('[OllamaAnalysisService] 🔍 Checking Firestore for dynamic Ollama URL...');
+            const configDoc = await admin.firestore().collection('_system').doc('config').collection('ai').doc('ollama').get();
+
+            if (configDoc.exists) {
+                const data = configDoc.data();
+                if (data?.baseUrl) {
+                    console.log(`[OllamaAnalysisService] 🚀 Found dynamic Ollama URL in Firestore: ${data.baseUrl}`);
+                    return data.baseUrl;
+                }
+            }
+        } catch (error) {
+            console.warn('[OllamaAnalysisService] ⚠️ Failed to fetch dynamic config from Firestore:', error);
+        }
+
+        return this.ollamaBaseUrl;
     }
 
     /**
@@ -37,9 +77,16 @@ export class OllamaAnalysisService {
      */
     async checkAvailability(): Promise<boolean> {
         try {
-            const response = await fetch(`${this.ollamaBaseUrl}/api/tags`, {
+            // Re-resolve URL in case it's dynamic
+            const activeUrl = await this.resolveBaseUrl();
+            console.log(`[OllamaAnalysisService] 🔍 Checking Ollama at: ${activeUrl}`);
+            const response = await fetch(`${activeUrl}/api/tags`, {
                 method: 'GET',
-                signal: AbortSignal.timeout(5000)
+                headers: {
+                    'ngrok-skip-browser-warning': 'true',
+                    'User-Agent': 'Firebase-Functions-Ollama-Client/1.0'
+                },
+                signal: AbortSignal.timeout(10000) // Increased timeout to 10 seconds
             });
 
             if (!response.ok) {
@@ -48,21 +95,26 @@ export class OllamaAnalysisService {
 
             const data = await response.json();
             const availableModelNames = data.models.map((m: any) => m.name || m.model);
-            
+
             // Check if at least one of our models is available
-            const fastAvailable = availableModelNames.some((m: string) => 
+            const fastAvailable = availableModelNames.some((m: string) =>
                 m.includes(this.availableModels.fast.split(':')[0]) || m === this.availableModels.fast
             );
-            const qualityAvailable = availableModelNames.some((m: string) => 
+            const qualityAvailable = availableModelNames.some((m: string) =>
                 m.includes(this.availableModels.quality.split(':')[0]) || m === this.availableModels.quality
             );
-            
+
             console.log(`[OllamaAnalysisService] Available models: ${availableModelNames.join(', ')}`);
             console.log(`[OllamaAnalysisService] Fast model (${this.availableModels.fast}): ${fastAvailable ? '✅' : '❌'}`);
             console.log(`[OllamaAnalysisService] Quality model (${this.availableModels.quality}): ${qualityAvailable ? '✅' : '❌'}`);
-            
+
             return fastAvailable || qualityAvailable;
-        } catch (error) {
+        } catch (error: any) {
+            console.error('[OllamaAnalysisService] ❌ Ollama connection failed');
+            console.error(`[OllamaAnalysisService] URL: ${this.ollamaBaseUrl}`);
+            console.error(`[OllamaAnalysisService] Error type: ${error?.name || 'Unknown'}`);
+            console.error(`[OllamaAnalysisService] Error message: ${error?.message || 'No message'}`);
+            console.error(`[OllamaAnalysisService] Error stack: ${error?.stack || 'No stack'}`);
             console.warn('[OllamaAnalysisService] Ollama not available:', error);
             return false;
         }
@@ -73,8 +125,12 @@ export class OllamaAnalysisService {
      */
     private async getAvailableModels(): Promise<string[]> {
         try {
-            const response = await fetch(`${this.ollamaBaseUrl}/api/tags`, {
+            const activeUrl = await this.resolveBaseUrl();
+            const response = await fetch(`${activeUrl}/api/tags`, {
                 method: 'GET',
+                headers: {
+                    'ngrok-skip-browser-warning': 'true'
+                },
                 signal: AbortSignal.timeout(5000)
             });
 
@@ -95,11 +151,11 @@ export class OllamaAnalysisService {
      */
     private async selectModelForTask(reportType: string, dataSize: number): Promise<string> {
         const availableModels = await this.getAvailableModels();
-        
+
         // Estimate context size
-        const contextSize: 'small' | 'medium' | 'large' = 
-            dataSize < 1000 ? 'small' : 
-            dataSize < 10000 ? 'medium' : 'large';
+        const contextSize: 'small' | 'medium' | 'large' =
+            dataSize < 1000 ? 'small' :
+                dataSize < 10000 ? 'medium' : 'large';
 
         const requirements: TaskRequirements = {
             type: 'report_generation',
@@ -110,7 +166,7 @@ export class OllamaAnalysisService {
 
         const selectedModel = OllamaModelSelector.selectModel(requirements, availableModels);
         console.log(`[OllamaAnalysisService] 🎯 Selected model: ${selectedModel} for ${reportType} report (context: ${contextSize})`);
-        
+
         return selectedModel;
     }
 
@@ -122,7 +178,7 @@ export class OllamaAnalysisService {
         console.log('[OllamaAnalysisService] 🚀 Starting Ollama project analysis...');
         console.log(`[OllamaAnalysisService] 📋 Report type: ${options.reportType}`);
         console.log(`[OllamaAnalysisService] 📋 Project: ${projectData.projectName} (${projectData.projectId})`);
-        
+
         // Check availability
         console.log('[OllamaAnalysisService] 🔍 Checking Ollama availability...');
         const isAvailable = await this.checkAvailability();
@@ -137,12 +193,12 @@ export class OllamaAnalysisService {
         const dataSize = prompt.length;
         console.log(`[OllamaAnalysisService] 📝 Prompt size: ${dataSize} characters`);
         console.log('[OllamaAnalysisService] 🎯 Selecting best model for this task...');
-        
+
         const selectedModel = await this.selectModelForTask(options.reportType, dataSize);
-        
+
         // Adjust timeout based on model
         const modelTimeout = selectedModel.includes('gemma3') ? 120000 : 90000;
-        
+
         console.log(`[OllamaAnalysisService] ✅ Selected model: ${selectedModel}`);
         console.log(`[OllamaAnalysisService] 📊 Analyzing project with Ollama`);
         console.log(`[OllamaAnalysisService] 🤖 Model: ${selectedModel}`);
@@ -163,10 +219,14 @@ export class OllamaAnalysisService {
 
         // Generate analysis
         const startTime = Date.now();
-        const response = await fetch(`${this.ollamaBaseUrl}/api/generate`, {
+        const activeUrl = await this.resolveBaseUrl();
+
+        const response = await fetch(`${activeUrl}/api/generate`, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'ngrok-skip-browser-warning': 'true',
+                'User-Agent': 'Firebase-Functions-Ollama-Client/1.0'
             },
             body: JSON.stringify({
                 model: selectedModel,
@@ -197,7 +257,7 @@ export class OllamaAnalysisService {
 
         // Parse JSON from response
         const insights = this.parseInsightsResponse(generatedText, projectData, options);
-        
+
         return insights;
     }
 
@@ -223,6 +283,8 @@ ${dataSummary}
 
 ANALYSIS REQUIREMENTS:
 ${requirements}
+
+MATCH THE JSON SCHEMA STRICTLY. Do not use trailing commas. Ensure all keys and string values are DOUBLE QUOTED. Do not add comments.
 
 OUTPUT FORMAT (JSON only, no markdown):
 ${outputFormat}
@@ -381,30 +443,65 @@ Generate the analysis now. Return ONLY valid JSON, no explanations.`;
     ): ProjectInsights {
         console.log('[OllamaAnalysisService] 🔍 Parsing insights response...');
 
-        // Try to extract JSON from response
-        let jsonText = response.trim();
-
-        // Remove markdown code blocks if present
-        jsonText = jsonText.replace(/```json\s*/g, '').replace(/```\s*/g, '');
-
-        // Extract JSON object
-        const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-            jsonText = jsonMatch[0];
-        }
-
         try {
+            // First try: Standard clean and parse
+            let jsonText = this.cleanJsonString(response);
             const parsed = JSON.parse(jsonText);
-            
-            // Validate and normalize structure
             return this.normalizeInsights(parsed, projectData, options);
         } catch (error) {
-            console.error('[OllamaAnalysisService] ❌ Failed to parse JSON:', error);
-            console.error('[OllamaAnalysisService] Raw response:', response.substring(0, 500));
-            
-            // Fallback: Try to extract key parts manually
-            return this.extractInsightsFromText(response, projectData, options);
+            console.warn('[OllamaAnalysisService] ⚠️ Standard JSON parse failed, attempting advanced repair...');
+
+            try {
+                // Second try: Advanced repair (fix unquoted keys, trailing commas)
+                const repairedJson = this.repairJson(response);
+                const parsed = JSON.parse(repairedJson);
+                console.log('[OllamaAnalysisService] ✅ Advanced JSON repair successful');
+                return this.normalizeInsights(parsed, projectData, options);
+            } catch (secondError) {
+                console.error('[OllamaAnalysisService] ❌ Failed to parse JSON even after repair:', secondError);
+                console.error('[OllamaAnalysisService] Raw response:', response.substring(0, 500) + '...');
+
+                // Fallback: Try to extract key parts manually
+                return this.extractInsightsFromText(response, projectData, options);
+            }
         }
+    }
+
+    /**
+     * Basic JSON string cleanup (markdown, extraction)
+     */
+    private cleanJsonString(input: string): string {
+        let text = input.trim();
+        // Remove markdown code blocks
+        text = text.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+        // Extract JSON structure if embedded in text
+        const match = text.match(/\{[\s\S]*\}/);
+        if (match) text = match[0];
+        return text;
+    }
+
+    /**
+     * Advanced JSON repair for common LLM errors
+     */
+    private repairJson(input: string): string {
+        let text = this.cleanJsonString(input);
+
+        // Remove comments
+        text = text.replace(/\/\/.*$/gm, '');
+        text = text.replace(/\/\*[\s\S]*?\*\//g, '');
+
+        // Fix trailing commas
+        text = text.replace(/,(\s*[}\]])/g, '$1');
+
+        // Fix unquoted keys (e.g., key: "value" -> "key": "value")
+        // Be careful not to replace things inside strings
+        // This regex looks for { or , followed by word chars, followed by :
+        text = text.replace(/([{,]\s*)([a-zA-Z0-9_]+)\s*:/g, '$1"$2":');
+
+        // Fix single quoted keys ('key': "value" -> "key": "value")
+        text = text.replace(/([{,]\s*)'([a-zA-Z0-9_]+)'\s*:/g, '$1"$2":');
+
+        return text;
     }
 
     /**
@@ -418,10 +515,10 @@ Generate the analysis now. Return ONLY valid JSON, no explanations.`;
         // Ensure all required fields exist
         const insights: ProjectInsights = {
             executiveSummary: parsed.executiveSummary || this.generateFallbackSummary(projectData, options),
-            keyHighlights: Array.isArray(parsed.keyHighlights) 
-                ? parsed.keyHighlights 
+            keyHighlights: Array.isArray(parsed.keyHighlights)
+                ? parsed.keyHighlights
                 : this.extractHighlights(parsed),
-            risks: Array.isArray(parsed.risks) 
+            risks: Array.isArray(parsed.risks)
                 ? parsed.risks.map((r: any) => ({
                     category: r.category || 'General',
                     description: r.description || r.risk || '',
@@ -461,8 +558,8 @@ Generate the analysis now. Return ONLY valid JSON, no explanations.`;
 
         // Try to extract sections
         const summaryMatch = text.match(/executiveSummary["\s:]+"([^"]+)"/i) ||
-                            text.match(/summary["\s:]+"([^"]+)"/i);
-        
+            text.match(/summary["\s:]+"([^"]+)"/i);
+
         const highlights: string[] = [];
         const highlightsMatches = text.matchAll(/"([^"]+)"\s*[,\]]/g);
         for (const match of highlightsMatches) {
@@ -493,8 +590,8 @@ Generate the analysis now. Return ONLY valid JSON, no explanations.`;
         };
 
         const base: KeyMetrics = {
-            totalBudget: typeof metrics.totalBudget === 'string' 
-                ? metrics.totalBudget 
+            totalBudget: typeof metrics.totalBudget === 'string'
+                ? metrics.totalBudget
                 : formatCurrency(projectData.budget?.allocated || 0),
             spent: typeof metrics.spent === 'string'
                 ? metrics.spent
@@ -535,10 +632,10 @@ Generate the analysis now. Return ONLY valid JSON, no explanations.`;
         const variance = allocated > 0 ? ((spent - allocated) / allocated * 100).toFixed(1) : '0';
 
         return `This ${options.reportType} report analyzes ${projectData.projectName}. ` +
-               `Budget status: ${variance}% variance ($${allocated.toLocaleString()} allocated, $${spent.toLocaleString()} spent). ` +
-               `Project includes ${projectData.sessions?.length || 0} sessions, ${projectData.team?.length || 0} team members, ` +
-               `and ${projectData.deliverables?.length || 0} deliverables. ` +
-               `Analysis focuses on ${options.reportType === 'financial' ? 'financial performance, cash flow, and cost optimization' : 'project health, timeline, and resource utilization'}.`;
+            `Budget status: ${variance}% variance ($${allocated.toLocaleString()} allocated, $${spent.toLocaleString()} spent). ` +
+            `Project includes ${projectData.sessions?.length || 0} sessions, ${projectData.team?.length || 0} team members, ` +
+            `and ${projectData.deliverables?.length || 0} deliverables. ` +
+            `Analysis focuses on ${options.reportType === 'financial' ? 'financial performance, cash flow, and cost optimization' : 'project health, timeline, and resource utilization'}.`;
     }
 
     /**
@@ -546,19 +643,19 @@ Generate the analysis now. Return ONLY valid JSON, no explanations.`;
      */
     private extractHighlights(parsed: any): string[] {
         const highlights: string[] = [];
-        
+
         if (Array.isArray(parsed.keyHighlights)) {
             return parsed.keyHighlights;
         }
-        
+
         if (parsed.highlights && Array.isArray(parsed.highlights)) {
             return parsed.highlights;
         }
-        
+
         if (typeof parsed.keyPoints === 'string') {
             return parsed.keyPoints.split('\n').filter((s: string) => s.trim().length > 10);
         }
-        
+
         return highlights;
     }
 
@@ -569,11 +666,11 @@ Generate the analysis now. Return ONLY valid JSON, no explanations.`;
         if (Array.isArray(parsed.recommendations)) {
             return parsed.recommendations;
         }
-        
+
         if (parsed.recommendations && typeof parsed.recommendations === 'string') {
             return parsed.recommendations.split('\n').filter((s: string) => s.trim().length > 10);
         }
-        
+
         return [];
     }
 
@@ -595,12 +692,12 @@ Generate the analysis now. Return ONLY valid JSON, no explanations.`;
      */
     private generateDefaultRisks(projectData: ProjectData): Risk[] {
         const risks: Risk[] = [];
-        
+
         if (projectData.budget) {
             const variance = projectData.budget.allocated > 0
                 ? ((projectData.budget.spent - projectData.budget.allocated) / projectData.budget.allocated * 100)
                 : 0;
-            
+
             if (variance > 10) {
                 risks.push({
                     category: 'Financial',
@@ -610,7 +707,7 @@ Generate the analysis now. Return ONLY valid JSON, no explanations.`;
                 });
             }
         }
-        
+
         const blocked = projectData.deliverables?.filter((d: any) => d.status === 'blocked').length || 0;
         if (blocked > 0) {
             risks.push({
@@ -620,7 +717,7 @@ Generate the analysis now. Return ONLY valid JSON, no explanations.`;
                 mitigation: 'Review blocked deliverables and resolve dependencies'
             });
         }
-        
+
         return risks;
     }
 

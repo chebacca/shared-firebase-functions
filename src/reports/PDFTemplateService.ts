@@ -50,7 +50,7 @@ export class PDFTemplateService {
             console.warn(`⚠️ [PDFTemplateService] Template ${templateName} not found at ${templatePath}, using basic fallback`);
             console.warn(`⚠️ [PDFTemplateService] Templates directory: ${this.templatesDir}`);
             console.warn(`⚠️ [PDFTemplateService] Available files:`, fs.existsSync(this.templatesDir) ? fs.readdirSync(this.templatesDir) : 'directory not found');
-            
+
             // Since we might be running in a compiled environment, check relative to the file current location
             // or implement a basic fallback string template
             const defaultTemplate = `
@@ -91,33 +91,33 @@ export class PDFTemplateService {
         // - GOOGLE_CLOUD_PROJECT: Alternative GCP project ID
         // - _FUNCTION_NAME: Internal Cloud Functions variable
         const isCloudFunctions = !!(
-            process.env.K_SERVICE || 
-            process.env.FUNCTION_TARGET || 
-            process.env.FUNCTION_NAME || 
+            process.env.K_SERVICE ||
+            process.env.FUNCTION_TARGET ||
+            process.env.FUNCTION_NAME ||
             process.env._FUNCTION_NAME ||
-            process.env.GCLOUD_PROJECT || 
+            process.env.GCLOUD_PROJECT ||
             process.env.GOOGLE_CLOUD_PROJECT
         );
-        
+
         // Local development indicators:
         // - FUNCTIONS_EMULATOR: Firebase emulator
         // - NODE_ENV=development: Development mode
         // - Explicitly not in GCP
         const isLocal = !!(
-            process.env.FUNCTIONS_EMULATOR || 
+            process.env.FUNCTIONS_EMULATOR ||
             (process.env.NODE_ENV === 'development' && !isCloudFunctions)
         );
-        
-        // Default to production (Cloud Functions) if we can't determine - safer
-        const useProduction = isCloudFunctions || !isLocal;
-        
+
+        // Default to production (Cloud Functions) ONLY if we are NOT in the emulator
+        const useProduction = !isLocal && isCloudFunctions;
+
         let browser;
 
         try {
             if (useProduction) {
                 console.log('🚀 [PDFTemplateService] Using @sparticuz/chromium for Cloud environment');
                 console.log(`[PDFTemplateService] Env check: K_SERVICE=${process.env.K_SERVICE}, FUNCTION_TARGET=${process.env.FUNCTION_TARGET}, GCLOUD_PROJECT=${process.env.GCLOUD_PROJECT}`);
-                
+
                 const chromium = require('@sparticuz/chromium');
                 const puppeteerCore = require('puppeteer-core');
 
@@ -137,10 +137,10 @@ export class PDFTemplateService {
             } else {
                 console.log('💻 [PDFTemplateService] Using local Puppeteer');
                 console.log(`[PDFTemplateService] Environment: K_SERVICE=${process.env.K_SERVICE}, FUNCTION_NAME=${process.env.FUNCTION_NAME}, GCLOUD_PROJECT=${process.env.GCLOUD_PROJECT}, FUNCTIONS_EMULATOR=${process.env.FUNCTIONS_EMULATOR}`);
-                
+
                 // Use standard puppeteer locally which manages its own chrome
                 const puppeteerLocal = require('puppeteer');
-                
+
                 // Configure cache directory if needed (fallback to default)
                 const launchOptions: any = {
                     headless: true,
@@ -155,18 +155,33 @@ export class PDFTemplateService {
                 try {
                     browser = await puppeteerLocal.launch(launchOptions);
                 } catch (localError: any) {
-                    // If local Puppeteer fails (e.g., Chrome not found), try to use @sparticuz/chromium as fallback
-                    if (localError.message && localError.message.includes('Could not find Chrome')) {
+                    // macOS Support: Don't use @sparticuz/chromium (Linux binary), try to find local Chrome
+                    if (process.platform === 'darwin') {
+                        console.warn('⚠️ [PDFTemplateService] Local Puppeteer failed on macOS. Attempting to locate local Chrome...');
+                        const commonPaths = [
+                            '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+                            '/Applications/Chromium.app/Contents/MacOS/Chromium',
+                            '/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary'
+                        ];
+                        const chromePath = commonPaths.find(p => fs.existsSync(p));
+                        if (chromePath) {
+                            console.log(`✅ [PDFTemplateService] Found Chrome at: ${chromePath}`);
+                            launchOptions.executablePath = chromePath;
+                            browser = await puppeteerLocal.launch(launchOptions);
+                        } else {
+                            throw new Error('Puppeteer failed and no local Chrome installation found on macOS. Please install Google Chrome or set PUPPETEER_EXECUTABLE_PATH. Original Error: ' + localError.message);
+                        }
+                    } else if (localError.message && localError.message.includes('Could not find Chrome')) {
                         console.warn('⚠️ [PDFTemplateService] Local Puppeteer failed, attempting fallback to @sparticuz/chromium');
                         try {
                             const chromium = require('@sparticuz/chromium');
                             const puppeteerCore = require('puppeteer-core');
-                            
+
                             // Note: setGraphicsMode is only available in newer versions
                             if (typeof chromium.setGraphicsMode === 'function') {
                                 chromium.setGraphicsMode(false);
                             }
-                            
+
                             browser = await puppeteerCore.launch({
                                 args: chromium.args,
                                 defaultViewport: chromium.defaultViewport,

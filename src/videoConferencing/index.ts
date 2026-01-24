@@ -14,6 +14,7 @@ export * from './webex';
 import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
 import { db } from '../shared/utils';
 import { encryptionKey } from '../google/secrets';
+import * as admin from 'firebase-admin';
 
 // CORS helper function
 function setCorsHeaders(res: any, origin?: string): void {
@@ -267,15 +268,65 @@ export const getVideoConferencingProvidersHttp = onRequest(
       res.status(405).json({ success: false, error: 'Method not allowed' });
       return;
     }    try {
+      // Verify authentication via Authorization header
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        console.error('❌ [VideoConferencing HTTP] No authentication token provided');
+        res.status(401).json({
+          success: false,
+          error: 'Authentication required. Please provide a valid Firebase ID token.',
+        });
+        return;
+      }
+
+      // Verify Firebase ID token
+      const token = authHeader.split('Bearer ')[1];
+      if (!token || token.length < 10) {
+        console.error('❌ [VideoConferencing HTTP] Invalid token format');
+        res.status(401).json({
+          success: false,
+          error: 'Invalid authentication token format',
+        });
+        return;
+      }
+
+      // Verify the token with Firebase Admin
+      let decodedToken;
+      try {
+        decodedToken = await admin.auth().verifyIdToken(token);
+        console.log(`✅ [VideoConferencing HTTP] Token verified for user: ${decodedToken.uid}`);
+      } catch (tokenError: any) {
+        console.error('❌ [VideoConferencing HTTP] Token verification failed:', tokenError.message);
+        res.status(401).json({
+          success: false,
+          error: 'Invalid or expired authentication token',
+        });
+        return;
+      }
+
       const { organizationId } = req.body as {
         organizationId: string;
       };      if (!organizationId) {
+        console.error('❌ [VideoConferencing HTTP] Missing organizationId');
         res.status(400).json({
           success: false,
           error: 'Organization ID is required',
         });
         return;
-      }      console.log(`🔍 [VideoConferencing HTTP] Checking providers for org: ${organizationId}`);      // Check Google Meet connection
+      }
+
+      // Verify user has access to this organization
+      const userOrgId = decodedToken.organizationId;
+      if (userOrgId && userOrgId !== organizationId) {
+        console.error('❌ [VideoConferencing HTTP] Organization access denied', { userOrgId, requestedOrgId: organizationId });
+        res.status(403).json({
+          success: false,
+          error: 'Access denied to this organization',
+        });
+        return;
+      }
+
+      console.log(`🔍 [VideoConferencing HTTP] Checking providers for org: ${organizationId}`);      // Check Google Meet connection
       const googleConnections = await db
         .collection('organizations')
         .doc(organizationId)

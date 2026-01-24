@@ -5,6 +5,11 @@
  * Add exports incrementally as needed
  */
 
+// Load environment variables from .env file (for local development and emulator)
+// In production, these should be set via Firebase config/secrets
+import * as dotenv from 'dotenv';
+dotenv.config();
+
 import admin from 'firebase-admin';
 
 // Initialize Firebase Admin if not already initialized
@@ -27,8 +32,8 @@ initializeTelemetry();
 // Export email notification functions (both callable and HTTP)
 export {
   sendNotificationEmail,
-  testEmailConnection,
-  testEmailConnectionHttp
+  // testEmailConnection,
+  // testEmailConnectionHttp
 } from './notifications/sendEmail';
 
 // Export notification CRUD functions
@@ -112,7 +117,7 @@ export {
 // Export trashcan cleanup functions
 export {
   cleanupTrashcan,
-  cleanupTrashcanManual
+  // cleanupTrashcanManual
 } from './clipShowPro/cleanupTrashcan';
 
 // Export permissions matrix trigger (auto-syncs Permissions Matrix to Firebase Auth claims)
@@ -205,9 +210,9 @@ export {
 } from './integrations/unified-oauth/schedules/cleanupStates';
 
 // Export Migration Function
-export {
-  runOAuthMigration
-} from './integrations/unified-oauth/migrations/migrationFunction';
+// export {
+//   runOAuthMigration
+// } from './integrations/unified-oauth/migrations/migrationFunction';
 
 
 
@@ -228,7 +233,7 @@ export {
 // Export unified user management functions
 export {
   getUserInfo,
-  getUserInfoHttp,
+  // getUserInfoHttp,
   findUserByEmail,
   ensureUserDocument,
   updateUserClaims,
@@ -240,11 +245,11 @@ export {
   getUserProjects,
   getUserActiveProjects,
   discoverCollections,
-  discoverCollectionsHttp,
+  // discoverCollectionsHttp,
   transferAuthToken,
   getSystemStats,
   getParticipantDetails,
-  healthCheck
+  // healthCheck
 } from './unified';
 
 // Export unified auth functions (refreshAuthClaims for all apps)
@@ -274,7 +279,7 @@ export {
   notifyPitchAssignment,
   notifyLicensingSpecialist,
   getPitchAnalytics,
-  clipShowProHealthCheck,
+  // clipShowProHealthCheck,
   autoCreateStory,
   syncPitchFromStory,
   onPitchCreated,
@@ -288,10 +293,10 @@ export {
 export * from './utils/systemAlerts';
 
 // Export migration functions
-export {
-  migrateCloudIntegrations,
-  migrateCloudIntegrationsHttp
-} from './migrations/migrateCloudIntegrations';
+// export {
+//   migrateCloudIntegrations,
+//   migrateCloudIntegrationsHttp
+// } from './migrations/migrateCloudIntegrations';
 
 // Export main API function
 export { api, uploadNetworkDeliveryBible, getNetworkDeliveryDeliverables } from './api';
@@ -351,11 +356,11 @@ export {
 // Export FCM functions
 export {
   registerFCMToken,
-  registerFCMTokenHttp,
+  // registerFCMTokenHttp,
   subscribeToFCMTopic,
-  subscribeToFCMTopicHttp,
+  // subscribeToFCMTopicHttp,
   unsubscribeFromFCMTopic,
-  unsubscribeFromFCMTopicHttp
+  // unsubscribeFromFCMTopicHttp
 } from './fcm';
 
 // Export messaging functions (callable versions only - HTTP versions removed to reduce CPU quota)
@@ -375,7 +380,7 @@ export {
 // Export AI agent functions (callable versions only - HTTP versions removed to reduce CPU quota)
 export {
   callAIAgent,
-  getAIAgentHealth,
+  // getAIAgentHealth,
   getUserPreferences
 } from './aiAgent';
 
@@ -401,7 +406,7 @@ export {
   authenticateTeamMember,
   authenticateTeamMemberHttp,  // 🔧 CRITICAL FIX: Export HTTP function for CORS support
   cleanupExpiredCallSheets,
-  updateCallSheetAccessCode  // Temporary function to update access codes
+  // updateCallSheetAccessCode  // Temporary function to update access codes
 } from './callSheets';
 
 // Export team management functions
@@ -419,9 +424,9 @@ export {
 } from './orgHierarchy';
 
 // Export duplicate user cleanup function
-export {
-  cleanupDuplicateUsers
-} from './system/cleanupDuplicateUsers';
+// export {
+//   cleanupDuplicateUsers
+// } from './system/cleanupDuplicateUsers';
 
 // Export settings functions
 export {
@@ -431,7 +436,7 @@ export {
 
 // Export DocuSign functions
 export { storeDocuSignConfig } from './clipShowPro/docusign/storeDocuSignConfig';
-export { testDocuSignConnection } from './clipShowPro/docusign/testDocuSignConnection';
+// export { testDocuSignConnection } from './clipShowPro/docusign/testDocuSignConnection';
 export { createDocuSignEnvelope } from './clipShowPro/docusign/createDocuSignEnvelope';
 export { getDocuSignEnvelopeStatus } from './clipShowPro/docusign/getDocuSignEnvelopeStatus';
 export { downloadDocuSignEnvelopeDocument } from './clipShowPro/docusign/downloadDocuSignEnvelopeDocument';
@@ -457,10 +462,10 @@ export {
 } from './ml/functions';
 
 // Export migration functions
-export {
-  migrateBoxTokens,
-  migrateDropboxTokens
-} from './migrations/migrateLegacyTokens';
+// export {
+//   migrateBoxTokens,
+//   migrateDropboxTokens
+// } from './migrations/migrateLegacyTokens';
 
 // Export project resources functions
 export {
@@ -486,7 +491,7 @@ export {
   getProjectTeamMembersForContact,
   getProjectTeamMembersForContactHttp,
   manualCheckInOut,
-  manualCheckInOutHttp,
+  // manualCheckInOutHttp,
 } from './security';
 
 // Export overtime request functions

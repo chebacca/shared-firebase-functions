@@ -76,16 +76,25 @@ export const executeAIAction = onCall(
 
         default:
           // 🛠️ GENERIC GATEWAY: Try to execute via DataToolExecutor
+          console.log('📡 [executeAIAction] ========================================');
           console.log(`📡 [executeAIAction] Routing generic action: ${actionType}`);
+          console.log(`📡 [executeAIAction] Organization: ${organizationId}`);
+          console.log(`📡 [executeAIAction] User: ${userId}`);
+          console.log(`📡 [executeAIAction] Action data:`, JSON.stringify(actionData, null, 2));
+          console.log('📡 [executeAIAction] ========================================');
 
           try {
             const { DataToolExecutor } = await import('./DataToolExecutor');
+            console.log('✅ [executeAIAction] DataToolExecutor imported successfully');
+            
+            console.log(`🚀 [executeAIAction] Calling DataToolExecutor.executeTool for: ${actionType}`);
             const toolResult = await DataToolExecutor.executeTool(
               actionType as any,
               actionData,
               organizationId,
               userId
             );
+            console.log(`📥 [executeAIAction] Tool execution result:`, JSON.stringify(toolResult, null, 2));
 
             if (!toolResult.success) {
               // Provide more detailed error messages

@@ -9,6 +9,8 @@ export interface ReportOptions {
     includeInsights?: boolean;
     includeCharts?: boolean;
     customSections?: string[];
+    useOllama?: boolean;
+    ollamaBaseUrl?: string;
 }
 
 export interface ReportResult {
@@ -54,15 +56,17 @@ export class ReportGeneratorService {
         console.log(`[ReportGeneratorService] 📋 Project: ${projectData.projectName} (${projectData.projectId})`);
         console.log(`[ReportGeneratorService] 📋 Organization: ${rOrganizationId}`);
         console.log(`[ReportGeneratorService] 🔍 AI Service: DocumentAnalysisService will select Ollama (if available) or Gemini`);
-        
+
         const analysisStartTime = Date.now();
         const insights = await this.analysisService.analyzeProject(projectData, {
             reportType,
             includeRisks: true,
-            includeRecommendations: true
+            includeRecommendations: true,
+            useOllama: options.useOllama,
+            ollamaBaseUrl: options.ollamaBaseUrl
         });
         const analysisDuration = Date.now() - analysisStartTime;
-        
+
         console.log(`[ReportGeneratorService] ✅ AI Analysis complete in ${analysisDuration}ms`);
         console.log(`[ReportGeneratorService] 📊 Generated insights: ${insights.keyHighlights?.length || 0} highlights, ${insights.risks?.length || 0} risks, ${insights.recommendations?.length || 0} recommendations`);
         console.log(`[ReportGeneratorService] 📝 Executive summary length: ${insights.executiveSummary?.length || 0} characters`);
@@ -73,7 +77,7 @@ export class ReportGeneratorService {
 
         if (options.includeCharts !== false) {
             console.log('📊 [ReportGenerator] Generating charts...');
-            
+
             // Budget Chart
             console.log('📊 [ReportGenerator] Generating budget chart with data:', projectData.budget);
             const budgetChart = await this.chartService.generateBudgetChart(projectData.budget);
@@ -97,7 +101,7 @@ export class ReportGeneratorService {
             const deliverablesChart = await this.chartService.generateDeliverablesChart(projectData.deliverables);
             renderedCharts.deliverables = `data:image/png;base64,${deliverablesChart.toString('base64')}`;
             chartBuffers.push(deliverablesChart);
-            
+
             console.log('✅ [ReportGenerator] Generated', chartBuffers.length, 'charts');
         } else {
             console.log('⚠️ [ReportGenerator] Chart generation disabled by options');
@@ -111,7 +115,7 @@ export class ReportGeneratorService {
         // Format analytics data for template
         const formatAnalytics = (analytics: any) => {
             if (!analytics) return {};
-            
+
             // Format expense by category
             const expenseByCategory: any = {};
             if (analytics.expenseByCategory) {
@@ -122,7 +126,7 @@ export class ReportGeneratorService {
                     };
                 });
             }
-            
+
             // Format timecard by department
             const timecardByDepartment: any = {};
             if (analytics.timecardByDepartment) {
@@ -134,7 +138,7 @@ export class ReportGeneratorService {
                     };
                 });
             }
-            
+
             return {
                 ...analytics,
                 expenseByCategory,
@@ -145,10 +149,10 @@ export class ReportGeneratorService {
         const templateData: TemplateData = {
             projectName: projectData.projectName,
             projectId: projectData.projectId,
-            generatedAt: new Date().toLocaleDateString('en-US', { 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric' 
+            generatedAt: new Date().toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
             }),
             dateRange: options.dateRange
                 ? `${options.dateRange.start} to ${options.dateRange.end}`
@@ -160,7 +164,7 @@ export class ReportGeneratorService {
                 totalBudget: formatCurrency(projectData.budget?.allocated || 0),
                 spent: formatCurrency(projectData.budget?.spent || 0),
                 remaining: formatCurrency((projectData.budget?.allocated || 0) - (projectData.budget?.spent || 0)),
-                variance: (projectData.budget?.allocated || 0) > 0 
+                variance: (projectData.budget?.allocated || 0) > 0
                     ? (((projectData.budget?.spent || 0) - (projectData.budget?.allocated || 0)) / (projectData.budget?.allocated || 1) * 100).toFixed(1)
                     : '0.0',
                 completionPercentage: projectData.keyMetrics?.completionPercentage || 0
@@ -233,11 +237,15 @@ export class ReportGeneratorService {
             }
         });
 
-        const [url] = await file.getSignedUrl({
-            action: 'read',
-            expires: '03-01-2500'
-        });
-
-        return url;
+        try {
+            const [url] = await file.getSignedUrl({
+                action: 'read',
+                expires: '03-01-2500'
+            });
+            return url;
+        } catch (error) {
+            // Emulator usage removed - using production Firebase only
+            throw error;
+        }
     }
 }

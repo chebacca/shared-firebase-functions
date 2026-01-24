@@ -922,15 +922,30 @@ export const slackGetUsers = onCall(
   },
   async (request) => {
     try {
+      // Verify authentication
+      if (!request.auth) {
+        console.error('❌ [SlackAPI] slackGetUsers: No authentication provided');
+        throw new HttpsError('unauthenticated', 'Authentication required');
+      }
+
       const { connectionId, organizationId } = request.data as {
         connectionId: string;
         organizationId: string;
       };
 
       if (!connectionId || !organizationId) {
-        throw new HttpsError('invalid-argument', 'Missing required parameters');
+        console.error('❌ [SlackAPI] slackGetUsers: Missing required parameters', { connectionId: !!connectionId, organizationId: !!organizationId });
+        throw new HttpsError('invalid-argument', 'Missing required parameters: connectionId and organizationId');
       }
 
+      // Verify user has access to this organization
+      const userOrgId = request.auth.token.organizationId;
+      if (userOrgId && userOrgId !== organizationId) {
+        console.error('❌ [SlackAPI] slackGetUsers: Organization access denied', { userOrgId, requestedOrgId: organizationId });
+        throw new HttpsError('permission-denied', 'Access denied to this organization');
+      }
+
+      console.log(`🔍 [SlackAPI] slackGetUsers: Getting users for connection ${connectionId}, org ${organizationId}`);
       const client = await getSlackClient(connectionId, organizationId);
 
       const result = await client.users.list({

@@ -989,11 +989,28 @@ export class DataToolExecutor {
         }
     }
     private static async generateReport(args: any, organizationId: string, userId: string): Promise<ToolExecutionResult> {
+        const startTime = Date.now();
+        // Version identifier to force new instances (updated on each deployment)
+        const DEPLOYMENT_VERSION = '2026-01-23-16:20-enhanced-logging-v2';
+        
         try {
+            console.log('📊 [DataToolExecutor] ========================================');
+            console.log(`📊 [DataToolExecutor] Deployment Version: ${DEPLOYMENT_VERSION}`);
             console.log(`📊 [DataToolExecutor] Generating report for project: ${args.projectId}`);
+            console.log(`📊 [DataToolExecutor] Organization: ${organizationId}`);
+            console.log(`📊 [DataToolExecutor] User: ${userId}`);
+            console.log(`📊 [DataToolExecutor] Report type: ${args.reportType || 'executive'}`);
+            console.log(`📊 [DataToolExecutor] Options:`, JSON.stringify(args.options || {}, null, 2));
+            console.log(`📊 [DataToolExecutor] Full args:`, JSON.stringify(args, null, 2));
+            console.log('📊 [DataToolExecutor] ========================================');
+            
             const { ReportGeneratorService } = await import('../reports/ReportGeneratorService');
+            console.log('✅ [DataToolExecutor] ReportGeneratorService imported successfully');
+            
             const generator = new ReportGeneratorService();
+            console.log('✅ [DataToolExecutor] ReportGeneratorService instance created');
 
+            console.log('🚀 [DataToolExecutor] Calling generator.generateReport...');
             const result = await generator.generateReport(
                 args.projectId || 'current',
                 args.reportType || 'executive',
@@ -1001,12 +1018,22 @@ export class DataToolExecutor {
                 organizationId
             );
 
+            const duration = Date.now() - startTime;
+            console.log(`✅ [DataToolExecutor] Report generation completed in ${duration}ms`);
+            console.log('📦 [DataToolExecutor] Result:', JSON.stringify(result, null, 2));
+
             return {
                 success: true,
                 data: result
             };
         } catch (error: any) {
-            console.error('❌ [DataToolExecutor] Error generating report:', error);
+            const duration = Date.now() - startTime;
+            console.error('❌ [DataToolExecutor] ========================================');
+            console.error(`❌ [DataToolExecutor] Error generating report after ${duration}ms`);
+            console.error('❌ [DataToolExecutor] Error:', error);
+            console.error('❌ [DataToolExecutor] Error message:', error.message);
+            console.error('❌ [DataToolExecutor] Error stack:', error.stack);
+            console.error('❌ [DataToolExecutor] ========================================');
             return { success: false, error: error.message };
         }
     }
