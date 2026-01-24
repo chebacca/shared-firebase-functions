@@ -25,3 +25,6 @@ export * from './training';
 // Export vector store services
 export * from './vectorStore';
 
+// Export new agent system (v2)
+export * from './services';
+export * from './agents';

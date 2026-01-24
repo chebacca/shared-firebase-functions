@@ -1,7 +1,28 @@
 {
+  "_WARNING_": "⚠️  DO NOT DEPLOY FROM THIS DIRECTORY!",
+  "_IMPORTANT_": "This firebase.json is for LOCAL EMULATOR development ONLY",
+  "_DEPLOYMENT_": "Always deploy from project root: /Users/chebrooks/Documents/IDE_Project/BACKBONE ALL 4 APP Master/",
+  "_SEE_": "Read /DEPLOYMENT_GUIDE.md for proper deployment instructions",
   "firestore": {
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
-  "note": "Functions configuration is in root firebase.json. This file is kept for local emulator configuration only."
+  "emulators": {
+    "auth": {
+      "port": 9099
+    },
+    "firestore": {
+      "port": 8080
+    },
+    "functions": {
+      "port": 5001
+    },
+    "storage": {
+      "port": 9199
+    },
+    "ui": {
+      "enabled": true,
+      "port": 4000
+    }
+  }
 }

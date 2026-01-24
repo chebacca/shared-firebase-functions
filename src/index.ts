@@ -266,10 +266,12 @@ export {
 } from './web3';
 
 // Export AI functions
-export * from './ai';
+// export * from './ai'; // Commented out to prevent stack overflow during deployment analysis
+export { aiChatAssistant, aiWorkflowAnalysis, aiAutomationSuggestions, storeAIApiKey } from './ai';
 export { createScriptPackage } from './ai/scriptTools';
 export { createWorkflow } from './ai/workflowCloudFunctions';
 export { executeAIAction } from './ai/executeAIAction';
+export { masterAgentV2 } from './ai/masterAgentV2';
 
 // Export Clip Show Pro AI and Workflow functions
 export {
@@ -377,7 +379,8 @@ export {
   updateMessageSession
 } from './messaging';
 
-// Export AI agent functions (callable versions only - HTTP versions removed to reduce CPU quota)
+// Export AI agent functions (callable versions only)
+// export * from './aiAgent'; 
 export {
   callAIAgent,
   // getAIAgentHealth,

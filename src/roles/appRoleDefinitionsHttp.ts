@@ -11,7 +11,19 @@ import cors from 'cors';
 import { appRoleDefinitionService } from './AppRoleDefinitionService';
 
 // Type definitions (matching AppRoleDefinitionService)
-type AppNameType = 'dashboard' | 'clipShowPro' | 'callSheet' | 'cuesheet';
+type AppNameType = 
+  | 'hub'           // Backbone Hub
+  | 'pws'           // Production Workflow System (dashboard)
+  | 'dashboard'     // Legacy alias for pws
+  | 'clipShowPro'   // Clip Show Pro
+  | 'callSheet'     // Call Sheet Pro
+  | 'cuesheet'      // Cuesheet & Budget Tools
+  | 'iwm'           // Inventory & Warehouse Management
+  | 'timecard'      // Timecard Management
+  | 'securityDesk'  // Security Desk
+  | 'addressBook'   // Address Book
+  | 'deliverables'  // Deliverables
+  | 'cns';          // CNS / Parser Brain
 
 // Express app for app role definitions API
 const app = express();
@@ -26,13 +38,18 @@ const corsOptions = {
     'https://clipshowpro.web.app',
     'http://localhost:3000',
     'http://localhost:3001',
+    'http://localhost:4001', // Production Workflow System (Dashboard)
     'http://localhost:4002',
     'http://localhost:4003',
+    'http://localhost:4004',
     'http://localhost:4005',
     'http://localhost:4006',
     'http://localhost:4007',
     'http://localhost:4010',
-    'http://localhost:5173'
+    'http://localhost:4011',
+    'http://localhost:5173',
+    'http://localhost:5200', // Hub Web
+    'http://localhost:5300'  // Hub Web
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -49,13 +66,27 @@ const authenticateFirebaseToken = async (req: express.Request, res: express.Resp
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.error('[appRoleDefinitionsApi] Missing or invalid authorization header', {
+        hasHeader: !!authHeader,
+        headerPrefix: authHeader?.substring(0, 20)
+      });
       return res.status(401).json({
         success: false,
-        error: 'Missing or invalid authorization header'
+        error: 'Missing or invalid authorization header',
+        errorDetails: 'Authorization header must be in format: Bearer <token>'
       });
     }
 
     const token = authHeader.split('Bearer ')[1];
+    if (!token || token.trim().length === 0) {
+      console.error('[appRoleDefinitionsApi] Empty token after Bearer prefix');
+      return res.status(401).json({
+        success: false,
+        error: 'Empty authorization token',
+        errorDetails: 'Token is required after Bearer prefix'
+      });
+    }
+
     const admin = await import('firebase-admin');
 
     if (!admin.apps.length) {
@@ -63,19 +94,49 @@ const authenticateFirebaseToken = async (req: express.Request, res: express.Resp
     }
 
     const decodedToken = await admin.auth().verifyIdToken(token);
+    
+    // Extract organizationId from claims (could be in different places)
+    const organizationId = decodedToken.organizationId 
+      || decodedToken.orgId 
+      || (decodedToken as any).organization_id
+      || null;
+
     (req as any).user = {
       uid: decodedToken.uid,
       email: decodedToken.email,
-      organizationId: decodedToken.organizationId
+      organizationId: organizationId
     };
+
+    console.log('[appRoleDefinitionsApi] Token verified successfully', {
+      uid: decodedToken.uid,
+      email: decodedToken.email,
+      hasOrganizationId: !!organizationId,
+      organizationId: organizationId
+    });
 
     next();
   } catch (error: any) {
-    console.error('Authentication error:', error);
+    console.error('[appRoleDefinitionsApi] Authentication error:', {
+      error: error.message,
+      code: error.code,
+      stack: error.stack?.substring(0, 200)
+    });
+    
+    // Provide more specific error messages
+    let errorMessage = 'Invalid or expired token';
+    if (error.code === 'auth/id-token-expired') {
+      errorMessage = 'Token has expired. Please refresh your session.';
+    } else if (error.code === 'auth/argument-error') {
+      errorMessage = 'Invalid token format.';
+    } else if (error.code === 'auth/id-token-revoked') {
+      errorMessage = 'Token has been revoked. Please sign in again.';
+    }
+    
     return res.status(401).json({
       success: false,
-      error: 'Invalid or expired token',
-      errorDetails: error.message
+      error: errorMessage,
+      errorDetails: error.message,
+      errorCode: error.code
     });
   }
 };
@@ -90,7 +151,10 @@ app.get('/organizations/:orgId/app-roles/:appName', authenticateFirebaseToken, a
     const user = (req as any).user;
 
     // Validate appName
-    const validAppNames: AppNameType[] = ['dashboard', 'clipShowPro', 'callSheet', 'cuesheet'];
+    const validAppNames: AppNameType[] = [
+      'hub', 'pws', 'dashboard', 'clipShowPro', 'callSheet', 'cuesheet',
+      'iwm', 'timecard', 'securityDesk', 'addressBook', 'deliverables', 'cns'
+    ];
     if (!validAppNames.includes(appName as AppNameType)) {
       return res.status(400).json({
         success: false,
@@ -147,7 +211,10 @@ app.get('/app-roles/system-defaults/:appName', async (req, res) => {
     const { appName } = req.params;
 
     // Validate appName
-    const validAppNames: AppNameType[] = ['dashboard', 'clipShowPro', 'callSheet', 'cuesheet'];
+    const validAppNames: AppNameType[] = [
+      'hub', 'pws', 'dashboard', 'clipShowPro', 'callSheet', 'cuesheet',
+      'iwm', 'timecard', 'securityDesk', 'addressBook', 'deliverables', 'cns'
+    ];
     if (!validAppNames.includes(appName as AppNameType)) {
       return res.status(400).json({
         success: false,
@@ -182,7 +249,10 @@ app.post('/organizations/:orgId/app-roles/:appName', authenticateFirebaseToken, 
     const user = (req as any).user;
 
     // Validate appName
-    const validAppNames: AppNameType[] = ['dashboard', 'clipShowPro', 'callSheet', 'cuesheet'];
+    const validAppNames: AppNameType[] = [
+      'hub', 'pws', 'dashboard', 'clipShowPro', 'callSheet', 'cuesheet',
+      'iwm', 'timecard', 'securityDesk', 'addressBook', 'deliverables', 'cns'
+    ];
     if (!validAppNames.includes(appName as AppNameType)) {
       return res.status(400).json({
         success: false,
@@ -246,7 +316,10 @@ app.put('/organizations/:orgId/app-roles/:appName/:roleId', authenticateFirebase
     const user = (req as any).user;
 
     // Validate appName
-    const validAppNames: AppNameType[] = ['dashboard', 'clipShowPro', 'callSheet', 'cuesheet'];
+    const validAppNames: AppNameType[] = [
+      'hub', 'pws', 'dashboard', 'clipShowPro', 'callSheet', 'cuesheet',
+      'iwm', 'timecard', 'securityDesk', 'addressBook', 'deliverables', 'cns'
+    ];
     if (!validAppNames.includes(appName as AppNameType)) {
       return res.status(400).json({
         success: false,
@@ -294,7 +367,10 @@ app.delete('/organizations/:orgId/app-roles/:appName/:roleId', authenticateFireb
     const user = (req as any).user;
 
     // Validate appName
-    const validAppNames: AppNameType[] = ['dashboard', 'clipShowPro', 'callSheet', 'cuesheet'];
+    const validAppNames: AppNameType[] = [
+      'hub', 'pws', 'dashboard', 'clipShowPro', 'callSheet', 'cuesheet',
+      'iwm', 'timecard', 'securityDesk', 'addressBook', 'deliverables', 'cns'
+    ];
     if (!validAppNames.includes(appName as AppNameType)) {
       return res.status(400).json({
         success: false,
@@ -341,7 +417,10 @@ app.post('/organizations/:orgId/app-roles/:appName/validate', authenticateFireba
     const user = (req as any).user;
 
     // Validate appName
-    const validAppNames: AppNameType[] = ['dashboard', 'clipShowPro', 'callSheet', 'cuesheet'];
+    const validAppNames: AppNameType[] = [
+      'hub', 'pws', 'dashboard', 'clipShowPro', 'callSheet', 'cuesheet',
+      'iwm', 'timecard', 'securityDesk', 'addressBook', 'deliverables', 'cns'
+    ];
     if (!validAppNames.includes(appName as AppNameType)) {
       return res.status(400).json({
         success: false,
