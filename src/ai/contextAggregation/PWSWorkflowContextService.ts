@@ -23,7 +23,7 @@ export interface PWSWorkflowContext {
     createdAt?: any;
     updatedAt?: any;
   }>;
-  
+
   // Active session workflows
   sessionWorkflows: Array<{
     sessionId: string;
@@ -34,7 +34,7 @@ export interface PWSWorkflowContext {
     stepCount: number;
     completedSteps: number;
   }>;
-  
+
   // User-created workflows
   userWorkflows: Array<{
     id: string;
@@ -45,7 +45,7 @@ export interface PWSWorkflowContext {
     isTemplate: boolean;
     createdAt?: any;
   }>;
-  
+
   // Statistics
   statistics: {
     totalTemplates: number;
@@ -70,7 +70,7 @@ export async function gatherPWSWorkflowContext(
       .where('organizationId', '==', organizationId)
       .limit(50)
       .get();
-    
+
     const templates = templatesSnapshot.docs.map(doc => {
       const data = doc.data();
       return {
@@ -84,33 +84,79 @@ export async function gatherPWSWorkflowContext(
         updatedAt: data.updatedAt
       };
     });
-    
+
     // Query session workflows (read-only)
-    const sessionsSnapshot = await getDb().collection('sessionWorkflows')
-      .where('organizationId', '==', organizationId)
-      .where('status', 'in', ['ACTIVE', 'PENDING'])
-      .limit(20)
-      .get();
-    
-    const sessionWorkflows = sessionsSnapshot.docs.map(doc => {
-      const data = doc.data();
-      return {
-        sessionId: data.sessionId || '',
-        sessionName: data.sessionName || '',
-        workflowName: data.workflowName || data.name || '',
-        status: data.status || 'PENDING',
-        progress: data.progress || 0,
-        stepCount: data.stepCount || 0,
-        completedSteps: data.completedSteps || 0
-      };
-    });
-    
+    // Query session workflows from multiple potential collections
+    // Frontend uses 'sessions', so we prioritize that. 
+    // Also keeping 'sessionWorkflows' etc. for legacy/migration safety.
+    const collectionsToQuery = ['sessions', 'sessionWorkflows', 'session_workflows', 'workflow-sessions'];
+    const allSessions: any[] = [];
+
+    console.log(`[PWSWorkflowContextService] Querying multiple collections for org ${organizationId}: ${collectionsToQuery.join(', ')}`);
+
+    for (const collectionName of collectionsToQuery) {
+      try {
+        console.log(`[PWSWorkflowContextService] Querying ${collectionName}...`);
+
+        // Debug query first (small limit)
+        const debugSnap = await getDb().collection(collectionName)
+          .where('organizationId', '==', organizationId)
+          .limit(1).get();
+
+        if (!debugSnap.empty) {
+          console.log(`[PWSWorkflowContextService] Found data in ${collectionName}! Sample ID: ${debugSnap.docs[0].id}`);
+        }
+
+        let query = getDb().collection(collectionName).where('organizationId', '==', organizationId);
+
+        // If querying 'sessions' collection specifically, we might need to be careful with status
+        // The frontend service doesn't filter by status in getSessions(), it fetches ALL.
+        // We will fetch all for 'sessions' collection to be safe, then filter in memory if needed.
+        // For other collections, we keep the status filter to avoid junk.
+        if (collectionName !== 'sessions') {
+          query = query.where('status', 'in', ['ACTIVE', 'PENDING', 'active', 'pending', 'IN_PROGRESS', 'in_progress', 'PRE_PRODUCTION', 'PRODUCTION', 'POST_PRODUCTION', 'DELIVERY']);
+        }
+
+        const snapshot = await query.limit(50).get();
+
+        snapshot.docs.forEach(doc => {
+          const d = doc.data() as any;
+          // Avoid duplicates if IDs clash
+          if (!allSessions.find(s => s.sessionId === (d.sessionId || doc.id))) {
+            // Map 'sessions' data structure to the expected format
+            // specific mapping for 'sessions' collection which uses 'title' instead of 'workflowName' often
+            let workflowName = d.workflowName || d.name || d.title || 'Unnamed Workflow';
+            let sessionName = d.sessionName || d.title || d.name || 'Unnamed Session';
+
+            // If it's from 'sessions', the document ID IS the session ID.
+            const sessionId = d.sessionId || doc.id;
+
+            allSessions.push({
+              sessionId: sessionId,
+              sessionName: sessionName,
+              workflowName: workflowName,
+              status: d.status || 'PENDING',
+              progress: d.progress || 0,
+              stepCount: d.stepCount || 0,
+              completedSteps: d.completedSteps || 0
+            });
+          }
+        });
+
+        console.log(`[PWSWorkflowContextService] Found ${snapshot.size} docs in ${collectionName}`);
+      } catch (err) {
+        console.warn(`[PWSWorkflowContextService] Error querying ${collectionName}:`, err);
+      }
+    }
+
+    const sessionWorkflows = allSessions;
+
     // Query user workflows (read-only)
     const userWorkflowsSnapshot = await getDb().collection('user-workflows')
       .where('organizationId', '==', organizationId)
       .limit(30)
       .get();
-    
+
     const userWorkflows = userWorkflowsSnapshot.docs.map(doc => {
       const data = doc.data();
       return {
@@ -123,19 +169,19 @@ export async function gatherPWSWorkflowContext(
         createdAt: data.createdAt
       };
     });
-    
+
     // Calculate statistics
     const totalTemplates = templates.length;
     const totalActiveWorkflows = sessionWorkflows.length;
     const averageWorkflowComplexity = templates.length > 0
       ? templates.reduce((sum, t) => sum + t.nodeCount, 0) / templates.length
       : 0;
-    
+
     // Find most used template
     const mostUsedTemplate = templates.length > 0
       ? templates.reduce((max, t) => t.usageCount > max.usageCount ? t : max, templates[0]).name
       : '';
-    
+
     return {
       templates,
       sessionWorkflows,

@@ -57,35 +57,40 @@ export class UnifiedToolRegistry {
             console.log(`[UnifiedToolRegistry] 🔧 Initializing unified tool registry...`);
 
             // 1. Connect to MCP server and load MCP tools (highest priority)
-            try {
-                this.mcpClient = mcpClientAdapter();
-                await this.mcpClient.connect();
-                const mcpTools = await this.mcpClient.discoverTools();
-                
-                console.log(`[UnifiedToolRegistry] 📡 Loaded ${mcpTools.length} tools from MCP server`);
-                
-                // Convert MCP tools to UnifiedTool format
-                for (const mcpTool of mcpTools) {
-                    this.tools.set(mcpTool.name, {
-                        name: mcpTool.name,
-                        description: mcpTool.description,
-                        parameters: z.any(), // MCP tools use JSON Schema, convert as needed
-                        execute: async (args: any) => {
-                            const result = await this.mcpClient!.callTool(mcpTool.name, args);
-                            return result;
-                        },
-                        source: 'mcp'
-                    });
+            // MODIFIED: Check env var to prevent MCP hanging
+            if (process.env.ENABLE_MCP !== 'false') {
+                try {
+                    this.mcpClient = mcpClientAdapter();
+                    await this.mcpClient.connect();
+                    const mcpTools = await this.mcpClient.discoverTools();
+
+                    console.log(`[UnifiedToolRegistry] 📡 Loaded ${mcpTools.length} tools from MCP server`);
+
+                    // Convert MCP tools to UnifiedTool format
+                    for (const mcpTool of mcpTools) {
+                        this.tools.set(mcpTool.name, {
+                            name: mcpTool.name,
+                            description: mcpTool.description,
+                            parameters: z.any(), // MCP tools use JSON Schema, convert as needed
+                            execute: async (args: any) => {
+                                const result = await this.mcpClient!.callTool(mcpTool.name, args);
+                                return result;
+                            },
+                            source: 'mcp'
+                        });
+                    }
+                } catch (mcpError: any) {
+                    console.warn(`[UnifiedToolRegistry] ⚠️ Failed to load MCP tools: ${mcpError.message}`);
+                    console.warn(`[UnifiedToolRegistry] ⚠️ Continuing with shared tools only`);
                 }
-            } catch (mcpError: any) {
-                console.warn(`[UnifiedToolRegistry] ⚠️ Failed to load MCP tools: ${mcpError.message}`);
-                console.warn(`[UnifiedToolRegistry] ⚠️ Continuing with shared tools only`);
+            } else {
+                console.log('[UnifiedToolRegistry] ⏭️ Skipping MCP initialization (ENABLE_MCP=false)');
             }
 
             // 2. Load shared-backbone-intelligence tools (fallback, lower priority)
             try {
                 const { allTools } = require('shared-backbone-intelligence');
-                
+
                 console.log(`[UnifiedToolRegistry] 📚 Loading ${allTools.length} tools from shared-backbone-intelligence`);
 
                 for (const tool of allTools) {
@@ -250,7 +255,7 @@ export class UnifiedToolRegistry {
         }
     ): Record<string, any> {
         const enriched = { ...args };
-        
+
         // Always add context if provided (tools can use it)
         if (context?.userId && !enriched.userId) {
             enriched.userId = context.userId;
@@ -261,7 +266,7 @@ export class UnifiedToolRegistry {
         if (context?.projectId && !enriched.projectId) {
             enriched.projectId = context.projectId;
         }
-        
+
         return enriched;
     }
 

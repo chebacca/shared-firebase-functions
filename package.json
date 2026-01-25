@@ -81,6 +81,9 @@
     "stripe": "^14.0.0",
     "uuid": "^13.0.0"
   },
+  "overrides": {
+    "langchain-mcp-adapters": "0.0.1"
+  },
   "devDependencies": {
     "@types/adm-zip": "^0.5.7",
     "@types/chart.js": "^4.0.1",

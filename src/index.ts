@@ -77,6 +77,11 @@ export {
   iwmApi
 } from './iwm/index';
 
+// Export IWM callable functions
+export {
+  calculateDirections
+} from './iwm/functions/calculateDirections';
+
 // Export license email function
 export {
   sendLicenseEmail

@@ -18,7 +18,7 @@ import { OllamaToolCallingService } from './services/OllamaToolCallingService';
 import { unifiedToolRegistry } from './services/UnifiedToolRegistry';
 import { agentMemoryService } from './services/AgentMemoryService';
 import { ProjectData } from './services/DocumentAnalysisService';
-import { createGeminiService } from './GeminiService';
+
 
 // Initialize Firebase Admin if not already initialized
 if (!admin.apps.length) {
@@ -59,7 +59,20 @@ interface MasterAgentResponse {
 /**
  * Master Agent v2 - Main entry point
  */
-export const masterAgentV2 = onCall(async (request) => {
+import { createGeminiService, geminiApiKey } from './GeminiService';
+
+// Define secret for Gemini API key (must match definition in GeminiService)
+// const geminiApiKey = defineSecret('GEMINI_API_KEY'); -- USING IMPORTED ONE
+
+/**
+ * Master Agent v2 - Main entry point
+ */
+export const masterAgentV2 = onCall({
+  secrets: [geminiApiKey],
+  cors: true,
+  timeoutSeconds: 300,
+  memory: '1GiB'
+}, async (request) => {
   try {
     const { message, organizationId, userId, projectId, sessionId, conversationId, context } =
       request.data as MasterAgentRequest;
@@ -100,7 +113,10 @@ export const masterAgentV2 = onCall(async (request) => {
     const requiresGemini = geminiOnlyModes.includes(activeMode);
 
     // Route to Gemini for creative writing modes
-    if (requiresGemini) {
+    // MODIFIED: If Ollama is explicitly enabled/preferred, try Ollama first even for creative modes
+    const useOllama = process.env.OLLAMA_ENABLED === 'true' || process.env.REPORT_USE_OLLAMA === 'true';
+
+    if (requiresGemini && !useOllama) {
       console.log(`[MasterAgentV2] 🧠 Using Gemini for creative writing mode: ${activeMode}`);
 
       try {
@@ -270,22 +286,27 @@ export const masterAgentV2 = onCall(async (request) => {
           console.log('[MasterAgentV2] 🧠 Calling Gemini via callAIAgentInternal fallback...');
 
           const geminiResult = await callAIAgentInternal(mockRequest);
+
+          // Correctly extract the AI response text
+          // The response structure from callAIAgentInternal is { success: true, data: { response: "...", ... } }
+          // so geminiResult.data is the payload object containing .response
           const geminiResultData = geminiResult.data || geminiResult;
-          const geminiData = geminiResultData?.data || geminiResultData;
 
-          console.log('[MasterAgentV2] ✅ Gemini fallback successful');
+          console.log('[MasterAgentV2] 🧠 Gemini fallback payload keys:', Object.keys(geminiResultData));
+          console.log('[MasterAgentV2] 🧠 Gemini response value:', geminiResultData.response);
+          console.log('[MasterAgentV2] 🧠 Gemini data.data value:', geminiResultData.data);
 
-          // Format as SupervisorAgent response for consistency
           return {
             success: true,
-            response: geminiData.response || geminiData.message || 'Response generated',
+            // Extract response from the payload object (geminiResultData)
+            response: geminiResultData.response || geminiResultData.message || 'Response generated (No content)',
             agent: 'query' as const,
             routing: {
               agent: 'query',
               confidence: 0.8,
               reasoning: 'Ollama unavailable, automatically using Gemini fallback'
             },
-            toolsUsed: geminiData.contextData?.toolsUsed || [],
+            toolsUsed: geminiResultData.contextData?.toolsUsed || [],
             conversationId: conversationId
           } as MasterAgentResponse;
         } catch (fallbackError: any) {

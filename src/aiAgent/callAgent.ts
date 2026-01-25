@@ -89,8 +89,8 @@ export async function callAIAgentInternal(request: any) {
         hasToken: !!request.auth?.token
       });
 
-      const { agentId, message, context } = request.data;
-      const uid = request.auth?.uid;
+      const { agentId, message, context, organizationId: explicitOrgId, userId: explicitUserId } = request.data;
+      const uid = explicitUserId || request.auth?.uid;
 
       addSpanAttribute('agent.id', agentId);
       addSpanAttribute('user.id', uid);
@@ -109,12 +109,22 @@ export async function callAIAgentInternal(request: any) {
       console.log(`🤖 [AI AGENT] Calling agent: ${agentId} for user: ${uid}`);
 
       // 1. Get User's Organization ID
-      const userRecord = await auth.getUser(uid);
-      const organizationId = userRecord.customClaims?.organizationId as string;
+      // Try explicit organizationId from request first, then fall back to auth claims
+      let organizationId = explicitOrgId;
+
+      if (!organizationId) {
+        const userRecord = await auth.getUser(uid);
+        organizationId = userRecord.customClaims?.organizationId as string;
+      }
 
       if (!organizationId) {
         throw new HttpsError('failed-precondition', 'User does not belong to an organization');
       }
+
+      console.log(`🏢 [AI AGENT] Organization ID: ${organizationId} (source: ${explicitOrgId ? 'explicit' : 'auth claims'})`);
+
+      // Get user record for Sentry context
+      const userRecord = await auth.getUser(uid);
 
       // Set user context for Sentry
       setUserContext(uid, userRecord.email, organizationId);

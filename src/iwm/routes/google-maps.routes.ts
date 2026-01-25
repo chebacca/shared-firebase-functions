@@ -295,4 +295,67 @@ router.post('/layouts', authenticateToken, async (req, res) => {
   }
 });
 
+// Calculate directions and distance between two points
+router.post('/directions', authenticateToken, async (req, res) => {
+  try {
+    const { origin, destination, travelMode = 'DRIVING', waypoints } = req.body;
+    
+    if (!origin || !destination) {
+      return res.status(400).json(createErrorResponse('Origin and destination are required'));
+    }
+
+    const apiKey = getGoogleMapsApiKey();
+    if (!apiKey) {
+      return res.status(500).json(createErrorResponse('Google Maps API key not configured'));
+    }
+
+    // Prepare waypoints if provided
+    const waypointsParam = waypoints && Array.isArray(waypoints) && waypoints.length > 0
+      ? waypoints.map((wp: any) => 
+          typeof wp === 'string' ? wp : `${wp.lat},${wp.lng}`
+        ).join('|')
+      : undefined;
+
+    const response = await mapsClient.directions({
+      params: {
+        origin: typeof origin === 'string' ? origin : `${origin.lat},${origin.lng}`,
+        destination: typeof destination === 'string' ? destination : `${destination.lat},${destination.lng}`,
+        mode: travelMode as 'driving' | 'walking' | 'transit' | 'bicycling',
+        waypoints: waypointsParam,
+        key: apiKey
+      }
+    });
+
+    if (response.data.status !== 'OK') {
+      return res.status(400).json(createErrorResponse(`Directions API error: ${response.data.status}`));
+    }
+
+    if (!response.data.routes || response.data.routes.length === 0) {
+      return res.status(404).json(createErrorResponse('No route found'));
+    }
+
+    const route = response.data.routes[0];
+    const leg = route.legs[0]; // Use first leg for distance/duration
+
+    // Extract polyline if available
+    const polyline = route.overview_polyline?.points;
+
+    res.json(createSuccessResponse({
+      distance: {
+        text: leg.distance.text,
+        value: leg.distance.value // in meters
+      },
+      duration: {
+        text: leg.duration.text,
+        value: leg.duration.value // in seconds
+      },
+      polyline,
+      status: response.data.status
+    }));
+  } catch (error: any) {
+    console.error('Google Maps directions error:', error);
+    res.status(500).json(createErrorResponse('Failed to calculate directions', error.message));
+  }
+});
+
 export default router;
