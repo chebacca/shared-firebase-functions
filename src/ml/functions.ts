@@ -24,7 +24,9 @@ export const semanticSearch = onCall(
     secrets: [geminiApiKey],
     region: 'us-central1',
     invoker: 'public',
-    cors: true
+    cors: true,
+    cpu: 0.5,  // Reduced from 1.0 to work around CPU quota
+    memory: '512MiB'
   },
   async (request) => {
     try {
@@ -165,7 +167,9 @@ export const searchAll = onCall(
 export const findSimilar = onCall(
   {
     secrets: [geminiApiKey],
-    region: 'us-central1'
+    region: 'us-central1',
+    cpu: 0.5,  // Reduced from 1.0 to work around CPU quota
+    memory: '512MiB'
   },
   async (request) => {
     try {
@@ -280,7 +284,9 @@ export const indexEntity = onCall(
  */
 export const parseNetworkBible = onCall(
   {
-    region: 'us-central1'
+    region: 'us-central1',
+    cpu: 0.5,
+    memory: '512MiB',
   },
   async (request) => {
     try {
@@ -312,7 +318,9 @@ export const parseNetworkBible = onCall(
  */
 export const extractBudgetData = onCall(
   {
-    region: 'us-central1'
+    region: 'us-central1',
+    cpu: 0.5,
+    memory: '512MiB',
   },
   async (request) => {
     try {
@@ -344,7 +352,9 @@ export const extractBudgetData = onCall(
  */
 export const parseScript = onCall(
   {
-    region: 'us-central1'
+    region: 'us-central1',
+    cpu: 0.5,
+    memory: '512MiB',
   },
   async (request) => {
     try {
@@ -435,7 +445,9 @@ export const predictBudgetHealth = onCall(
  */
 export const forecastSpending = onCall(
   {
-    region: 'us-central1'
+    region: 'us-central1',
+    cpu: 0.5,
+    memory: '512MiB',
   },
   async (request) => {
     try {
@@ -493,7 +505,9 @@ export const forecastSpending = onCall(
  */
 export const predictAvailability = onCall(
   {
-    region: 'us-central1'
+    region: 'us-central1',
+    cpu: 0.5,
+    memory: '512MiB',
   },
   async (request) => {
     try {
@@ -569,7 +583,9 @@ export const batchIndexCollection = onCall(
   {
     secrets: [geminiApiKey],
     region: 'us-central1',
-    timeoutSeconds: 540 // 9 minutes max
+    timeoutSeconds: 540, // 9 minutes max
+    cpu: 0.5,  // Reduced from 1.0 to work around CPU quota
+    memory: '512MiB'
   },
   async (request) => {
     try {
@@ -617,7 +633,9 @@ export const batchIndexCollection = onCall(
  */
 export const getIndexingStatus = onCall(
   {
-    region: 'us-central1'
+    region: 'us-central1',
+    cpu: 0.5,
+    memory: '512MiB',
   },
   async (request) => {
     try {

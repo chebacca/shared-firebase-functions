@@ -31,7 +31,7 @@ export async function gatherInventoryContext(
     organizationId: string
 ): Promise<InventoryContext> {
     const inventorySnapshot = await getDb()
-        .collection('inventory')
+        .collection('inventoryItems')
         .where('organizationId', '==', organizationId)
         .get();
 
@@ -43,12 +43,17 @@ export async function gatherInventoryContext(
         const data = doc.data();
 
         // Normalize status
-        const status = (data.status || 'available').toLowerCase();
+        const rawStatus = (data.status || 'available').toUpperCase();
+        let status = 'available';
 
-        if (status === 'checked_out' || status === 'checkedout' || data.isCheckedOut) {
+        if (rawStatus === 'CHECKED_OUT' || rawStatus === 'CHECKEDOUT' || data.isCheckedOut) {
+            status = 'checked_out';
             checkedOutCount++;
-        } else if (status === 'available') {
+        } else if (rawStatus === 'ACTIVE' || rawStatus === 'AVAILABLE') {
+            status = 'available';
             availableCount++;
+        } else {
+            status = rawStatus.toLowerCase();
         }
 
         if (data.quantity !== undefined && data.minQuantity !== undefined && data.quantity <= data.minQuantity) {
@@ -60,7 +65,7 @@ export async function gatherInventoryContext(
             name: data.name || data.itemName || 'Unnamed Item',
             category: data.category || 'Uncategorized',
             status: status,
-            assignedTo: data.checkedOutTo || data.assignedTo,
+            assignedTo: data.checkedOutBy || data.assignedTo,
             location: data.location || data.warehouseLocation
         };
     });

@@ -87,8 +87,11 @@ export class DataQueryAgent {
 
             return {
                 answer: response.message,
-                toolsUsed: [], // Track in future iterations
-                data: response
+                toolsUsed: response.tool_results?.map(t => t.tool_name) || [],
+                data: {
+                    ...response,
+                    tool_results: response.tool_results // Explicitly pass results
+                }
             };
         } catch (error: any) {
             // Re-throw Ollama errors so they can be caught by masterAgentV2 fallback logic

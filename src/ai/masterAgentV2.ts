@@ -105,19 +105,28 @@ export const masterAgentV2 = onCall({
     const activeMode = context?.activeMode || 'none';
     console.log(`[MasterAgentV2] 🎯 Active mode: ${activeMode}`);
 
-    // Modes that require Gemini for creative writing quality:
-    // - plan_mode: Architect planning requires superior reasoning
-    // - script: Script writing requires creative writing quality (Gemini outperforms Ollama/Qwen)
-    // - scripting: Script editing/refinement requires creative writing quality
-    const geminiOnlyModes = ['plan_mode', 'script', 'scripting'];
-    const requiresGemini = geminiOnlyModes.includes(activeMode);
+    // Check Ollama configuration
+    const ollamaEnabled = process.env.OLLAMA_ENABLED === 'true';
+    const ollamaPreferred = process.env.REPORT_USE_OLLAMA === 'true';
+    const useOllamaFirst = ollamaEnabled || ollamaPreferred;
 
-    // Route to Gemini for creative writing modes
-    // MODIFIED: If Ollama is explicitly enabled/preferred, try Ollama first even for creative modes
-    const useOllama = process.env.OLLAMA_ENABLED === 'true' || process.env.REPORT_USE_OLLAMA === 'true';
+    console.log(`[MasterAgentV2] 🔧 Configuration:`);
+    console.log(`   OLLAMA_ENABLED: ${process.env.OLLAMA_ENABLED || 'not set'}`);
+    console.log(`   REPORT_USE_OLLAMA: ${process.env.REPORT_USE_OLLAMA || 'not set'}`);
+    console.log(`   OLLAMA_BASE_URL: ${process.env.OLLAMA_BASE_URL || 'not set'}`);
+    console.log(`   Use Ollama First: ${useOllamaFirst}`);
 
-    if (requiresGemini && !useOllama) {
-      console.log(`[MasterAgentV2] 🧠 Using Gemini for creative writing mode: ${activeMode}`);
+    // Modes that traditionally benefit from Gemini's creative writing quality:
+    // - plan_mode: Architect planning (but Ollama can handle this too)
+    // - script: Script writing (but Ollama qwen2.5:14b and gemma2:27b are capable)
+    // - scripting: Script editing/refinement
+    const geminiPreferredModes = ['plan_mode', 'script', 'scripting'];
+    const isGeminiPreferredMode = geminiPreferredModes.includes(activeMode);
+
+    // PRIORITY: Use Ollama first if enabled, regardless of mode
+    // Only skip to Gemini if Ollama is explicitly disabled
+    if (isGeminiPreferredMode && !useOllamaFirst) {
+      console.log(`[MasterAgentV2] 🧠 Using Gemini for creative writing mode: ${activeMode} (Ollama disabled)`);
 
       try {
         // Use callAIAgentInternal which has the full Gemini integration with Architect mode support
@@ -162,8 +171,9 @@ export const masterAgentV2 = onCall({
       }
     }
 
-    // Use Supervisor (Ollama) for all other modes - TRY OLLAMA FIRST
-    console.log(`[MasterAgentV2] 🎯 Using Supervisor Agent (Ollama) for mode: ${activeMode}`);
+    // Use Supervisor (Ollama) for all other modes - OLLAMA FIRST PRIORITY
+    console.log(`[MasterAgentV2] 🎯 Routing to Supervisor Agent (Ollama-first) for mode: ${activeMode}`);
+    console.log(`[MasterAgentV2] 🔄 Strategy: Try Ollama first, fallback to Gemini if unavailable`);
     console.log(`[MasterAgentV2] 🔄 Attempting Ollama first, will fallback to Gemini if Ollama fails during execution`);
 
     // Initialize services

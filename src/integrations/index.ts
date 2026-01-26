@@ -18,29 +18,12 @@ export {
   getGoogleIntegrationStatus
 } from './googleDrive';
 
-// Airtable functions
-export {
-  initiateAirtableOAuth,
-  handleAirtableOAuthCallback,
-  getAirtableIntegrationStatus,
-  handleAirtableWebhook,
-  processAirtableWebhookQueue,
-  syncAirtableToFirebase,
-  syncFirebaseToAirtable,
-  importAirtableData,
-  exportToAirtable,
-  scheduledAirtableSync,
-  validateAirtableConnection,
-  getAirtableBases,
-  getAirtableTables
-} from './airtable';
-
-// Airtable sync queue functions
-export {
-  processAirtableSyncQueue,
-  processSyncBatch,
-  cleanupSyncQueue
-} from './airtableSyncQueue';
+// Airtable integration is intentionally disabled (not used).
+// Keeping these exports disabled avoids pulling in the `airtable` dependency
+// during Firebase Functions analysis/deploy.
+//
+// If we ever re-enable Airtable, we should also add feature-flagged/lazy imports
+// so missing/optional deps don't break deploy-time analysis.
 
 // Box functions - TEMPORARILY DISABLED
 // export {

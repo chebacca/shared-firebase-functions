@@ -11,6 +11,8 @@ import { validateOrganizationAccess } from '../shared/utils';
 export const getInventoryAvailability = onCall(
   {
     cors: true,
+    cpu: 0.5,
+    memory: '512MiB',
   },
   async (request) => {
     try {

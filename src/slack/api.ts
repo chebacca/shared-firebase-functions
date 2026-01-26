@@ -125,6 +125,8 @@ export const slackGetWorkspaceInfo = onCall(
     region: 'us-central1',
     cors: true,
     secrets: [encryptionKey],
+    cpu: 0.5,
+    memory: '512MiB',
   },
   async (request) => {
     try {
@@ -169,6 +171,9 @@ export const slackListChannels = onCall(
     region: 'us-central1',
     cors: true, // Allow all origins for development, production origins handled by Firebase
     secrets: [encryptionKey],
+    cpu: 0.5,
+    memory: '1GiB', // Increased memory for large channel lists
+    timeoutSeconds: 300, // Increased timeout 
   },
   async (request) => {
     let connectionId: string | undefined;
@@ -363,6 +368,8 @@ export const slackOpenDM = onCall(
     region: 'us-central1',
     cors: true,
     secrets: [encryptionKey],
+    cpu: 0.5,
+    memory: '512MiB',
   },
   async (request) => {
     try {
@@ -437,6 +444,8 @@ export const slackGetChannelHistory = onCall(
     region: 'us-central1',
     cors: true,
     secrets: [encryptionKey],
+    cpu: 0.5,
+    memory: '512MiB',
   },
   async (request) => {
     try {
@@ -694,6 +703,8 @@ export const slackSendMessage = onCall(
     region: 'us-central1',
     cors: true,
     secrets: [encryptionKey],
+    cpu: 0.5,
+    memory: '512MiB',
   },
   async (request) => {
     try {
@@ -747,6 +758,8 @@ export const slackAddReaction = onCall(
     region: 'us-central1',
     cors: true,
     secrets: [encryptionKey],
+    cpu: 0.5,
+    memory: '512MiB',
   },
   async (request) => {
     try {

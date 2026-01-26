@@ -12,6 +12,8 @@ import * as admin from 'firebase-admin';
 export const checkoutInventoryToProject = onCall(
   {
     cors: true,
+    cpu: 0.5,
+    memory: '512MiB',
     region: 'us-central1',
   },
   async (request) => {

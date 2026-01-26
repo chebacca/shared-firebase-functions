@@ -33,6 +33,7 @@ export interface ChatResponse {
     message: string;
     tool_calls?: ToolCall[];
     finish_reason?: 'stop' | 'tool_calls' | 'length';
+    tool_results?: any[]; // New field to Capture raw tool data
 }
 
 export class OllamaToolCallingService extends OllamaAnalysisService {
@@ -87,7 +88,7 @@ export class OllamaToolCallingService extends OllamaAnalysisService {
         }
 
         // Convert tools to Ollama format
-        const toolSchemas = availableTools.map(tool => 
+        const toolSchemas = availableTools.map(tool =>
             this.convertToolToOllamaFormat(tool)
         );
 
@@ -101,6 +102,7 @@ export class OllamaToolCallingService extends OllamaAnalysisService {
         // ReAct Loop
         let iteration = 0;
         let currentMessages = [...conversationMessages];
+        let aggregatedToolResults: any[] = []; // Track all tool results across iterations
 
         while (iteration < this.maxIterations) {
             iteration++;
@@ -152,6 +154,9 @@ export class OllamaToolCallingService extends OllamaAnalysisService {
                     }];
                 }
 
+                // Collect results
+                aggregatedToolResults.push(...toolResults);
+
                 // Step 4: Add tool results back to conversation
                 for (const result of toolResults) {
                     currentMessages.push({
@@ -167,7 +172,11 @@ export class OllamaToolCallingService extends OllamaAnalysisService {
             } else {
                 // No tool calls - we have final answer
                 console.log('[OllamaToolCallingService] ✅ Final answer received');
-                return response;
+                // return response with aggregated tool results
+                return {
+                    ...response,
+                    tool_results: aggregatedToolResults
+                };
             }
         }
 
@@ -175,7 +184,8 @@ export class OllamaToolCallingService extends OllamaAnalysisService {
         console.warn('[OllamaToolCallingService] ⚠️ Max iterations reached, returning last response');
         return {
             message: 'Maximum iterations reached. Please try a simpler query.',
-            finish_reason: 'length'
+            finish_reason: 'length',
+            tool_results: aggregatedToolResults
         };
     }
 
@@ -186,9 +196,9 @@ export class OllamaToolCallingService extends OllamaAnalysisService {
         messages: ChatMessage[],
         toolSchemas: any[]
     ): Promise<ChatResponse> {
-        const activeUrl = await this.resolveOllamaBaseUrl();
-        const models = this.getModelConfig();
-        const model = models.fast; // Use fast model for tool calling
+        const config = await this.resolveOllamaConfig();
+        const activeUrl = config.baseUrl;
+        const model = config.model;
 
         // Convert messages to Ollama format
         const ollamaMessages = messages.map(msg => {
@@ -274,7 +284,7 @@ export class OllamaToolCallingService extends OllamaAnalysisService {
             organizationId?: string;
             projectId?: string;
         }
-    ): Promise<Array<{ tool_call_id?: string; tool_name: string; content: string; [key: string]: any }>> {
+    ): Promise<Array<{ tool_call_id?: string; tool_name: string; content: string;[key: string]: any }>> {
         const results = [];
 
         for (const toolCall of toolCalls) {
@@ -338,7 +348,7 @@ export class OllamaToolCallingService extends OllamaAnalysisService {
             for (const [key, value] of Object.entries(shape)) {
                 const fieldSchema = value as z.ZodType<any>;
                 properties[key] = this.zodTypeToJsonSchema(fieldSchema);
-                
+
                 // Check if required (not optional)
                 if (!(fieldSchema instanceof z.ZodOptional)) {
                     required.push(key);
@@ -429,7 +439,7 @@ export class OllamaToolCallingService extends OllamaAnalysisService {
      * Build system prompt with tool descriptions
      */
     private buildSystemPromptWithTools(tools: any[]): string {
-        const toolDescriptions = tools.map(tool => 
+        const toolDescriptions = tools.map(tool =>
             `- ${tool.name}: ${tool.description || 'No description'}`
         ).join('\n');
 
@@ -453,9 +463,9 @@ Always explain what you're doing and why.`;
             throw new Error('Ollama service is not available. Please ensure Ollama is running and accessible.');
         }
 
-        const activeUrl = await this.resolveOllamaBaseUrl();
-        const models = this.getModelConfig();
-        const model = models.fast;
+        const config = await this.resolveOllamaConfig();
+        const activeUrl = config.baseUrl;
+        const model = config.model;
 
         const response = await fetch(`${activeUrl}/api/chat`, {
             method: 'POST',
@@ -484,33 +494,41 @@ Always explain what you're doing and why.`;
     }
 
     /**
-     * Resolve base URL (uses parent class logic via reflection)
+     * Resolve configuration (URL and Model), checking Firestore for overrides
      */
-    private async resolveOllamaBaseUrl(): Promise<string> {
-        // Access parent class private property
-        const baseUrl = (this as any).ollamaBaseUrl || process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
-        
-        // Check Firestore for dynamic URL
+    private async resolveOllamaConfig(): Promise<{ baseUrl: string; model: string }> {
+        // Defaults from environment or fallback
+        let baseUrl = (this as any).ollamaBaseUrl || process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
+        let fastModel = process.env.OLLAMA_MODEL_FAST || 'phi4-mini';
+
+        // Check Firestore for dynamic configuration
         try {
             const configDoc = await admin.firestore()
                 .collection('_system').doc('config')
                 .collection('ai').doc('ollama').get();
 
-            if (configDoc.exists && configDoc.data()?.baseUrl) {
-                return configDoc.data()!.baseUrl;
+            if (configDoc.exists) {
+                const data = configDoc.data();
+                if (data?.baseUrl) {
+                    baseUrl = data.baseUrl;
+                }
+                if (data?.fastModel) {
+                    fastModel = data.fastModel;
+                    console.log(`[OllamaToolCallingService] 🚀 Using dynamic model from Firestore: ${fastModel}`);
+                }
             }
         } catch (error) {
             console.warn('[OllamaToolCallingService] ⚠️ Failed to fetch dynamic config:', error);
         }
 
-        return baseUrl;
+        return { baseUrl, model: fastModel };
     }
 
-    // Access to parent class properties - use private property access
-    private getModelConfig(): { fast: string; quality: string } {
-        return {
-            fast: process.env.OLLAMA_MODEL_FAST || 'phi4-mini',
-            quality: process.env.OLLAMA_MODEL_QUALITY || 'gemma3:12b'
-        };
+    /**
+     * Resolve base URL (Legacy/helper Wrapper)
+     */
+    private async resolveOllamaBaseUrl(): Promise<string> {
+        const config = await this.resolveOllamaConfig();
+        return config.baseUrl;
     }
 }

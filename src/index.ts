@@ -21,7 +21,12 @@ if (admin.apps.length === 0) {
 import { initializeTelemetry } from './observability/telemetry';
 // Sentry is optional - uncomment to enable when needed
 // Reports
-export * from './reports/reportFunctions';
+export {
+  generateProjectReport,
+  analyzeProject,
+  getReportStatus,
+  exportReport
+} from './reports/reportFunctions';
 // import { initializeSentry } from './observability/sentry';
 
 // Initialize observability stack (Google Cloud Monitoring via OpenTelemetry)
@@ -32,8 +37,8 @@ initializeTelemetry();
 // Export email notification functions (both callable and HTTP)
 export {
   sendNotificationEmail,
-  // testEmailConnection,
-  // testEmailConnectionHttp
+  testEmailConnection,
+  testEmailConnectionHttp
 } from './notifications/sendEmail';
 
 // Export notification CRUD functions
@@ -71,16 +76,6 @@ export {
 export {
   iwmUpdateClaims
 } from './iwm/iwmUpdateClaims';
-
-// Export IWM API
-export {
-  iwmApi
-} from './iwm/index';
-
-// Export IWM callable functions
-export {
-  calculateDirections
-} from './iwm/functions/calculateDirections';
 
 // Export license email function
 export {
@@ -122,7 +117,7 @@ export {
 // Export trashcan cleanup functions
 export {
   cleanupTrashcan,
-  // cleanupTrashcanManual
+  cleanupTrashcanManual
 } from './clipShowPro/cleanupTrashcan';
 
 // Export permissions matrix trigger (auto-syncs Permissions Matrix to Firebase Auth claims)
@@ -146,20 +141,114 @@ export {
 } from './callsheet';
 
 // Export Slack integration functions
-export * from './slack';
+export {
+  slackOAuthInitiate,
+  slackOAuthRefresh,
+  slackRevokeAccess,
+  slackOAuthCallback
+} from './slack/oauth';
+export {
+  checkScheduledMessages,
+  checkReminders
+} from './slack/scheduled';
+export {
+  slackGetWorkspaceInfo,
+  slackListChannels,
+  slackOpenDM,
+  slackGetChannelHistory,
+  slackSendMessage,
+  slackAddReaction,
+  slackGetThreadReplies,
+  slackUploadFile,
+  slackGetUsers,
+  slackUpdateMessage,
+  slackDeleteMessage,
+  slackPinMessage,
+  slackUnpinMessage,
+  slackGetChannelInfo,
+  slackSearchMessages,
+  slackRemoveReaction,
+  slackSetTyping,
+  slackGetUserPresence,
+  slackGetFileInfo,
+  slackGetFileList,
+  slackScheduleMessage,
+  slackSetReminder,
+  slackGetPinnedMessages
+} from './slack/api';
+export { slackWebhookHandler } from './slack/webhook';
+export {
+  saveSlackConfig,
+  disconnectSlackWorkspaces,
+  getSlackConfigStatus
+} from './slack/config';
 
 // Export Google Drive integration functions
-export * from './google';
+export {
+  googleOAuthInitiate,
+  googleOAuthRefresh,
+  googleRevokeAccess,
+  googleOAuthCallback
+} from './google/oauth';
+export {
+  saveGoogleConfig,
+  saveGoogleConfigHttp,
+  getGoogleConfigStatus
+} from './google/config';
 
 // Export Apple Connect integration functions
-export * from './apple';
+export {
+  appleConnectOAuthInitiate,
+  appleConnectOAuthCallback,
+  appleConnectOAuthCallbackHttp,
+  appleConnectRevokeAccess
+} from './apple/oauth';
+export {
+  appleConnectSyncDirectory,
+  appleConnectGetDevices,
+  appleConnectGetFiles,
+  appleConnectGetConfigStatus
+} from './apple/index';
+export { getAppleConnectConfigStatus } from './apple/config';
 
 // Export Webex integration functions
-export * from './webex';
+export {
+  webexOAuthInitiate,
+  webexOAuthRefresh,
+  webexOAuthRevoke,
+  webexOAuthCallback
+} from './webex/oauth';
+export {
+  saveWebexConfig,
+  getWebexConfigStatus
+} from './webex/config';
 
 // Export Video Conferencing functions
-export * from './videoConferencing';
-export * from './location';
+export {
+  getVideoConferencingProviders,
+  getVideoConferencingProvidersHttp
+} from './videoConferencing/index';
+export {
+  createWebexMeeting,
+  scheduleWebexMeeting,
+  updateWebexMeeting,
+  cancelWebexMeeting,
+  getWebexMeetingDetails
+} from './videoConferencing/webex';
+export {
+  createMeetMeeting,
+  scheduleMeetMeeting,
+  updateMeetMeeting,
+  cancelMeetMeeting,
+  getMeetMeetingDetails,
+  scheduleMeetMeetingHttp
+} from './videoConferencing/googleMeet';
+
+// Export Location functions
+export {
+  qrScanCheckInOut,
+  qrScanCheckInOutHttp
+} from './location/qrScanCheckInOut';
 
 // Export Travel Management functions
 export {
@@ -169,7 +258,26 @@ export {
 } from './travel';
 
 // Export Production Workflow System functions
-export * from './workflow';
+export {
+  workflowRoutes,
+  appRoleDefinitionsRoutes,
+  dynamicRolesRoutes,
+  environmentRoutes,
+  geminiRoutes,
+  googleMapsRoutes,
+  unifiedTeamMembersRoutes,
+  weatherRoutes,
+  ollamaRoutes,
+  sendDeliveryPackageEmail,
+  generateDeliveryPackageZip,
+  proxyFileDownload,
+  onWorkflowStepUpdate,
+  enhancedDeliverableProcessor,
+  WorkflowTemplate,
+  AdminSDKDataValidator,
+  dynamicRoleService,
+  LicenseClaimsService
+} from './workflow';
 
 // Export App Role Definition Service
 export { appRoleDefinitionService, AppRoleDefinitionService } from './roles/AppRoleDefinitionService';
@@ -178,17 +286,58 @@ export { appRoleDefinitionService, AppRoleDefinitionService } from './roles/AppR
 export { appRoleDefinitionsApi } from './roles/appRoleDefinitionsHttp';
 
 // Export Box integration functions (NEW MODULAR STRUCTURE - OAuth & Config)
-// OAuth functions: boxOAuthInitiate, boxOAuthRefresh, boxRevokeAccess, boxOAuthCallback, boxOAuthCallbackHttp
-// Config functions: saveBoxConfig, getBoxConfigStatus
-export * from './box';
-// Explicitly export HTTP callback functions for server-side redirects
-export { boxOAuthCallbackHttp, boxOAuthInitiateHttp } from './box/oauth';
-export { dropboxOAuthCallbackHttp, dropboxOAuthInitiateHttp } from './dropbox/oauth';
+export {
+  boxOAuthInitiate,
+  boxOAuthRefresh,
+  boxRevokeAccess,
+  boxOAuthCallback,
+  boxOAuthCallbackHttp,
+  boxOAuthInitiateHttp
+} from './box/oauth';
+export {
+  saveBoxConfig,
+  getBoxConfigStatus
+} from './box/config';
+export {
+  getBoxAccessToken,
+  getBoxIntegrationStatus,
+  listBoxFolders,
+  getBoxFiles,
+  createBoxFolder,
+  uploadToBoxHttp,
+  indexBoxFolder,
+  boxStream,
+  downloadBoxFile
+} from './box/files';
 
 // Export Dropbox integration functions (NEW MODULAR STRUCTURE - OAuth & Config)
-// OAuth functions: dropboxOAuthInitiate, dropboxOAuthRefresh, dropboxRevokeAccess, dropboxOAuthCallback
-// Config functions: saveDropboxConfig, getDropboxConfigStatus
-export * from './dropbox';
+export {
+  dropboxOAuthInitiate,
+  dropboxOAuthRefresh,
+  dropboxRevokeAccess,
+  dropboxOAuthCallback,
+  dropboxOAuthCallbackHttp,
+  dropboxOAuthInitiateHttp
+} from './dropbox/oauth';
+export {
+  saveDropboxConfig,
+  getDropboxConfigStatus
+} from './dropbox/config';
+export {
+  getDropboxAccessToken,
+  getDropboxIntegrationStatus,
+  listDropboxFolders,
+  getDropboxFiles,
+  createDropboxFolder,
+  uploadToDropbox,
+  indexDropboxFolder,
+  setDropboxAccessToken,
+  updateDropboxAccountInfo
+} from './dropbox/files';
+
+// Export IWM functions
+export { iwmApi } from './iwm/index';
+export { calculateDirections } from './iwm/functions/calculateDirections';
 
 // Export Unified OAuth Functions (NEW - Works with ANY provider)
 // These replace the provider-specific OAuth functions above
@@ -214,10 +363,20 @@ export {
   cleanupExpiredOAuthStates
 } from './integrations/unified-oauth/schedules/cleanupStates';
 
-// Export Migration Function
-// export {
-//   runOAuthMigration
-// } from './integrations/unified-oauth/migrations/migrationFunction';
+// Export Migration Functions
+export {
+  runOAuthMigration
+} from './integrations/unified-oauth/migrations/migrationFunction';
+
+export {
+  migrateCloudIntegrations,
+  migrateCloudIntegrationsHttp
+} from './migrations/migrateCloudIntegrations';
+
+export {
+  migrateBoxTokens,
+  migrateDropboxTokens
+} from './migrations/migrateLegacyTokens';
 
 
 
@@ -238,7 +397,7 @@ export {
 // Export unified user management functions
 export {
   getUserInfo,
-  // getUserInfoHttp,
+  getUserInfoHttp,
   findUserByEmail,
   ensureUserDocument,
   updateUserClaims,
@@ -250,11 +409,11 @@ export {
   getUserProjects,
   getUserActiveProjects,
   discoverCollections,
-  // discoverCollectionsHttp,
+  discoverCollectionsHttp,
   transferAuthToken,
   getSystemStats,
   getParticipantDetails,
-  // healthCheck
+  healthCheck
 } from './unified';
 
 // Export unified auth functions (refreshAuthClaims for all apps)
@@ -277,6 +436,10 @@ export { createScriptPackage } from './ai/scriptTools';
 export { createWorkflow } from './ai/workflowCloudFunctions';
 export { executeAIAction } from './ai/executeAIAction';
 export { masterAgentV2 } from './ai/masterAgentV2';
+export { aiPredictiveAutomation } from './ai/aiPredictiveAutomation';
+export { generateScheduleAlerts, triggerAlertGeneration, generateAlerts } from './ai/scheduleAlertGenerator';
+export { storeAIApiKey } from './ai/storeAIApiKey';
+export { testAIApiKey } from './ai/testApiKey';
 
 // Export Clip Show Pro AI and Workflow functions
 export {
@@ -286,7 +449,7 @@ export {
   notifyPitchAssignment,
   notifyLicensingSpecialist,
   getPitchAnalytics,
-  // clipShowProHealthCheck,
+  clipShowProHealthCheck,
   autoCreateStory,
   syncPitchFromStory,
   onPitchCreated,
@@ -295,15 +458,6 @@ export {
   onClearanceCreated,
   onClearanceUpdated
 } from './clipShowPro';
-
-// Export System Alerts
-export * from './utils/systemAlerts';
-
-// Export migration functions
-// export {
-//   migrateCloudIntegrations,
-//   migrateCloudIntegrationsHttp
-// } from './migrations/migrateCloudIntegrations';
 
 // Export main API function
 export { api, uploadNetworkDeliveryBible, getNetworkDeliveryDeliverables } from './api';
@@ -363,11 +517,11 @@ export {
 // Export FCM functions
 export {
   registerFCMToken,
-  // registerFCMTokenHttp,
+  registerFCMTokenHttp,
   subscribeToFCMTopic,
-  // subscribeToFCMTopicHttp,
+  subscribeToFCMTopicHttp,
   unsubscribeFromFCMTopic,
-  // unsubscribeFromFCMTopicHttp
+  unsubscribeFromFCMTopicHttp
 } from './fcm';
 
 // Export messaging functions (callable versions only - HTTP versions removed to reduce CPU quota)
@@ -388,7 +542,7 @@ export {
 // export * from './aiAgent'; 
 export {
   callAIAgent,
-  // getAIAgentHealth,
+  getAIAgentHealth,
   getUserPreferences
 } from './aiAgent';
 
@@ -414,7 +568,7 @@ export {
   authenticateTeamMember,
   authenticateTeamMemberHttp,  // 🔧 CRITICAL FIX: Export HTTP function for CORS support
   cleanupExpiredCallSheets,
-  // updateCallSheetAccessCode  // Temporary function to update access codes
+  updateCallSheetAccessCode  // Temporary function to update access codes
 } from './callSheets';
 
 // Export team management functions
@@ -432,9 +586,9 @@ export {
 } from './orgHierarchy';
 
 // Export duplicate user cleanup function
-// export {
-//   cleanupDuplicateUsers
-// } from './system/cleanupDuplicateUsers';
+export {
+  cleanupDuplicateUsers
+} from './system/cleanupDuplicateUsers';
 
 // Export settings functions
 export {
@@ -444,14 +598,17 @@ export {
 
 // Export DocuSign functions
 export { storeDocuSignConfig } from './clipShowPro/docusign/storeDocuSignConfig';
-// export { testDocuSignConnection } from './clipShowPro/docusign/testDocuSignConnection';
+export { testDocuSignConnection } from './clipShowPro/docusign/testDocuSignConnection';
 export { createDocuSignEnvelope } from './clipShowPro/docusign/createDocuSignEnvelope';
 export { getDocuSignEnvelopeStatus } from './clipShowPro/docusign/getDocuSignEnvelopeStatus';
 export { downloadDocuSignEnvelopeDocument } from './clipShowPro/docusign/downloadDocuSignEnvelopeDocument';
 export { docuSignWebhookHandler } from './clipShowPro/docusign/webhookHandler';
 
 // QC Functions
-export * from './qc';
+export {
+  onQCFileUpload,
+  triggerQCAnalysis
+} from './qc';
 
 // Export ML Services functions
 export {
@@ -468,12 +625,6 @@ export {
   batchIndexCollection,
   getIndexingStatus
 } from './ml/functions';
-
-// Export migration functions
-// export {
-//   migrateBoxTokens,
-//   migrateDropboxTokens
-// } from './migrations/migrateLegacyTokens';
 
 // Export project resources functions
 export {
@@ -499,7 +650,7 @@ export {
   getProjectTeamMembersForContact,
   getProjectTeamMembersForContactHttp,
   manualCheckInOut,
-  // manualCheckInOutHttp,
+  manualCheckInOutHttp,
 } from './security';
 
 // Export overtime request functions
@@ -515,9 +666,6 @@ export {
   getActiveOvertimeSession,
   checkOvertimeSessions
 } from './overtime';
-
-// QC Functions
-export * from './qc';
 
 // NOTE: Other functions commented out due to TypeScript errors
 

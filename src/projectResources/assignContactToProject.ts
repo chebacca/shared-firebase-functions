@@ -12,6 +12,8 @@ import * as admin from 'firebase-admin';
 export const assignContactToProject = onCall(
   {
     cors: true,
+    cpu: 0.5,
+    memory: '512MiB',
   },
   async (request) => {
     try {

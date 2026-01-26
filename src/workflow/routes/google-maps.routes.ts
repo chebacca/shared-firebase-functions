@@ -15,6 +15,22 @@ import { Client } from '@googlemaps/google-maps-services-js';
 const router: Router = Router();
 const mapsClient = new Client({});
 
+// Helper to get API key from Secrets (preferred) or Environment (fallback)
+const getEffectiveApiKey = (): string => {
+  try {
+    const secretKey = getGoogleMapsApiKey();
+    if (secretKey && secretKey.trim().length > 0) {
+      return secretKey.trim();
+    }
+  } catch (error) {
+    // Secret not available (e.g. local emulator without secrets)
+  }
+
+  // Fallback to environment variables
+  const config = getApiServiceConfig();
+  return (config.googleMaps.apiKey || '').trim();
+};
+
 // Google Maps API configuration endpoint (public - no auth required)
 router.get('/config', async (req, res) => {
   try {
@@ -32,14 +48,14 @@ router.get('/config', async (req, res) => {
       const config = getApiServiceConfig();
       apiKey = (config.googleMaps.apiKey || '').trim();
     }
-    
+
     console.log('🗺️ [Workflow Google Maps Config] API key check:', {
       hasKey: !!apiKey,
       keyLength: apiKey?.length || 0,
       keyPrefix: apiKey ? `${apiKey.substring(0, 10)}...` : 'none',
       source: apiKey ? 'secret-or-env' : 'none'
     });
-    
+
     // Build response with API key if available
     const responseData: any = {
       success: true,
@@ -47,12 +63,12 @@ router.get('/config', async (req, res) => {
       isConfigured: !!apiKey && apiKey.length > 0,
       timestamp: new Date().toISOString()
     };
-    
+
     // Only include apiKey if it exists (for security, don't send empty strings)
     if (apiKey && apiKey.length > 0) {
       responseData.apiKey = apiKey;
     }
-    
+
     res.json(responseData);
   } catch (error) {
     console.error('Google Maps config error:', error);
@@ -70,9 +86,9 @@ router.get('/locations/:mapLayoutId', authenticateToken, async (req, res) => {
     const mapLayoutId = Array.isArray(req.params.mapLayoutId) ? req.params.mapLayoutId[0] : req.params.mapLayoutId;
     const { entityType } = req.query;
     const userId = req.user?.uid;
-    
+
     console.log('🗺️ Getting entity locations for map layout:', mapLayoutId, 'entityType:', entityType, 'user:', userId);
-    
+
     if (!mapLayoutId) {
       return res.status(400).json({
         success: false,
@@ -87,15 +103,15 @@ router.get('/locations/:mapLayoutId', authenticateToken, async (req, res) => {
     if (entityType) {
       query = query.where('entityType', '==', entityType);
     }
-    
+
     const locationsQuery = await query.get();
     const locations = locationsQuery.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }));
-    
+
     console.log('🗺️ Found', locations.length, 'entity locations for map layout:', mapLayoutId);
-    
+
     return res.json(locations);
   } catch (error) {
     console.error('Google Maps locations error:', error);
@@ -112,7 +128,7 @@ router.post('/locations', authenticateToken, async (req, res) => {
   try {
     const { mapLayoutId, entityType, entityId, latitude, longitude, address, placeId, positionX, positionY, metadata } = req.body;
     const userId = req.user?.uid;
-    
+
     console.log('🗺️ Saving entity location:', {
       mapLayoutId,
       entityType,
@@ -120,7 +136,7 @@ router.post('/locations', authenticateToken, async (req, res) => {
       position: { lat: latitude, lng: longitude },
       userId
     });
-    
+
     if (!mapLayoutId || !entityType || !entityId || latitude === undefined || longitude === undefined) {
       return res.status(400).json({
         success: false,
@@ -189,16 +205,16 @@ router.post('/locations', authenticateToken, async (req, res) => {
       // Fetch the newly created document to get actual timestamp values
       locationDoc = await locationDoc.get();
     }
-    
+
     // Get the document data (this will have actual timestamps, not FieldValue objects)
     const docData = locationDoc.data();
     const savedLocation = {
       id: locationDoc.id,
       ...docData
     };
-    
+
     console.log('🗺️ Saved entity location:', savedLocation.id);
-    
+
     return res.json({
       success: true,
       location: savedLocation
@@ -218,9 +234,9 @@ router.delete('/locations/:mapLayoutId/:entityType/:entityId', authenticateToken
   try {
     const { mapLayoutId, entityType, entityId } = req.params;
     const userId = req.user?.uid;
-    
+
     console.log('🗺️ Deleting entity location:', { mapLayoutId, entityType, entityId }, 'by user:', userId);
-    
+
     if (!mapLayoutId || !entityType || !entityId) {
       return res.status(400).json({
         success: false,
@@ -245,9 +261,9 @@ router.delete('/locations/:mapLayoutId/:entityType/:entityId', authenticateToken
     }
 
     await existingQuery.docs[0].ref.delete();
-    
+
     console.log('🗺️ Deleted entity location:', { mapLayoutId, entityType, entityId });
-    
+
     return res.json({
       success: true,
       message: 'Entity location deleted successfully'
@@ -266,8 +282,8 @@ router.delete('/locations/:mapLayoutId/:entityType/:entityId', authenticateToken
 router.post('/geocode', authenticateToken, async (req, res) => {
   try {
     const { address } = req.body;
-    const config = getApiServiceConfig();
-    
+    const apiKey = getEffectiveApiKey();
+
     if (!address) {
       return res.status(400).json({
         success: false,
@@ -275,7 +291,7 @@ router.post('/geocode', authenticateToken, async (req, res) => {
       });
     }
 
-    if (!config.googleMaps.apiKey) {
+    if (!apiKey) {
       return res.status(500).json({
         success: false,
         error: 'Google Maps API key not configured'
@@ -283,12 +299,12 @@ router.post('/geocode', authenticateToken, async (req, res) => {
     }
 
     console.log('🗺️ Geocoding address:', address);
-    
+
     // Use real Google Maps Geocoding API
     const response = await mapsClient.geocode({
       params: {
         address,
-        key: config.googleMaps.apiKey
+        key: apiKey
       }
     });
 
@@ -321,8 +337,8 @@ router.post('/geocode', authenticateToken, async (req, res) => {
 router.post('/reverse-geocode', authenticateToken, async (req, res) => {
   try {
     const { latitude, longitude } = req.body;
-    const config = getApiServiceConfig();
-    
+    const apiKey = getEffectiveApiKey();
+
     if (latitude === undefined || longitude === undefined) {
       return res.status(400).json({
         success: false,
@@ -330,7 +346,7 @@ router.post('/reverse-geocode', authenticateToken, async (req, res) => {
       });
     }
 
-    if (!config.googleMaps.apiKey) {
+    if (!apiKey) {
       return res.status(500).json({
         success: false,
         error: 'Google Maps API key not configured'
@@ -338,12 +354,12 @@ router.post('/reverse-geocode', authenticateToken, async (req, res) => {
     }
 
     console.log('🗺️ Reverse geocoding coordinates:', { latitude, longitude });
-    
+
     // Use real Google Maps Reverse Geocoding API
     const response = await mapsClient.reverseGeocode({
       params: {
         latlng: { lat: latitude, lng: longitude },
-        key: config.googleMaps.apiKey
+        key: apiKey
       }
     });
 
@@ -374,8 +390,8 @@ router.post('/reverse-geocode', authenticateToken, async (req, res) => {
 router.get('/places/autocomplete', authenticateToken, async (req, res) => {
   try {
     const { input } = req.query;
-    const config = getApiServiceConfig();
-    
+    const apiKey = getEffectiveApiKey();
+
     if (!input) {
       return res.status(400).json({
         success: false,
@@ -383,7 +399,7 @@ router.get('/places/autocomplete', authenticateToken, async (req, res) => {
       });
     }
 
-    if (!config.googleMaps.apiKey) {
+    if (!apiKey) {
       return res.status(500).json({
         success: false,
         error: 'Google Maps API key not configured'
@@ -391,7 +407,7 @@ router.get('/places/autocomplete', authenticateToken, async (req, res) => {
     }
 
     console.log('🗺️ Place autocomplete request for:', input);
-    
+
     // Mock autocomplete response for now
     // TODO: Implement actual Google Places API call
     const mockResults = [
@@ -412,7 +428,7 @@ router.get('/places/autocomplete', authenticateToken, async (req, res) => {
         }
       }
     ];
-    
+
     return res.json({
       success: true,
       predictions: mockResults,
@@ -432,12 +448,12 @@ router.get('/places/autocomplete', authenticateToken, async (req, res) => {
 // Test endpoint
 router.get('/test', async (req, res) => {
   try {
-    const config = getApiServiceConfig();
-    
+    const apiKey = getEffectiveApiKey();
+
     res.json({
       success: true,
       message: 'Google Maps API endpoint is working',
-      configured: !!config.googleMaps.apiKey,
+      configured: !!apiKey,
       timestamp: new Date().toISOString()
     });
   } catch (error) {

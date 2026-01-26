@@ -31,12 +31,12 @@ function decrypt(encryptedData: { encrypted: string; iv: string; authTag: string
     Buffer.from(ENCRYPTION_KEY, 'hex'),
     Buffer.from(encryptedData.iv, 'hex')
   );
-  
+
   decipher.setAuthTag(Buffer.from(encryptedData.authTag, 'hex'));
-  
+
   let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8');
   decrypted += decipher.final('utf8');
-  
+
   return decrypted;
 }
 
@@ -63,8 +63,8 @@ async function getDocuSignConfig(organizationId: string): Promise<{
     // Decrypt sensitive fields
     const encryptedIntegrationKey = JSON.parse(configData.integrationKey);
     const integrationKey = decrypt(encryptedIntegrationKey);
-    
-    const rsaPrivateKey = configData.rsaPrivateKey 
+
+    const rsaPrivateKey = configData.rsaPrivateKey
       ? decrypt(JSON.parse(configData.rsaPrivateKey))
       : undefined;
 
@@ -123,6 +123,8 @@ export const docuSignWebhookHandler = onRequest(
   {
     region: 'us-central1',
     cors: true,
+    cpu: 0.5,
+    memory: '512MiB',
   },
   async (req, res) => {
     try {
@@ -137,7 +139,7 @@ export const docuSignWebhookHandler = onRequest(
 
       // Verify webhook signature (if configured)
       // In production, verify the X-DocuSign-Signature header
-      
+
       const webhookData = req.body;
       const envelopeId = webhookData.data?.envelopeId || webhookData.envelopeId;
       const event = webhookData.event || webhookData.type;
@@ -182,16 +184,16 @@ export const docuSignWebhookHandler = onRequest(
         newStatus = 'signed';
       } else if (event === 'envelope-completed' || event === 'completed') {
         newStatus = 'completed';
-        
+
         // Download signed document and upload to Firebase Storage
         try {
           const documentBuffer = await downloadDocumentFromDocuSign(config, envelopeId);
-          
+
           // Upload to Firebase Storage
           const bucket = storage.bucket();
           const fileName = `signed-documents/${organizationId}/${licenseDoc.id}/${envelopeId}_signed.pdf`;
           const file = bucket.file(fileName);
-          
+
           await file.save(documentBuffer, {
             metadata: {
               contentType: 'application/pdf',
@@ -242,16 +244,16 @@ export const docuSignWebhookHandler = onRequest(
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       });
 
-      res.status(200).json({ 
-        success: true, 
+      res.status(200).json({
+        success: true,
         message: 'Webhook processed successfully',
         envelopeId,
         status: newStatus
       });
     } catch (error: any) {
       console.error('Error processing DocuSign webhook:', error);
-      res.status(500).json({ 
-        error: `Failed to process webhook: ${error.message || 'Unknown error'}` 
+      res.status(500).json({
+        error: `Failed to process webhook: ${error.message || 'Unknown error'}`
       });
     }
   }

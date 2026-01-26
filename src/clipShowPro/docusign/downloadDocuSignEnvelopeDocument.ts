@@ -30,12 +30,12 @@ function decrypt(encryptedData: { encrypted: string; iv: string; authTag: string
     Buffer.from(ENCRYPTION_KEY, 'hex'),
     Buffer.from(encryptedData.iv, 'hex')
   );
-  
+
   decipher.setAuthTag(Buffer.from(encryptedData.authTag, 'hex'));
-  
+
   let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8');
   decrypted += decipher.final('utf8');
-  
+
   return decrypted;
 }
 
@@ -62,8 +62,8 @@ async function getDocuSignConfig(organizationId: string): Promise<{
     // Decrypt sensitive fields
     const encryptedIntegrationKey = JSON.parse(configData.integrationKey);
     const integrationKey = decrypt(encryptedIntegrationKey);
-    
-    const rsaPrivateKey = configData.rsaPrivateKey 
+
+    const rsaPrivateKey = configData.rsaPrivateKey
       ? decrypt(JSON.parse(configData.rsaPrivateKey))
       : undefined;
 
@@ -89,6 +89,8 @@ export const downloadDocuSignEnvelopeDocument = onCall(
     region: 'us-central1',
     cors: true,
     timeoutSeconds: 300, // 5 minutes for file operations
+    cpu: 0.5,
+    memory: '512MiB',
   },
   async (request) => {
     try {
@@ -155,7 +157,7 @@ export const downloadDocuSignEnvelopeDocument = onCall(
 
       // Convert to base64 for temporary URL
       const documentBase64 = Buffer.from(documents).toString('base64');
-      
+
       // Return a data URL that can be used to download the document
       // In production, you might want to upload this to Firebase Storage and return a signed URL
       const documentUrl = `data:application/pdf;base64,${documentBase64}`;

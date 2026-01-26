@@ -50,6 +50,7 @@
     "google-drive-deploy",
     "**/*.test.ts",
     "src/ai/storeAIApiKey.ts",
-    "src/ai/testApiKey.ts"
+    "src/ai/testApiKey.ts",
+    "src/test-agent-structure.ts"
   ]
 }

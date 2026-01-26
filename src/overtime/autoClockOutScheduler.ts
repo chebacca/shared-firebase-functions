@@ -21,6 +21,8 @@ export const checkOvertimeSessions = onSchedule(
     schedule: 'every 5 minutes',
     region: 'us-central1',
     timeZone: 'America/Los_Angeles',
+    cpu: 0.5,
+    memory: '512MiB',
   },
   async (event) => {
     const now = Timestamp.now();
