@@ -9,4 +9,5 @@ export { getBudgets } from './getBudgets';
 export { calculateBudgetVariance } from './calculateBudgetVariance';
 export { syncTimecardToBudget } from './syncTimecardToBudget';
 export { aggregateTimecardCosts } from './aggregateTimecardCosts';
+export { matchTemplates } from './matchTemplates';
 

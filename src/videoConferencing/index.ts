@@ -13,7 +13,6 @@ export * from './webex';
  */
 import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
 import { db } from '../shared/utils';
-import { encryptionKey } from '../google/secrets';
 import * as admin from 'firebase-admin';
 
 // CORS helper function
@@ -65,7 +64,8 @@ export const getVideoConferencingProviders = onCall(
       /localhost:\d+$/,  // Allow any localhost port
     ],
     invoker: 'public',
-    secrets: [encryptionKey],
+    memory: '512MiB',
+    cpu: 0.5,
   },
   async (request) => {
     try {
@@ -255,11 +255,13 @@ export const getVideoConferencingProviders = onCall(
 export const getVideoConferencingProvidersHttp = onRequest(
   {
     region: 'us-central1',
-    secrets: [encryptionKey],
+    memory: '512MiB',
+    cpu: 0.5,
   },
   async (req, res) => {
-    // Set CORS headers first
-    setCorsHeaders(res, req.headers.origin);    // Handle preflight requests
+    // Set CORS headers first so they are present on all responses (including errors)
+    setCorsHeaders(res, req.headers.origin);
+    // Handle preflight requests
     if (req.method === 'OPTIONS') {
       res.status(204).end();
       return;
@@ -437,6 +439,7 @@ export const getVideoConferencingProvidersHttp = onRequest(
 
     } catch (error: any) {
       console.error('❌ [VideoConferencing HTTP] Error getting providers:', error);
+      setCorsHeaders(res, req.headers.origin);
       res.status(500).json({
         success: false,
         error: error.message || 'Failed to get providers',

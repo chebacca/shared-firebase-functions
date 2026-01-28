@@ -8,6 +8,7 @@ import {
 } from 'shared-backbone-intelligence';
 
 import { googleMapsService } from '../google/maps';
+import { createScriptPackageCore } from './scriptTools';
 
 const db = getFirestore();
 
@@ -61,6 +62,22 @@ export class DataToolExecutor {
                 case 'export_report':
                     return this.exportReport(args, organizationId, userId);
 
+                case 'create_script_package':
+                    try {
+                        // Adapt args to match CreateScriptPackageRequest
+                        const scriptArgs = {
+                            ...args,
+                            organizationId // Ensure org ID from context is used
+                        };
+                        const scriptResult = await createScriptPackageCore(scriptArgs, userId);
+                        return {
+                            success: true,
+                            data: scriptResult
+                        };
+                    } catch (err: any) {
+                        return { success: false, error: err.message };
+                    }
+
                 default:
                     // 🚀 UNIFIED TOOL REGISTRY: Fallback to UnifiedToolRegistry (MCP + Shared + Local)
                     console.log(`📡 [DataToolExecutor] Fallback to UnifiedToolRegistry for: ${toolName}`);
@@ -100,7 +117,7 @@ export class DataToolExecutor {
 
             // Execute via UnifiedToolRegistry
             console.log(`✅ [DataToolExecutor] Executing tool via UnifiedToolRegistry: ${toolName}`);
-            
+
             const result = await registry.executeTool(toolName, args, {
                 userId,
                 organizationId,
@@ -1003,7 +1020,7 @@ export class DataToolExecutor {
         const startTime = Date.now();
         // Version identifier to force new instances (updated on each deployment)
         const DEPLOYMENT_VERSION = '2026-01-23-16:20-enhanced-logging-v2';
-        
+
         try {
             console.log('📊 [DataToolExecutor] ========================================');
             console.log(`📊 [DataToolExecutor] Deployment Version: ${DEPLOYMENT_VERSION}`);
@@ -1014,10 +1031,10 @@ export class DataToolExecutor {
             console.log(`📊 [DataToolExecutor] Options:`, JSON.stringify(args.options || {}, null, 2));
             console.log(`📊 [DataToolExecutor] Full args:`, JSON.stringify(args, null, 2));
             console.log('📊 [DataToolExecutor] ========================================');
-            
+
             const { ReportGeneratorService } = await import('../reports/ReportGeneratorService');
             console.log('✅ [DataToolExecutor] ReportGeneratorService imported successfully');
-            
+
             const generator = new ReportGeneratorService();
             console.log('✅ [DataToolExecutor] ReportGeneratorService instance created');
 

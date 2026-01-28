@@ -13,7 +13,7 @@ import { getBoxConfig } from './config';
  */
 function getMimeTypeFromFileName(fileName: string): string {
     const ext = fileName.split('.').pop()?.toLowerCase();
-    
+
     const mimeTypes: Record<string, string> = {
         // Video
         'mp4': 'video/mp4',
@@ -27,7 +27,7 @@ function getMimeTypeFromFileName(fileName: string): string {
         'mpg': 'video/mpeg',
         'mpeg': 'video/mpeg',
         '3gp': 'video/3gpp',
-        
+
         // Audio
         'mp3': 'audio/mpeg',
         'wav': 'audio/wav',
@@ -36,7 +36,7 @@ function getMimeTypeFromFileName(fileName: string): string {
         'm4a': 'audio/mp4',
         'aac': 'audio/aac',
         'wma': 'audio/x-ms-wma',
-        
+
         // Images
         'jpg': 'image/jpeg',
         'jpeg': 'image/jpeg',
@@ -45,7 +45,7 @@ function getMimeTypeFromFileName(fileName: string): string {
         'bmp': 'image/bmp',
         'webp': 'image/webp',
         'svg': 'image/svg+xml',
-        
+
         // Documents
         'pdf': 'application/pdf',
         'doc': 'application/msword',
@@ -57,7 +57,7 @@ function getMimeTypeFromFileName(fileName: string): string {
         'txt': 'text/plain',
         'csv': 'text/csv',
     };
-    
+
     return mimeTypes[ext || ''] || 'application/octet-stream';
 }
 
@@ -169,7 +169,7 @@ export const getBoxIntegrationStatus = onCall(
             try {
                 // Try to refresh the token - this validates both access and refresh tokens
                 const tokens = await refreshBoxAccessToken(userId, organizationId);
-                
+
                 // If refresh succeeded, tokens are valid
                 if (tokens && tokens.accessToken) {
                     return createSuccessResponse({
@@ -195,13 +195,13 @@ export const getBoxIntegrationStatus = onCall(
                 // If refresh fails, the connection is invalid
                 const errorMessage = refreshError?.message || String(refreshError);
                 console.log(`[BoxIntegrationStatus] Token refresh validation failed: ${errorMessage}`);
-                
+
                 // Check if it's an expired token error
                 const isExpiredError = errorMessage.includes('expired') ||
-                                     errorMessage.includes('Expired Auth') ||
-                                     errorMessage.includes('invalid_grant') ||
-                                     errorMessage.includes('refresh token');
-                
+                    errorMessage.includes('Expired Auth') ||
+                    errorMessage.includes('invalid_grant') ||
+                    errorMessage.includes('refresh token');
+
                 return createSuccessResponse({
                     connected: false,
                     accountEmail: integrationData?.accountEmail,
@@ -265,7 +265,7 @@ export async function refreshBoxAccessToken(userId: string, organizationId: stri
         let connectionId: string | undefined;
         if (!integrationDoc.exists) {
             console.log(`[BoxTokenRefresh] No cloudIntegrations document found, checking boxConnections...`);
-            
+
             // Query boxConnections for organization-level connection
             const boxConnectionsQuery = await admin.firestore()
                 .collection('organizations')
@@ -280,9 +280,9 @@ export async function refreshBoxAccessToken(userId: string, organizationId: stri
                 const connectionDoc = boxConnectionsQuery.docs[0];
                 const connData = connectionDoc.data();
                 connectionId = connectionDoc.id;
-                
+
                 console.log(`[BoxTokenRefresh] Found Box connection in boxConnections, creating cloudIntegrations document...`);
-                
+
                 // Create cloudIntegrations document from boxConnections data
                 const unifiedIntegrationRef = admin.firestore()
                     .collection('organizations')
@@ -293,7 +293,7 @@ export async function refreshBoxAccessToken(userId: string, organizationId: stri
                 // Decrypt tokens from boxConnections format
                 let accessToken: string | undefined;
                 let refreshToken: string | undefined;
-                
+
                 if (connData?.accessToken) {
                     try {
                         accessToken = decryptLegacyToken(connData.accessToken);
@@ -302,7 +302,7 @@ export async function refreshBoxAccessToken(userId: string, organizationId: stri
                         accessToken = connData.accessToken;
                     }
                 }
-                
+
                 if (connData?.refreshToken) {
                     try {
                         refreshToken = decryptLegacyToken(connData.refreshToken);
@@ -341,7 +341,7 @@ export async function refreshBoxAccessToken(userId: string, organizationId: stri
 
                     await unifiedIntegrationRef.set(unifiedDoc, { merge: true });
                     console.log(`[BoxTokenRefresh] Successfully created cloudIntegrations/box from boxConnections`);
-                    
+
                     // Re-fetch the document we just created
                     integrationDoc = await unifiedIntegrationRef.get();
                 }
@@ -361,17 +361,17 @@ export async function refreshBoxAccessToken(userId: string, organizationId: stri
             accessTokenLength: integrationData?.accessToken?.length || 0,
             refreshTokenLength: integrationData?.refreshToken?.length || 0
         });
-        
+
         let encryptedTokens = integrationData?.encryptedTokens;
 
         // PRIORITY 1: Check for direct accessToken/refreshToken fields (unified OAuth or legacy format)
         // This handles both unified OAuth encrypted format AND legacy colon-hex format
         if (integrationData?.accessToken || integrationData?.refreshToken) {
             console.log(`[BoxTokenRefresh] Found accessToken/refreshToken fields, attempting to decrypt...`);
-            
+
             let accessToken: string | undefined;
             let refreshToken: string | undefined;
-            
+
             // Try to decrypt accessToken
             if (integrationData.accessToken) {
                 // First try unified OAuth decryption (for new format)
@@ -397,7 +397,7 @@ export async function refreshBoxAccessToken(userId: string, organizationId: stri
                     }
                 }
             }
-            
+
             // Try to decrypt refreshToken
             if (integrationData.refreshToken) {
                 // First try unified OAuth decryption (for new format)
@@ -422,27 +422,27 @@ export async function refreshBoxAccessToken(userId: string, organizationId: stri
                     }
                 }
             }
-            
+
             // If we successfully decrypted at least the accessToken, use it
             if (accessToken) {
                 console.log(`[BoxTokenRefresh] Successfully decrypted tokens, creating token object...`);
                 const unifiedTokens = {
                     accessToken,
                     refreshToken,
-                    expiresAt: integrationData?.tokenExpiresAt?.toDate?.() || 
-                              integrationData?.expiresAt?.toDate?.() || 
-                              null
+                    expiresAt: integrationData?.tokenExpiresAt?.toDate?.() ||
+                        integrationData?.expiresAt?.toDate?.() ||
+                        null
                 };
-                
+
                 // Check if token is expired
                 const expiresAt = unifiedTokens.expiresAt instanceof Date
                     ? unifiedTokens.expiresAt
                     : typeof unifiedTokens.expiresAt === 'string'
                         ? new Date(unifiedTokens.expiresAt)
                         : unifiedTokens.expiresAt?.toDate?.();
-                
+
                 const needsRefresh = expiresAt && expiresAt < new Date(Date.now() + 60000);
-                
+
                 if (!needsRefresh && unifiedTokens.accessToken) {
                     // Token is still valid, return it
                     console.log(`[BoxTokenRefresh] Using valid token (not expired)`);
@@ -468,7 +468,7 @@ export async function refreshBoxAccessToken(userId: string, organizationId: stri
         // MIGRATION: If encryptedTokens missing, try to migrate from legacy format
         if (!encryptedTokens) {
             console.log(`[BoxTokenRefresh] encryptedTokens missing, attempting migration from legacy format...`);
-            
+
             // Try migration from boxConnections first (if connectionId exists)
             if (integrationData?.connectionId) {
                 try {
@@ -514,10 +514,10 @@ export async function refreshBoxAccessToken(userId: string, organizationId: stri
             if (!encryptedTokens && (integrationData?.accessToken || integrationData?.refreshToken)) {
                 try {
                     console.log(`[BoxTokenRefresh] Found legacy accessToken/refreshToken fields, migrating to encryptedTokens format...`);
-                    
+
                     let accessToken: string | undefined;
                     let refreshToken: string | undefined;
-                    
+
                     // Decrypt legacy format if present
                     if (integrationData.accessToken) {
                         try {
@@ -533,7 +533,7 @@ export async function refreshBoxAccessToken(userId: string, organizationId: stri
                             accessToken = integrationData.accessToken;
                         }
                     }
-                    
+
                     if (integrationData.refreshToken) {
                         try {
                             // Try legacy colon-hex format first
@@ -553,9 +553,9 @@ export async function refreshBoxAccessToken(userId: string, organizationId: stri
                         const migratedTokens = {
                             accessToken: accessToken || '',
                             refreshToken: refreshToken || '',
-                            expiresAt: integrationData?.tokenExpiresAt?.toDate?.() || 
-                                      integrationData?.expiresAt?.toDate?.() || 
-                                      null
+                            expiresAt: integrationData?.tokenExpiresAt?.toDate?.() ||
+                                integrationData?.expiresAt?.toDate?.() ||
+                                null
                         };
 
                         // Encrypt with new format
@@ -765,6 +765,8 @@ export const getBoxAccessToken = onCall(
         region: 'us-central1',
         cors: true,
         secrets: [encryptionKey],
+        memory: '512MiB',
+        cpu: 0.5,
     },
     async (request) => {
         try {
@@ -789,30 +791,79 @@ export const getBoxAccessToken = onCall(
 
         } catch (error: any) {
             console.error('Failed to get Box access token:', error);
-            
+
             // Preserve the original error message if it's user-friendly
             const errorMessage = error.message || 'Failed to get access token';
-            
+
             // If it's already an HttpsError, preserve it
             if (error instanceof HttpsError) {
                 throw error;
             }
-            
+
             // For integration not found errors, use a more specific error code
             if (errorMessage.includes('not found') || errorMessage.includes('No tokens found')) {
                 throw new HttpsError('not-found', errorMessage);
             }
-            
+
             // For decryption errors, use failed-precondition (indicates user action needed)
-            if (errorMessage.includes('Failed to decrypt') || 
+            if (errorMessage.includes('Failed to decrypt') ||
                 errorMessage.includes('decrypt') ||
                 errorMessage.includes('corrupted') ||
                 errorMessage.includes('encrypted with a different key')) {
                 throw new HttpsError('failed-precondition', errorMessage);
             }
-            
+
             // For other errors, use internal but preserve the message
             throw new HttpsError('internal', errorMessage);
+        }
+    }
+);
+/**
+ * HTTP version of getBoxAccessToken to avoid CORS and 404 issues
+ */
+export const getBoxAccessTokenHttp = onRequest(
+    {
+        region: 'us-central1',
+        memory: '512MiB',
+        cpu: 0.5,
+    },
+    async (req, res) => {
+        // Set CORS headers first
+        setCorsHeaders(req, res);
+
+        // Handle preflight requests
+        if (req.method === 'OPTIONS') {
+            res.status(204).end();
+            return;
+        }
+
+        try {
+            // Verify user authentication and get user/org ID
+            const { userId, organizationId } = await verifyAuthToken(req);
+
+            // Get and refresh organization-level tokens
+            const tokens = await refreshBoxAccessToken(userId, organizationId);
+
+            res.status(200).json({
+                success: true,
+                data: {
+                    accessToken: tokens.accessToken,
+                    expiresAt: tokens.expiresAt instanceof Date
+                        ? tokens.expiresAt.toISOString()
+                        : typeof tokens.expiresAt === 'string'
+                            ? tokens.expiresAt
+                            : tokens.expiresAt?.toDate?.()?.toISOString() || null
+                }
+            });
+
+        } catch (error: any) {
+            console.error('❌ [BoxAccessTokenHTTP] Failed to get Box access token:', error);
+
+            const statusCode = error.message === 'Authentication required' ? 401 : 500;
+            res.status(statusCode).json({
+                success: false,
+                error: error.message || 'Failed to get access token'
+            });
         }
     }
 );
@@ -1375,7 +1426,7 @@ export const downloadBoxFile = onCall(
 
             // Get Box SDK and access token using the same logic as refreshBoxAccessToken
             const boxSDK = await getBoxSDK(organizationId);
-            
+
             // Use the existing refreshBoxAccessToken function to get a valid token
             // This handles all the migration logic and token refresh automatically
             let tokens;
@@ -1385,10 +1436,10 @@ export const downloadBoxFile = onCall(
                 // Handle expired token errors specifically
                 const errorMessage = refreshError?.message || String(refreshError);
                 const isExpiredError = errorMessage.includes('expired') ||
-                                     errorMessage.includes('Expired Auth') ||
-                                     errorMessage.includes('invalid_grant') ||
-                                     errorMessage.includes('refresh token');
-                
+                    errorMessage.includes('Expired Auth') ||
+                    errorMessage.includes('invalid_grant') ||
+                    errorMessage.includes('refresh token');
+
                 if (isExpiredError) {
                     console.log(`[BoxFiles] Token refresh failed due to expired token for org: ${organizationId}`);
                     throw new HttpsError(
@@ -1396,11 +1447,11 @@ export const downloadBoxFile = onCall(
                         'Box connection has expired. Please reconnect your Box account in Integration Settings.'
                     );
                 }
-                
+
                 // Re-throw other errors
                 throw refreshError;
             }
-            
+
             if (!tokens || !tokens.accessToken) {
                 throw new HttpsError('failed-precondition', 'Box connection not found. Please connect Box in Integration Settings.');
             }
@@ -1410,18 +1461,18 @@ export const downloadBoxFile = onCall(
 
             // Download file
             const fileStream = await client.files.getReadStream(fileId);
-            
+
             // Get file info for metadata
             const fileInfo = await client.files.get(fileId);
             const fileName = fileInfo.name;
-            
+
             // Box API doesn't provide MIME type directly, infer from file extension
             const mimeType = getMimeTypeFromFileName(fileName);
 
             // Upload directly to Firebase Storage (streaming to avoid memory issues)
             const storage = getStorage();
             const bucket = storage.bucket();
-            
+
             // Create a unique storage path: box-files/{orgId}/{fileId}/{fileName}
             const storagePath = `box-files/${organizationId}/${fileId}/${fileName}`;
             const file = bucket.file(storagePath);
@@ -1475,7 +1526,7 @@ export const downloadBoxFile = onCall(
 
         } catch (error: any) {
             console.error('❌ [BoxFiles] Error downloading file:', error);
-            
+
             if (error instanceof HttpsError) {
                 throw error;
             }

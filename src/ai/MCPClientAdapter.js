@@ -1,46 +1,52 @@
+"use strict";
 /**
  * MCP Client Adapter
- * 
+ *
  * Connects Firebase Functions to the MCP server via stdio.
  * Enables access to all 240+ tools from the MCP server.
- * 
+ *
  * Architecture: Spawns MCP server process and communicates via stdin/stdout using JSON-RPC
- * 
+ *
  * Note: This is a simplified implementation. For production, consider using
  * the official MCP SDK client, but that requires additional dependencies.
  */
-
-import { spawn, ChildProcess } from 'child_process';
-import * as path from 'path';
-import * as fs from 'fs';
-
-export interface MCPTool {
-    name: string;
-    description: string;
-    inputSchema: any; // JSON Schema
-}
-
-export interface MCPToolCallResult {
-    content: Array<{ type: 'text'; text: string }>;
-    isError?: boolean;
-}
-
-interface PendingRequest {
-    resolve: (value: any) => void;
-    reject: (error: Error) => void;
-    timeout: NodeJS.Timeout;
-}
-
-export class MCPClientAdapter {
-    private process: ChildProcess | null = null;
-    private isConnected: boolean = false;
-    private mcpServerPath: string;
-    private tools: Map<string, MCPTool> = new Map();
-    private requestId: number = 0;
-    private pendingRequests: Map<number, PendingRequest> = new Map();
-    private stdoutBuffer: string = '';
-
-    constructor(mcpServerPath?: string) {
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.mcpClientAdapter = exports.MCPClientAdapter = void 0;
+const child_process_1 = require("child_process");
+const path = __importStar(require("path"));
+const fs = __importStar(require("fs"));
+class MCPClientAdapter {
+    process = null;
+    isConnected = false;
+    mcpServerPath;
+    tools = new Map();
+    requestId = 0;
+    pendingRequests = new Map();
+    stdoutBuffer = '';
+    constructor(mcpServerPath) {
         // Default to the MCP server in the workspace
         // Try multiple possible paths
         const possiblePaths = [
@@ -53,9 +59,8 @@ export class MCPClientAdapter {
             // Repo-root fallback (local dev)
             path.resolve(__dirname, '../../../../_backbone_mcp_server/dist/index.js'),
             path.resolve(process.cwd(), '../../_backbone_mcp_server/dist/index.js')
-        ].filter(Boolean) as string[];
-
-        let mcpPath: string | undefined;
+        ].filter(Boolean);
+        let mcpPath;
         for (const testPath of possiblePaths) {
             if (fs.existsSync(testPath)) {
                 mcpPath = testPath;
@@ -63,34 +68,30 @@ export class MCPClientAdapter {
                 break;
             }
         }
-
         this.mcpServerPath = mcpPath || possiblePaths[0] || path.resolve(process.cwd(), '_backbone_mcp_server/dist/index.js');
-
         if (!mcpPath) {
             console.warn(`[MCPClientAdapter] ⚠️ MCP server not found. Will attempt connection on first use.`);
         }
     }
-
     /**
      * Connect to MCP server via stdio
      */
-    async connect(): Promise<void> {
+    async connect() {
         if (this.isConnected && this.process && !this.process.killed) {
             console.log('[MCPClientAdapter] ✅ Already connected');
             return;
         }
-
         // If we have a stale process, kill it before reconnecting
         if (this.process && !this.process.killed) {
             try {
                 this.process.kill();
-            } catch {
+            }
+            catch {
                 // ignore
             }
             this.process = null;
             this.isConnected = false;
         }
-
         // Verify path exists
         if (!fs.existsSync(this.mcpServerPath)) {
             console.warn(`[MCPClientAdapter] ⚠️ MCP server not found at: ${this.mcpServerPath}`);
@@ -98,11 +99,9 @@ export class MCPClientAdapter {
             this.isConnected = false;
             return;
         }
-
         console.log(`[MCPClientAdapter] 🔌 Connecting to MCP server: ${this.mcpServerPath}`);
-
         // Spawn MCP server process
-        this.process = spawn('node', [this.mcpServerPath], {
+        this.process = (0, child_process_1.spawn)('node', [this.mcpServerPath], {
             env: {
                 ...process.env,
                 FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID || 'backbone-logic',
@@ -111,22 +110,19 @@ export class MCPClientAdapter {
             },
             stdio: ['pipe', 'pipe', 'pipe'] // stdin, stdout, stderr
         });
-
         // Handle stdout (MCP server responses - JSON-RPC messages)
-        this.process.stdout?.on('data', (data: Buffer) => {
+        this.process.stdout?.on('data', (data) => {
             this.stdoutBuffer += data.toString();
             this.parseMCPMessages();
         });
-
         // Handle stderr (logs - filter to avoid noise)
-        this.process.stderr?.on('data', (data: Buffer) => {
+        this.process.stderr?.on('data', (data) => {
             const log = data.toString();
             // Only log errors and important messages
             if (log.includes('ERROR') || log.includes('❌') || log.includes('✅') || log.includes('📊')) {
                 console.log(`[MCP Server] ${log.trim()}`);
             }
         });
-
         // Handle process exit
         this.process.on('exit', (code) => {
             console.warn(`[MCPClientAdapter] ⚠️ MCP server process exited with code ${code}`);
@@ -139,30 +135,30 @@ export class MCPClientAdapter {
             }
             this.pendingRequests.clear();
         });
-
         // Wait for initialization
         try {
             await this.initialize();
             this.isConnected = true;
             console.log('[MCPClientAdapter] ✅ Connected to MCP server');
-        } catch (error: any) {
+        }
+        catch (error) {
             console.error('[MCPClientAdapter] ❌ Failed to initialize:', error.message);
             this.isConnected = false;
             // Kill process on failed init so we don't leak children / loop reconnect
             try {
                 this.process?.kill();
-            } catch {
+            }
+            catch {
                 // ignore
             }
             this.process = null;
             // Don't throw - allow fallback to shared tools
         }
     }
-
     /**
      * Initialize MCP connection (send initialize request)
      */
-    private async initialize(): Promise<void> {
+    async initialize() {
         // Send initialize request via JSON-RPC
         const initRequest = {
             jsonrpc: '2.0',
@@ -179,69 +175,56 @@ export class MCPClientAdapter {
                 }
             }
         };
-
         await this.sendRequest(initRequest);
-
         // Discover available tools
         await this.discoverTools();
     }
-
     /**
      * Discover all available tools from MCP server
      */
-    async discoverTools(): Promise<MCPTool[]> {
+    async discoverTools() {
         if (!this.isConnected) {
             await this.connect();
         }
-
         if (!this.isConnected) {
             console.warn('[MCPClientAdapter] ⚠️ Not connected, returning empty tool list');
             return [];
         }
-
         const listToolsRequest = {
             jsonrpc: '2.0',
             id: this.getNextRequestId(),
             method: 'tools/list',
             params: {}
         };
-
         try {
             const response = await this.sendRequest(listToolsRequest);
             const tools = response.result?.tools || [];
-
             // Cache tools
-            tools.forEach((tool: any) => {
+            tools.forEach((tool) => {
                 this.tools.set(tool.name, {
                     name: tool.name,
                     description: tool.description || '',
                     inputSchema: tool.inputSchema || {}
                 });
             });
-
             console.log(`[MCPClientAdapter] 🔍 Discovered ${tools.length} tools from MCP server`);
             return Array.from(this.tools.values());
-        } catch (error: any) {
+        }
+        catch (error) {
             console.error('[MCPClientAdapter] ❌ Failed to discover tools:', error);
             return [];
         }
     }
-
     /**
      * Call a tool on the MCP server
      */
-    async callTool(
-        toolName: string,
-        toolArgs: Record<string, any>
-    ): Promise<MCPToolCallResult> {
+    async callTool(toolName, toolArgs) {
         if (!this.isConnected) {
             await this.connect();
         }
-
         if (!this.isConnected) {
             throw new Error('MCP server not connected');
         }
-
         const toolCallRequest = {
             jsonrpc: '2.0',
             id: this.getNextRequestId(),
@@ -251,57 +234,53 @@ export class MCPClientAdapter {
                 arguments: toolArgs
             }
         };
-
         try {
             const response = await this.sendRequest(toolCallRequest);
             const result = response.result;
-
             // Parse MCP tool result format
             if (result.isError) {
                 return {
                     content: [{
-                        type: 'text',
-                        text: JSON.stringify({
-                            success: false,
-                            error: result.content?.[0]?.text || 'Tool execution failed'
-                        })
-                    }],
+                            type: 'text',
+                            text: JSON.stringify({
+                                success: false,
+                                error: result.content?.[0]?.text || 'Tool execution failed'
+                            })
+                        }],
                     isError: true
                 };
             }
-
             return {
                 content: result.content || [{
-                    type: 'text',
-                    text: JSON.stringify(result)
-                }],
+                        type: 'text',
+                        text: JSON.stringify(result)
+                    }],
                 isError: false
             };
-        } catch (error: any) {
+        }
+        catch (error) {
             console.error(`[MCPClientAdapter] ❌ Error calling tool ${toolName}:`, error);
             return {
                 content: [{
-                    type: 'text',
-                    text: JSON.stringify({
-                        success: false,
-                        error: error.message || 'Tool execution failed'
-                    })
-                }],
+                        type: 'text',
+                        text: JSON.stringify({
+                            success: false,
+                            error: error.message || 'Tool execution failed'
+                        })
+                    }],
                 isError: true
             };
         }
     }
-
     /**
      * Send JSON-RPC request to MCP server
      */
-    private async sendRequest(request: any): Promise<any> {
+    async sendRequest(request) {
         return new Promise((resolve, reject) => {
             if (!this.process || !this.process.stdin) {
                 reject(new Error('MCP server process not available'));
                 return;
             }
-
             const requestId = request.id;
             const timeout = setTimeout(() => {
                 if (this.pendingRequests.has(requestId)) {
@@ -309,16 +288,13 @@ export class MCPClientAdapter {
                     reject(new Error(`Request ${requestId} timed out after 30s`));
                 }
             }, 30000);
-
             this.pendingRequests.set(requestId, { resolve, reject, timeout });
-
             // Send request via stdin.
             // MCP stdio transport uses Content-Length framing (LSP-style).
             const body = JSON.stringify(request);
             const header = `Content-Length: ${Buffer.byteLength(body, 'utf8')}\r\n\r\n`;
             const payload = header + body;
-
-            this.process.stdin!.write(payload, (error) => {
+            this.process.stdin.write(payload, (error) => {
                 if (error) {
                     this.pendingRequests.delete(requestId);
                     clearTimeout(timeout);
@@ -327,98 +303,92 @@ export class MCPClientAdapter {
             });
         });
     }
-
     /**
      * Parse MCP messages from stdout buffer (JSON-RPC format)
      */
-    private parseMCPMessages(): void {
+    parseMCPMessages() {
         // Prefer Content-Length framing (MCP stdio / LSP-style)
         while (true) {
             const headerEnd = this.stdoutBuffer.indexOf('\r\n\r\n');
-            if (headerEnd === -1) break;
-
+            if (headerEnd === -1)
+                break;
             const headerBlock = this.stdoutBuffer.slice(0, headerEnd);
             const match = headerBlock.match(/Content-Length:\s*(\d+)/i);
             if (!match) {
                 // If framing isn't present, fall back to line parsing below
                 break;
             }
-
             const contentLength = Number.parseInt(match[1], 10);
             const messageStart = headerEnd + 4;
             const messageEnd = messageStart + contentLength;
-            if (this.stdoutBuffer.length < messageEnd) break; // wait for full payload
-
+            if (this.stdoutBuffer.length < messageEnd)
+                break; // wait for full payload
             const body = this.stdoutBuffer.slice(messageStart, messageEnd);
             this.stdoutBuffer = this.stdoutBuffer.slice(messageEnd);
-
             try {
                 const message = JSON.parse(body);
                 this.handleMCPMessage(message);
-            } catch {
+            }
+            catch {
                 // ignore malformed payloads
             }
         }
-
         // Fallback: newline-delimited JSON (legacy / non-framed)
         if (this.stdoutBuffer.includes('\n') && !this.stdoutBuffer.includes('Content-Length:')) {
             const lines = this.stdoutBuffer.split('\n');
             this.stdoutBuffer = lines.pop() || '';
             for (const line of lines) {
-                if (!line.trim()) continue;
+                if (!line.trim())
+                    continue;
                 try {
                     const message = JSON.parse(line);
                     this.handleMCPMessage(message);
-                } catch {
+                }
+                catch {
                     // ignore
                 }
             }
         }
     }
-
     /**
      * Handle incoming MCP message (JSON-RPC response)
      */
-    private handleMCPMessage(message: any): void {
+    handleMCPMessage(message) {
         // Handle JSON-RPC response
         if (message.id && this.pendingRequests.has(message.id)) {
-            const request = this.pendingRequests.get(message.id)!;
+            const request = this.pendingRequests.get(message.id);
             this.pendingRequests.delete(message.id);
             clearTimeout(request.timeout);
-
             if (message.error) {
                 request.reject(new Error(message.error.message || 'MCP server error'));
-            } else {
+            }
+            else {
                 request.resolve(message);
             }
         }
     }
-
     /**
      * Get next request ID
      */
-    private getNextRequestId(): number {
+    getNextRequestId() {
         return ++this.requestId;
     }
-
     /**
      * Get all cached tools
      */
-    getTools(): MCPTool[] {
+    getTools() {
         return Array.from(this.tools.values());
     }
-
     /**
      * Check if tool exists
      */
-    hasTool(toolName: string): boolean {
+    hasTool(toolName) {
         return this.tools.has(toolName);
     }
-
     /**
      * Disconnect from MCP server
      */
-    async disconnect(): Promise<void> {
+    async disconnect() {
         if (this.process) {
             this.process.kill();
             this.process = null;
@@ -434,21 +404,20 @@ export class MCPClientAdapter {
         this.stdoutBuffer = '';
         console.log('[MCPClientAdapter] 🔌 Disconnected from MCP server');
     }
-
     /**
      * Check connection status
      */
-    getConnectionStatus(): boolean {
+    getConnectionStatus() {
         return this.isConnected && this.process !== null && !this.process.killed;
     }
 }
-
+exports.MCPClientAdapter = MCPClientAdapter;
 // Global singleton instance (lazy initialization)
-let _mcpClientAdapter: MCPClientAdapter | null = null;
-
-export const mcpClientAdapter = (): MCPClientAdapter => {
+let _mcpClientAdapter = null;
+const mcpClientAdapter = () => {
     if (!_mcpClientAdapter) {
         _mcpClientAdapter = new MCPClientAdapter();
     }
     return _mcpClientAdapter;
 };
+exports.mcpClientAdapter = mcpClientAdapter;

@@ -70,7 +70,7 @@ export async function getGoogleConfig(organizationId: string) {
     const settingsData = integrationSettingsDoc.data()!;
     if (settingsData.isConfigured && settingsData.clientId && settingsData.clientSecret) {
       console.log(`✅ [GoogleConfig] Found config in integrationSettings/google for org: ${organizationId}`);
-      
+
       // Decrypt client secret if encrypted
       let clientSecret = settingsData.clientSecret;
       if (clientSecret.includes(':')) {
@@ -80,7 +80,7 @@ export async function getGoogleConfig(organizationId: string) {
           console.warn('⚠️ [GoogleConfig] Failed to decrypt client secret, using as-is');
         }
       }
-      
+
       return {
         clientId: settingsData.clientId,
         clientSecret: clientSecret,
@@ -113,10 +113,10 @@ export async function getGoogleConfig(organizationId: string) {
   if (!configsSnapshot.empty) {
     const configDoc = configsSnapshot.docs[0];
     const data = configDoc.data();
-    
+
     if (data.credentials?.clientId && data.credentials?.clientSecret) {
       console.log(`✅ [GoogleConfig] Found config in integrationConfigs for org: ${organizationId}`);
-      
+
       // Decrypt client secret if encrypted
       let clientSecret = data.credentials.clientSecret;
       if (clientSecret.includes(':')) {
@@ -126,7 +126,7 @@ export async function getGoogleConfig(organizationId: string) {
           console.warn('⚠️ [GoogleConfig] Failed to decrypt client secret, using as-is');
         }
       }
-      
+
       return {
         clientId: data.credentials.clientId,
         clientSecret: clientSecret,
@@ -215,14 +215,14 @@ export const saveGoogleConfig = onCall(
       const userRecord = await adminAuth.getUser(auth.uid);
       const customClaims = userRecord.customClaims || {};
       const claimsRole = customClaims.role || customClaims.licensingRole;
-      const isAdminFromClaims = customClaims.isAdmin === true || 
-                                 customClaims.isOrganizationOwner === true ||
-                                 (claimsRole && ['OWNER', 'ADMIN', 'SUPERADMIN', 'ORGANIZATION_OWNER'].includes(claimsRole.toUpperCase()));
+      const isAdminFromClaims = customClaims.isAdmin === true ||
+        customClaims.isOrganizationOwner === true ||
+        (claimsRole && ['OWNER', 'ADMIN', 'SUPERADMIN', 'ORGANIZATION_OWNER'].includes(claimsRole.toUpperCase()));
 
       // Check teamMembers collection (primary source for org users)
       let userData: any = null;
       let userRole: string | null = null;
-      
+
       const teamMemberQuery = await db.collection('teamMembers')
         .where('userId', '==', auth.uid)
         .where('organizationId', '==', organizationId)
@@ -243,26 +243,26 @@ export const saveGoogleConfig = onCall(
 
       // Verify user belongs to organization
       const userOrgId = customClaims.organizationId || userData?.organizationId;
-      
+
       if (!userOrgId) {
         console.warn(`⚠️ [GoogleConfig] User ${auth.uid} has no organization ID in claims or database`);
         throw new HttpsError('permission-denied', 'User organization not found. Please ensure you are properly assigned to an organization.');
       }
-      
+
       if (userOrgId !== organizationId) {
         console.warn(`⚠️ [GoogleConfig] User ${auth.uid} org mismatch: ${userOrgId} !== ${organizationId}`);
         throw new HttpsError('permission-denied', 'User does not belong to this organization');
       }
 
       // Check if user is admin (check custom claims first, then database)
-      const isAdmin = isAdminFromClaims || 
-                     (userRole && ['OWNER', 'ADMIN', 'SUPERADMIN', 'ORGANIZATION_OWNER'].includes(userRole.toUpperCase()));
+      const isAdmin = isAdminFromClaims ||
+        (userRole && ['OWNER', 'ADMIN', 'SUPERADMIN', 'ORGANIZATION_OWNER'].includes(userRole.toUpperCase()));
 
       if (!isAdmin) {
         console.warn(`⚠️ [GoogleConfig] User ${auth.uid} is not admin. Claims: ${JSON.stringify(customClaims)}, DB role: ${userRole}`);
         throw new HttpsError('permission-denied', 'Only organization admins can configure integrations');
       }
-      
+
       console.log(`✅ [GoogleConfig] User ${auth.uid} verified as admin for org ${organizationId}`);
 
       // Encrypt sensitive fields
@@ -383,14 +383,14 @@ export const saveGoogleConfigHttp = onRequest(
       const userRecord = await auth.getUser(userId);
       const customClaims = userRecord.customClaims || {};
       const claimsRole = customClaims.role || customClaims.licensingRole;
-      const isAdminFromClaims = customClaims.isAdmin === true || 
-                                 customClaims.isOrganizationOwner === true ||
-                                 (claimsRole && ['OWNER', 'ADMIN', 'SUPERADMIN', 'ORGANIZATION_OWNER'].includes(claimsRole.toUpperCase()));
+      const isAdminFromClaims = customClaims.isAdmin === true ||
+        customClaims.isOrganizationOwner === true ||
+        (claimsRole && ['OWNER', 'ADMIN', 'SUPERADMIN', 'ORGANIZATION_OWNER'].includes(claimsRole.toUpperCase()));
 
       // Check teamMembers collection (primary source for org users)
       let userData: any = null;
       let userRole: string | null = null;
-      
+
       const teamMemberQuery = await db.collection('teamMembers')
         .where('userId', '==', userId)
         .where('organizationId', '==', organizationId)
@@ -412,13 +412,13 @@ export const saveGoogleConfigHttp = onRequest(
       // Verify user belongs to organization
       // Check custom claims first, then database
       const userOrgId = customClaims.organizationId || userData?.organizationId;
-      
+
       if (!userOrgId) {
         console.warn(`⚠️ [GoogleConfig] User ${userId} has no organization ID in claims or database`);
         res.status(403).json({ success: false, error: 'User organization not found. Please ensure you are properly assigned to an organization.' });
         return;
       }
-      
+
       if (userOrgId !== organizationId) {
         console.warn(`⚠️ [GoogleConfig] User ${userId} org mismatch: ${userOrgId} !== ${organizationId}`);
         res.status(403).json({ success: false, error: 'User does not belong to this organization' });
@@ -426,15 +426,15 @@ export const saveGoogleConfigHttp = onRequest(
       }
 
       // Check if user is admin (check custom claims first, then database)
-      const isAdmin = isAdminFromClaims || 
-                     (userRole && ['OWNER', 'ADMIN', 'SUPERADMIN', 'ORGANIZATION_OWNER'].includes(userRole.toUpperCase()));
+      const isAdmin = isAdminFromClaims ||
+        (userRole && ['OWNER', 'ADMIN', 'SUPERADMIN', 'ORGANIZATION_OWNER'].includes(userRole.toUpperCase()));
 
       if (!isAdmin) {
         console.warn(`⚠️ [GoogleConfig] User ${userId} is not admin. Claims: ${JSON.stringify(customClaims)}, DB role: ${userRole}`);
         res.status(403).json({ success: false, error: 'Only organization admins can configure integrations' });
         return;
       }
-      
+
       console.log(`✅ [GoogleConfig] User ${userId} verified as admin for org ${organizationId}`);
 
       // Encrypt sensitive fields
@@ -589,3 +589,104 @@ export const getGoogleConfigStatus = onCall(
   }
 );
 
+/**
+ * HTTP version of getGoogleConfigStatus to avoid CORS issues
+ */
+export const getGoogleConfigStatusHttp = onRequest(
+  {
+    region: 'us-central1',
+    cors: true,
+    secrets: [encryptionKey],
+  },
+  async (req, res) => {
+    // Set CORS headers first
+    const { setCorsHeaders, verifyAuthToken } = await import('../shared/utils');
+    setCorsHeaders(req, res);
+
+    // Handle preflight requests
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+
+    try {
+      // Verify user authentication
+      const { organizationId: authOrgId } = await verifyAuthToken(req);
+
+      // Get organizationId from body or auth token
+      const organizationId = req.body?.organizationId || authOrgId;
+
+      if (!organizationId) {
+        res.status(400).json({ success: false, error: 'Organization ID is required' });
+        return;
+      }
+
+      // Check integrationSettings/google first (explicit configuration)
+      const configDoc = await db
+        .collection('organizations')
+        .doc(organizationId)
+        .collection('integrationSettings')
+        .doc('google')
+        .get();
+
+      if (configDoc.exists) {
+        const config = configDoc.data()!;
+        res.status(200).json({
+          success: true,
+          isConfigured: config.isConfigured || false,
+          clientId: config.clientId ? config.clientId.substring(0, 20) + '...' : null,
+          configuredAt: config.configuredAt || null,
+          configuredBy: config.configuredBy || null,
+          source: 'firestore',
+        });
+        return;
+      }
+
+      // Fallback 1: Check cloudIntegrations/google
+      const cloudIntegrationDoc = await db
+        .collection('organizations')
+        .doc(organizationId)
+        .collection('cloudIntegrations')
+        .doc('google')
+        .get();
+
+      if (cloudIntegrationDoc.exists) {
+        const cloudData = cloudIntegrationDoc.data()!;
+        const isActive = cloudData.isActive !== false;
+        const hasTokens = !!(cloudData.tokens || cloudData.encryptedTokens || cloudData.accessToken || cloudData.refreshToken);
+
+        if (isActive && hasTokens) {
+          res.status(200).json({
+            success: true,
+            isConfigured: true,
+            clientId: null,
+            configuredAt: cloudData.createdAt || cloudData.updatedAt || null,
+            configuredBy: null,
+            source: 'cloudIntegrations',
+            accountEmail: cloudData.accountEmail || null,
+            accountName: cloudData.accountName || null,
+          });
+          return;
+        }
+      }
+
+      // Fallback 2: Check environment variables
+      const hasEnvConfig = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+      res.status(200).json({
+        success: true,
+        isConfigured: hasEnvConfig,
+        clientId: hasEnvConfig ? process.env.GOOGLE_CLIENT_ID?.substring(0, 20) + '...' : null,
+        configuredAt: null,
+        configuredBy: null,
+        source: hasEnvConfig ? 'environment' : 'none',
+      });
+
+    } catch (error: any) {
+      console.error(`❌ [GoogleConfigHTTP] Error fetching config status:`, error);
+      res.status(error.message === 'Authentication required' ? 401 : 500).json({
+        success: false,
+        error: error.message || 'Failed to fetch Google Drive configuration status'
+      });
+    }
+  }
+);

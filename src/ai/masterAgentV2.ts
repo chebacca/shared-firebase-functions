@@ -306,16 +306,20 @@ export const masterAgentV2 = onCall({
           console.log('[MasterAgentV2] 🧠 Gemini response value:', geminiResultData.response);
           console.log('[MasterAgentV2] 🧠 Gemini data.data value:', geminiResultData.data);
 
+          // Determine agent based on mode
+          const fallbackAgent = activeMode === 'plan_mode' ? 'planning' : 'query';
+
           return {
             success: true,
             // Extract response from the payload object (geminiResultData)
             response: geminiResultData.response || geminiResultData.message || 'Response generated (No content)',
-            agent: 'query' as const,
+            agent: fallbackAgent,
             routing: {
-              agent: 'query',
+              agent: fallbackAgent,
               confidence: 0.8,
               reasoning: 'Ollama unavailable, automatically using Gemini fallback'
             },
+            contextData: geminiResultData.contextData, // Pass the full context data (forms, plans, etc.)
             toolsUsed: geminiResultData.contextData?.toolsUsed || [],
             conversationId: conversationId
           } as MasterAgentResponse;

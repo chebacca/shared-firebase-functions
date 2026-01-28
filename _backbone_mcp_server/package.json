@@ -1,0 +1,27 @@
+{
+    "name": "backbone-mcp-server",
+    "version": "1.0.0",
+    "description": "Unified MCP Server for Backbone Ecosystem",
+    "main": "dist/index.js",
+    "type": "module",
+    "scripts": {
+        "build": "tsc",
+        "start": "node dist/index.js",
+        "watch": "tsc --watch"
+    },
+    "dependencies": {
+        "@modelcontextprotocol/sdk": "^1.0.1",
+        "axios": "catalog:default",
+        "dotenv": "^16.4.5",
+        "firebase-admin": "catalog:default",
+        "shared-backbone-intelligence": "workspace:*",
+        "shared-firebase-models": "workspace:*",
+        "shared-firebase-types": "workspace:*",
+        "zod": "^3.23.0"
+    },
+    "devDependencies": {
+        "@types/glob": "^8.1.0",
+        "@types/node": "^20.0.0",
+        "typescript": "catalog:default"
+    }
+}

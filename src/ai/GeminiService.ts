@@ -541,7 +541,9 @@ export class GeminiService extends CoreGeminiService {
       const shouldUseArchitect =
         activeModeValue === 'plan_mode' ||
         currentModeValue === 'plan_mode' ||
-        interpretedIntent === 'reports';
+        interpretedIntent === 'reports' ||
+        interpretedIntent === 'script' ||
+        interpretedIntent === 'workflows';
 
       console.log(`🏛️ [Gemini Service] Architect routing check (FIRST):`);
       console.log(`  - globalContext.activeMode: "${activeModeValue}"`);

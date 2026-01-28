@@ -5,7 +5,7 @@
   "main": "lib/index.js",
   "types": "lib/index.js",
   "scripts": {
-    "build": "tsc && cp -r src/reports/templates lib/reports/ 2>/dev/null || true",
+    "build": "tsc && node scripts/bundle-mcp-server.js && cp -r src/reports/templates lib/reports/ 2>/dev/null || true",
     "build-clipshow": "npx tsc src/clipShowPro/*.ts --outDir lib/clipShowPro --target es2020 --module commonjs --esModuleInterop --skipLibCheck",
     "build-timecards": "npx tsc src/timecards/*.ts --outDir lib/timecards --target es2018 --module commonjs --esModuleInterop --skipLibCheck",
     "dev": "tsc --watch",
@@ -79,7 +79,8 @@
     "shared-firebase-models": "file:./_workspace_libs/shared-firebase-models",
     "shared-firebase-types": "file:./_workspace_libs/shared-firebase-types",
     "stripe": "^14.0.0",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.0",
+    "zod": "^3.25.76"
   },
   "overrides": {
     "langchain-mcp-adapters": "0.0.1"

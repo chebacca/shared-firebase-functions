@@ -4,8 +4,8 @@
  * Functions to save and retrieve Slack app configuration from Firestore
  */
 
-import { onCall, HttpsError } from 'firebase-functions/v2/https';
-import { db } from '../shared/utils';
+import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
+import { db, setCorsHeaders, verifyAuthToken } from '../shared/utils';
 import * as admin from 'firebase-admin';
 import * as crypto from 'crypto';
 import { encryptionKey, getEncryptionKey } from './secrets';
@@ -19,13 +19,13 @@ function encryptToken(text: string): string {
   // Use SHA-256 hash to derive a consistent 32-byte key from the secret
   const key = crypto.createHash('sha256').update(getEncryptionKey(), 'utf8').digest();
   const iv = crypto.randomBytes(16);
-  
+
   const cipher = crypto.createCipheriv(algorithm, key, iv);
   let encrypted = cipher.update(text, 'utf8', 'hex');
   encrypted += cipher.final('hex');
-  
+
   const authTag = cipher.getAuthTag();
-  
+
   return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
 }
 
@@ -36,18 +36,18 @@ function decryptToken(encryptedData: string): string {
   const [ivHex, authTagHex, encrypted] = encryptedData.split(':');
   const iv = Buffer.from(ivHex, 'hex');
   const authTag = Buffer.from(authTagHex, 'hex');
-  
+
   const algorithm = 'aes-256-gcm';
   // Ensure the key is exactly 32 bytes for AES-256-GCM
   // Use SHA-256 hash to derive a consistent 32-byte key from the secret
   const key = crypto.createHash('sha256').update(getEncryptionKey(), 'utf8').digest();
-  
+
   const decipher = crypto.createDecipheriv(algorithm, key, iv);
   decipher.setAuthTag(authTag);
-  
+
   let decrypted = decipher.update(encrypted, 'hex', 'utf8');
   decrypted += decipher.final('utf8');
-  
+
   return decrypted;
 }
 
@@ -56,38 +56,38 @@ function decryptToken(encryptedData: string): string {
  */
 export async function getSlackConfig(organizationId: string) {
   console.log(`🔍 [SlackConfig] Fetching config for org: ${organizationId}`);
-  
+
   const configDoc = await db
     .collection('organizations')
     .doc(organizationId)
     .collection('integrationSettings')
     .doc('slack')
     .get();
-    
+
   if (!configDoc.exists) {
     console.warn(`⚠️ [SlackConfig] No config found for org: ${organizationId}`);
     throw new HttpsError(
-      'failed-precondition', 
+      'failed-precondition',
       'Slack integration not configured. Please configure in Integration Settings.'
     );
   }
 
   const config = configDoc.data()!;
-  
+
   if (!config.isConfigured) {
     console.warn(`⚠️ [SlackConfig] Config exists but not marked as configured for org: ${organizationId}`);
     throw new HttpsError(
-      'failed-precondition', 
+      'failed-precondition',
       'Slack integration not fully configured. Please complete setup in Integration Settings.'
     );
   }
-  
+
   console.log(`✅ [SlackConfig] Config loaded for org: ${organizationId}`);
-  
+
   // Decrypt secrets if encrypted, otherwise use as-is
   let clientSecret = config.clientSecret;
   let signingSecret = config.signingSecret;
-  
+
   // Check if encrypted (format: "iv:authTag:encrypted" - 3 parts)
   const clientSecretParts = clientSecret.split(':');
   if (clientSecretParts.length === 3) {
@@ -100,7 +100,7 @@ export async function getSlackConfig(organizationId: string) {
   } else {
     console.log(`ℹ️ [SlackConfig] Client secret not encrypted, using as-is`);
   }
-  
+
   const signingSecretParts = signingSecret.split(':');
   if (signingSecretParts.length === 3) {
     try {
@@ -112,7 +112,7 @@ export async function getSlackConfig(organizationId: string) {
   } else {
     console.log(`ℹ️ [SlackConfig] Signing secret not encrypted, using as-is`);
   }
-  
+
   return {
     appId: config.appId,
     clientId: config.clientId,
@@ -138,7 +138,7 @@ export async function getSlackConfig(organizationId: string) {
  * Save Slack configuration to Firestore
  */
 export const saveSlackConfig = onCall(
-  { 
+  {
     region: 'us-central1',
     cors: true,
     secrets: [encryptionKey],
@@ -192,7 +192,7 @@ export const saveSlackConfig = onCall(
         .doc(organizationId)
         .collection('integrationSettings')
         .doc('slack');
-      
+
       await configRef.set({
         appId,
         clientId: clientId.trim(),
@@ -226,11 +226,11 @@ export const saveSlackConfig = onCall(
 
     } catch (error) {
       console.error(`❌ [SlackConfig] Error saving config:`, error);
-      
+
       if (error instanceof HttpsError) {
         throw error;
       }
-      
+
       throw new HttpsError('internal', 'Failed to save Slack configuration');
     }
   }
@@ -241,7 +241,7 @@ export const saveSlackConfig = onCall(
  * This does NOT remove the Slack app credentials - they remain for future use
  */
 export const disconnectSlackWorkspaces = onCall(
-  { 
+  {
     region: 'us-central1',
     cors: true,
     secrets: [encryptionKey],
@@ -260,16 +260,16 @@ export const disconnectSlackWorkspaces = onCall(
       throw new HttpsError('invalid-argument', 'Organization ID is required');
     }
 
-      console.log(`🔌 [SlackConfig] Disconnecting workspaces for org: ${organizationId} by user: ${auth.uid}`);
+    console.log(`🔌 [SlackConfig] Disconnecting workspaces for org: ${organizationId} by user: ${auth.uid}`);
 
     try {
       // Verify user is admin of the organization
       const userDoc = await db.collection('users').doc(auth.uid).get();
-      
+
       if (!userDoc.exists) {
         throw new HttpsError('not-found', 'User not found');
       }
-      
+
       const userData = userDoc.data();
 
       if (!userData || userData.organizationId !== organizationId) {
@@ -309,12 +309,12 @@ export const disconnectSlackWorkspaces = onCall(
       // Disconnect all connections (but keep credentials)
       const batch = db.batch();
       let hasUpdates = false;
-      
+
       // Use FieldValue.serverTimestamp() for proper serialization
       const timestamp = admin.firestore.FieldValue.serverTimestamp();
-      
+
       connectionsSnapshot.docs.forEach(doc => {
-        batch.update(doc.ref, { 
+        batch.update(doc.ref, {
           isActive: false,
           disconnectedAt: timestamp,
           disconnectedBy: auth.uid
@@ -350,7 +350,7 @@ export const disconnectSlackWorkspaces = onCall(
 
       return {
         success: true,
-        message: connectionsSnapshot.size > 0 
+        message: connectionsSnapshot.size > 0
           ? 'All Slack workspaces disconnected successfully. Credentials remain configured for future use.'
           : 'No active Slack workspaces found to disconnect.',
         disconnectedWorkspaces: connectionsSnapshot.size
@@ -358,18 +358,18 @@ export const disconnectSlackWorkspaces = onCall(
 
     } catch (error) {
       console.error(`❌ [SlackConfig] Error disconnecting workspaces:`, error);
-      
+
       if (error instanceof HttpsError) {
         throw error;
       }
-      
+
       throw new HttpsError('internal', 'Failed to disconnect Slack workspaces');
     }
   }
 );
 
 export const getSlackConfigStatus = onCall(
-  { 
+  {
     region: 'us-central1',
     cors: true,
     secrets: [encryptionKey],
@@ -422,3 +422,73 @@ export const getSlackConfigStatus = onCall(
   }
 );
 
+/**
+ * HTTP version of getSlackConfigStatus to avoid CORS issues
+ */
+export const getSlackConfigStatusHttp = onRequest(
+  {
+    region: 'us-central1',
+    memory: '256MiB',
+    cpu: 0.25,
+  },
+  async (req, res) => {
+    // Set CORS headers first
+    setCorsHeaders(req, res);
+
+    // Handle preflight requests
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+
+    try {
+      // Verify user authentication
+      const { organizationId: authOrgId } = await verifyAuthToken(req);
+
+      // Get organizationId from body or auth token
+      const organizationId = req.body?.organizationId || authOrgId;
+
+      if (!organizationId) {
+        res.status(400).json({ success: false, error: 'Organization ID is required' });
+        return;
+      }
+
+      const configDoc = await db
+        .collection('organizations')
+        .doc(organizationId)
+        .collection('integrationSettings')
+        .doc('slack')
+        .get();
+
+      if (!configDoc.exists) {
+        res.status(200).json({
+          success: true,
+          isConfigured: false,
+          appId: null,
+          clientId: null,
+          configuredAt: null,
+          configuredBy: null,
+        });
+        return;
+      }
+
+      const config = configDoc.data()!;
+
+      res.status(200).json({
+        success: true,
+        isConfigured: config.isConfigured || false,
+        appId: config.appId || null,
+        clientId: config.clientId || null,
+        configuredAt: config.configuredAt || null,
+        configuredBy: config.configuredBy || null,
+      });
+
+    } catch (error: any) {
+      console.error(`❌ [SlackConfigHTTP] Error fetching config status:`, error);
+      res.status(error.message === 'Authentication required' ? 401 : 500).json({
+        success: false,
+        error: error.message || 'Failed to fetch Slack configuration status'
+      });
+    }
+  }
+);

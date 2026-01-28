@@ -180,7 +180,8 @@ export { slackWebhookHandler } from './slack/webhook';
 export {
   saveSlackConfig,
   disconnectSlackWorkspaces,
-  getSlackConfigStatus
+  getSlackConfigStatus,
+  getSlackConfigStatusHttp
 } from './slack/config';
 
 // Export Google Drive integration functions
@@ -250,6 +251,9 @@ export {
   qrScanCheckInOutHttp
 } from './location/qrScanCheckInOut';
 
+// Export Vision (OCR) functions
+export { extractTextFromImage } from './vision';
+
 // Export Travel Management functions
 export {
   sendTravelEmail,
@@ -300,6 +304,7 @@ export {
 } from './box/config';
 export {
   getBoxAccessToken,
+  getBoxAccessTokenHttp,
   getBoxIntegrationStatus,
   listBoxFolders,
   getBoxFiles,
@@ -511,7 +516,8 @@ export {
   getBudgets,
   calculateBudgetVariance,
   syncTimecardToBudget,
-  aggregateTimecardCosts
+  aggregateTimecardCosts,
+  matchTemplates
 } from './budgeting';
 
 // Export FCM functions

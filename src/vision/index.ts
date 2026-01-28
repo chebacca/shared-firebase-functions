@@ -1,0 +1,1 @@
+export { extractTextFromImage } from './extractTextFromImage';

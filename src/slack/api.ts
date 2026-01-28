@@ -918,20 +918,10 @@ export const slackUploadFile = onCall(
 export const slackGetUsers = onCall(
   {
     region: 'us-central1',
-    cors: [
-      'http://localhost:4002',
-      'http://localhost:4003',
-      'http://localhost:4006',
-      'http://localhost:3000',
-      'http://localhost:3001',
-      'http://localhost:4010',
-      'http://localhost:5173',
-      'https://backbone-client.web.app',
-      'https://backbone-logic.web.app',
-      'https://backbone-callsheet-standalone.web.app',
-      'https://clipshowpro.web.app'
-    ],
+    cors: true,
     secrets: [encryptionKey],
+    cpu: 0.5,
+    memory: '1GiB',
   },
   async (request) => {
     try {
@@ -969,28 +959,36 @@ export const slackGetUsers = onCall(
         throw new HttpsError('internal', `Slack API error: ${result.error}`);
       }
 
-      // Map Slack users to our format
-      const users = (result.members || []).map((member: any) => ({
-        id: member.id,
-        name: member.name,
-        realName: member.real_name || member.name,
-        displayName: member.profile?.display_name || member.real_name || member.name,
-        email: member.profile?.email,
-        image24: member.profile?.image_24,
-        image32: member.profile?.image_32,
-        image48: member.profile?.image_48,
-        image72: member.profile?.image_72,
-        image192: member.profile?.image_192,
-        image512: member.profile?.image_512,
-        isBot: member.is_bot || false,
-        isAppUser: member.is_app_user || false,
-      }));
+      // Map Slack users to our format with extensive safety checks
+      const users = (result.members || [])
+        .filter((member: any) => member && member.id) // Ensure member and ID exist
+        .map((member: any) => {
+          const profile = member.profile || {};
+          return {
+            id: member.id,
+            name: member.name || 'Unknown',
+            realName: member.real_name || member.name || 'Unknown',
+            displayName: profile.display_name || member.real_name || member.name || 'Unknown',
+            email: profile.email || null,
+            image24: profile.image_24 || null,
+            image32: profile.image_32 || null,
+            image48: profile.image_48 || null,
+            image72: profile.image_72 || null,
+            image192: profile.image_192 || null,
+            image512: profile.image_512 || null,
+            isBot: !!member.is_bot,
+            isAppUser: !!member.is_app_user,
+            statusText: profile.status_text || null,
+            statusEmoji: profile.status_emoji || null,
+          };
+        });
 
-      console.log(`✅ [SlackAPI] Retrieved ${users.length} users`);
+      console.log(`✅ [SlackAPI] Successfully processed ${users.length} users`);
 
       return {
         success: true,
         users,
+        cacheTime: Date.now(),
       };
 
     } catch (error) {
