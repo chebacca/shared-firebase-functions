@@ -9,14 +9,11 @@
  */
 
 import { onRequest } from 'firebase-functions/v2/https';
-import { defineSecret } from 'firebase-functions/params';
 import express from 'express';
 import cors from 'cors';
 import { authenticateToken } from '../shared/middleware';
 import { createErrorResponse } from '../shared/utils';
-
-// Define secrets
-const googleMapsApiKeySecret = defineSecret('GOOGLE_MAPS_API_KEY');
+import { googleMapsApiKey } from '../google/secrets';
 
 // Import routes
 import timecardRouter from './routes/timecard.routes';
@@ -86,7 +83,7 @@ export const iwmApi = onRequest({
   minInstances: 0,
   invoker: 'public',
   cors: false, // Handled by middleware
-  secrets: [googleMapsApiKeySecret]
+  secrets: [googleMapsApiKey]
 }, app);
 
 // Export individual route handlers for direct access if needed

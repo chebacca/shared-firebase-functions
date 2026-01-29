@@ -18,33 +18,33 @@ function decryptTokens(encryptedData) {
   const IV_LENGTH = 16;
   const SALT_LENGTH = 64;
   const TAG_LENGTH = 16;
-  
+
   // Get encryption key from environment variables
   // NOTE: functions.config() is deprecated - use environment variables or Secret Manager
   const masterKey = process.env.INTEGRATIONS_ENCRYPTION_KEY || process.env.ENCRYPTION_KEY;
-  
+
   if (!masterKey) {
     throw new Error('Encryption key not found');
   }
-  
+
   function deriveKey(masterKey, salt) {
     return crypto.pbkdf2Sync(masterKey, salt, 100000, 32, 'sha256');
   }
-  
+
   const combined = Buffer.from(encryptedData, 'base64');
   const salt = combined.subarray(0, SALT_LENGTH);
   const iv = combined.subarray(SALT_LENGTH, SALT_LENGTH + IV_LENGTH);
   const tag = combined.subarray(SALT_LENGTH + IV_LENGTH, SALT_LENGTH + IV_LENGTH + TAG_LENGTH);
   const encrypted = combined.subarray(SALT_LENGTH + IV_LENGTH + TAG_LENGTH);
-  
+
   const key = deriveKey(masterKey, salt);
   const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
   decipher.setAAD(salt);
   decipher.setAuthTag(tag);
-  
+
   let decrypted = decipher.update(encrypted, undefined, 'utf8');
   decrypted += decipher.final('utf8');
-  
+
   return JSON.parse(decrypted);
 }
 
@@ -53,7 +53,7 @@ if (!admin.apps.length) {
   const path = require('path');
   const fs = require('fs');
   let initialized = false;
-  
+
   // Try multiple service account file paths
   const possiblePaths = [
     path.join(__dirname, '../backbone-logic-6fe5ca549914.json'),
@@ -62,7 +62,7 @@ if (!admin.apps.length) {
     path.join(__dirname, '../firebase-clipshow.json'),
     path.join(__dirname, '../serviceAccountKey.json')
   ];
-  
+
   for (const serviceAccountPath of possiblePaths) {
     if (fs.existsSync(serviceAccountPath)) {
       try {
@@ -79,7 +79,7 @@ if (!admin.apps.length) {
       }
     }
   }
-  
+
   // Fallback: Use Application Default Credentials (if running on GCP or with gcloud auth)
   if (!initialized) {
     console.log('⚠️ [Admin] Could not load service account file, trying Application Default Credentials...');
@@ -99,7 +99,7 @@ async function processBoxOAuth(code, state, organizationId = null) {
 
     // Step 1: Verify state parameter
     const stateDoc = await db.collection('oauthStates').doc(state).get();
-    
+
     if (!stateDoc.exists) {
       console.error('❌ [Admin] State document not found. OAuth session may have expired.');
       console.log('💡 [Admin] Tip: The state expires after 60 minutes. Please reconnect Box.');
@@ -120,7 +120,7 @@ async function processBoxOAuth(code, state, organizationId = null) {
 
     // Step 2: Get Box configuration
     let boxConfig = null;
-    
+
     // Try integrationConfigs first
     if (finalOrgId && finalOrgId !== 'standalone') {
       const configDoc = await db
@@ -129,7 +129,7 @@ async function processBoxOAuth(code, state, organizationId = null) {
         .collection('integrationConfigs')
         .doc('box')
         .get();
-      
+
       if (configDoc.exists) {
         const configData = configDoc.data();
         if (configData?.credentials?.clientId) {
@@ -137,8 +137,8 @@ async function processBoxOAuth(code, state, organizationId = null) {
           let clientSecret = configData.credentials.clientSecret;
           try {
             const decrypted = decryptTokens(configData.credentials.clientSecret);
-            clientSecret = typeof decrypted === 'object' && decrypted.clientSecret 
-              ? decrypted.clientSecret 
+            clientSecret = typeof decrypted === 'object' && decrypted.clientSecret
+              ? decrypted.clientSecret
               : (typeof decrypted === 'string' ? decrypted : configData.credentials.clientSecret);
             console.log('✅ [Admin] Decrypted client secret from integrationConfigs');
           } catch (decryptError) {
@@ -146,19 +146,19 @@ async function processBoxOAuth(code, state, organizationId = null) {
             console.log('⚠️ [Admin] Could not decrypt, assuming plaintext:', decryptError.message);
             clientSecret = configData.credentials.clientSecret;
           }
-          
+
           boxConfig = {
             credentials: {
               clientId: configData.credentials.clientId,
               clientSecret: typeof clientSecret === 'string' ? clientSecret : String(clientSecret)
             },
-            redirectUri: configData.settings?.redirectUri || stateData.redirectUri || 'http://localhost:4010/integration-settings',
+            redirectUri: configData.settings?.redirectUri || stateData.redirectUri || 'http://localhost:4001/dashboard/integrations',
             scope: configData.settings?.scope || 'root_readwrite'
           };
           console.log('✅ [Admin] Found Box config in integrationConfigs');
         }
       }
-      
+
       // Try integrationSettings (legacy location)
       if (!boxConfig) {
         const legacyConfigDoc = await db
@@ -167,7 +167,7 @@ async function processBoxOAuth(code, state, organizationId = null) {
           .collection('integrationSettings')
           .doc('box')
           .get();
-        
+
         if (legacyConfigDoc.exists) {
           const legacyData = legacyConfigDoc.data();
           if (legacyData?.clientId) {
@@ -175,8 +175,8 @@ async function processBoxOAuth(code, state, organizationId = null) {
             let clientSecret = legacyData.clientSecret;
             try {
               const decrypted = decryptTokens(legacyData.clientSecret);
-              clientSecret = typeof decrypted === 'object' && decrypted.clientSecret 
-                ? decrypted.clientSecret 
+              clientSecret = typeof decrypted === 'object' && decrypted.clientSecret
+                ? decrypted.clientSecret
                 : (typeof decrypted === 'string' ? decrypted : legacyData.clientSecret);
               console.log('✅ [Admin] Decrypted client secret from integrationSettings');
             } catch (decryptError) {
@@ -184,13 +184,13 @@ async function processBoxOAuth(code, state, organizationId = null) {
               console.log('⚠️ [Admin] Could not decrypt, assuming plaintext:', decryptError.message);
               clientSecret = legacyData.clientSecret;
             }
-            
+
             boxConfig = {
               credentials: {
                 clientId: legacyData.clientId,
                 clientSecret: typeof clientSecret === 'string' ? clientSecret : String(clientSecret)
               },
-              redirectUri: legacyData.redirectUri || stateData.redirectUri || 'http://localhost:4010/integration-settings',
+              redirectUri: legacyData.redirectUri || stateData.redirectUri || 'http://localhost:4001/dashboard/integrations',
               scope: legacyData.scope || 'root_readwrite'
             };
             console.log('✅ [Admin] Found Box config in integrationSettings (legacy)');
@@ -206,7 +206,7 @@ async function processBoxOAuth(code, state, organizationId = null) {
           clientId: process.env.BOX_CLIENT_ID,
           clientSecret: process.env.BOX_CLIENT_SECRET
         },
-        redirectUri: process.env.BOX_REDIRECT_URI || stateData?.redirectUri || 'http://localhost:4010/integration-settings',
+        redirectUri: process.env.BOX_REDIRECT_URI || stateData?.redirectUri || 'http://localhost:4001/dashboard/integrations',
         scope: 'root_readwrite'
       };
       console.log('✅ [Admin] Using environment variables for Box config');
@@ -225,9 +225,9 @@ async function processBoxOAuth(code, state, organizationId = null) {
     });
 
     // Use redirect URI from state (set during OAuth initiation) or config
-    const finalRedirectUri = stateData.redirectUri || boxConfig.redirectUri || 'http://localhost:4010/integration-settings';
+    const finalRedirectUri = stateData.redirectUri || boxConfig.redirectUri || 'http://localhost:4001/dashboard/integrations';
     console.log('📋 [Admin] Using redirect URI:', finalRedirectUri);
-    
+
     const tokenInfo = await boxSDK.getTokensAuthorizationCodeGrant(code, {
       redirectURI: finalRedirectUri
     });
@@ -237,7 +237,7 @@ async function processBoxOAuth(code, state, organizationId = null) {
     // Step 4: Get user info
     const client = boxSDK.getBasicClient(tokenInfo.accessToken);
     const userInfo = await client.users.getCurrentUser();
-    
+
     console.log('✅ [Admin] User info:', {
       email: userInfo.login,
       name: userInfo.name

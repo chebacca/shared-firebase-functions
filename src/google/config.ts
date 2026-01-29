@@ -84,7 +84,7 @@ export async function getGoogleConfig(organizationId: string) {
       return {
         clientId: settingsData.clientId,
         clientSecret: clientSecret,
-        redirectUri: settingsData.redirectUri || 'https://backbone-logic.web.app/integration-settings',
+        redirectUri: settingsData.redirectUri || 'https://backbone-logic.web.app/dashboard/integrations',
         scopes: settingsData.scopes || [
           'https://www.googleapis.com/auth/drive.readonly',
           'https://www.googleapis.com/auth/drive.file',
@@ -130,7 +130,7 @@ export async function getGoogleConfig(organizationId: string) {
       return {
         clientId: data.credentials.clientId,
         clientSecret: clientSecret,
-        redirectUri: data.settings?.redirectUri || 'https://backbone-logic.web.app/integration-settings',
+        redirectUri: data.settings?.redirectUri || 'https://backbone-logic.web.app/dashboard/integrations',
         scopes: [
           'https://www.googleapis.com/auth/drive.readonly',
           'https://www.googleapis.com/auth/drive.file',
@@ -151,7 +151,7 @@ export async function getGoogleConfig(organizationId: string) {
   const envClientSecret = process.env.GOOGLE_CLIENT_SECRET;
   // NOTE: redirectUri should come from the client request, not env/config
   // This is a fallback only - the actual redirect URI is provided by the client
-  const envRedirectUri = process.env.GOOGLE_REDIRECT_URI || 'https://backbone-logic.web.app/integration-settings';
+  const envRedirectUri = process.env.GOOGLE_REDIRECT_URI || 'https://backbone-logic.web.app/dashboard/integrations';
 
   if (envClientId && envClientSecret) {
     console.log(`⚠️ [GoogleConfig] Using environment variables (legacy mode) for org: ${organizationId}`);
@@ -277,7 +277,7 @@ export const saveGoogleConfig = onCall(
         .set({
           clientId,
           clientSecret: encryptedClientSecret,
-          redirectUri: redirectUri || 'https://backbone-logic.web.app/integration-settings',
+          redirectUri: redirectUri || 'https://backbone-logic.web.app/dashboard/integrations',
           scopes: [
             'https://www.googleapis.com/auth/drive.readonly',
             'https://www.googleapis.com/auth/drive.file',
@@ -449,7 +449,7 @@ export const saveGoogleConfigHttp = onRequest(
         .set({
           clientId,
           clientSecret: encryptedClientSecret,
-          redirectUri: redirectUri || 'https://backbone-logic.web.app/integration-settings',
+          redirectUri: redirectUri || 'https://backbone-logic.web.app/dashboard/integrations',
           scopes: [
             'https://www.googleapis.com/auth/drive.readonly',
             'https://www.googleapis.com/auth/drive.file',

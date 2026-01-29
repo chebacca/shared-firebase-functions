@@ -171,8 +171,8 @@ export const slackListChannels = onCall(
     region: 'us-central1',
     cors: true, // Allow all origins for development, production origins handled by Firebase
     secrets: [encryptionKey],
-    cpu: 0.5,
-    memory: '1GiB', // Increased memory for large channel lists
+    cpu: 1,
+    memory: '2GiB', // Increased memory for large channel lists
     timeoutSeconds: 300, // Increased timeout 
   },
   async (request) => {

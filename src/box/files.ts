@@ -765,8 +765,8 @@ export const getBoxAccessToken = onCall(
         region: 'us-central1',
         cors: true,
         secrets: [encryptionKey],
-        memory: '512MiB',
-        cpu: 0.5,
+        memory: '1GiB',
+        cpu: 1,
     },
     async (request) => {
         try {

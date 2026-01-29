@@ -5,11 +5,9 @@
  */
 
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
-import { defineSecret } from 'firebase-functions/params';
 import { Client } from '@googlemaps/google-maps-services-js';
-import { getGoogleMapsApiKey } from '../../google/secrets';
+import { getGoogleMapsApiKey, googleMapsApiKey } from '../../google/secrets';
 
-const googleMapsApiKeySecret = defineSecret('GOOGLE_MAPS_API_KEY');
 const mapsClient = new Client({});
 
 interface DirectionsRequest {
@@ -21,7 +19,7 @@ interface DirectionsRequest {
 
 export const calculateDirections = onCall(
   {
-    secrets: [googleMapsApiKeySecret],
+    secrets: [googleMapsApiKey],
     memory: '256MiB',
     timeoutSeconds: 30,
   },

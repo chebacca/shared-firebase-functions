@@ -373,6 +373,8 @@ export const getSlackConfigStatus = onCall(
     region: 'us-central1',
     cors: true,
     secrets: [encryptionKey],
+    memory: '1GiB',
+    cpu: 1,
   },
   async (request) => {
     const { auth, data } = request;

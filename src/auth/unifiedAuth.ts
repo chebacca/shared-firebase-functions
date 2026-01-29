@@ -203,7 +203,7 @@ export const onUserLoginTrigger: any = functions.auth.user().onCreate(async (use
  * Note: onCall functions automatically handle CORS. If CORS errors occur,
  * ensure the function is deployed and the Firebase project allows localhost origins.
  */
-export const syncUserClaimsOnLogin = functions.https.onCall(async (data, context) => {
+export const syncUserClaimsOnLogin = functions.runWith({ memory: '1GB' }).https.onCall(async (data, context) => {
     if (!context.auth) {
         throw new functions.https.HttpsError('unauthenticated', 'User must be logged in to sync claims.');
     }

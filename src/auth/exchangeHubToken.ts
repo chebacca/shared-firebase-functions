@@ -10,7 +10,7 @@ if (!admin.apps.length) {
  * Exchanges a valid ID token (from Hub) for a Custom Token.
  * This allows apps to sign in without re-entering credentials.
  */
-export const exchangeHubToken = functions.https.onCall(async (data: any, context: any) => {
+export const exchangeHubToken = functions.runWith({ memory: '1GB' }).https.onCall(async (data: any, context: any) => {
     const hubIdToken = data.hubIdToken;
 
     if (!hubIdToken) {

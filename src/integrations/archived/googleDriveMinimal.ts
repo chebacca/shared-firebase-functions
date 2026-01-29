@@ -19,7 +19,7 @@ if (!admin.apps.length) {
 // NOTE: This file is archived. Use environment variables instead of functions.config()
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '749245129278-vnepq570jrh5ji94c9olshc282bj1l86.apps.googleusercontent.com';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || 'GOCSPX-test_client_secret_for_testing';
-const REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:4010/auth/google/callback.html';
+const REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || 'http://localhost:4001/dashboard/integrations';
 
 // OAuth2 client
 const oauth2Client = new google.auth.OAuth2(
@@ -67,20 +67,20 @@ function encryptTokens(tokens: any): string {
     const key = getEncryptionKey();
     const iv = crypto.randomBytes(IV_LENGTH);
     const salt = crypto.randomBytes(SALT_LENGTH);
-    
+
     // Create key using PBKDF2
     const derivedKey = crypto.pbkdf2Sync(key, salt, 10000, 32, 'sha256');
-    
+
     // Encrypt using AES-256-GCM
     const cipher = crypto.createCipheriv(ALGORITHM, derivedKey, iv);
     const tokenString = JSON.stringify(tokens);
-    
+
     let encrypted = cipher.update(tokenString, 'utf8', 'hex');
     encrypted += cipher.final('hex');
-    
+
     // Get authentication tag
     const tag = cipher.getAuthTag();
-    
+
     // Return everything needed for decryption
     return JSON.stringify({
       encrypted,
@@ -98,21 +98,21 @@ function decryptTokens(encryptedData: string): any {
   try {
     const key = getEncryptionKey();
     const data = JSON.parse(encryptedData);
-    
+
     const iv = Buffer.from(data.iv, 'hex');
     const salt = Buffer.from(data.salt, 'hex');
     const tag = Buffer.from(data.tag, 'hex');
-    
+
     // Create key using PBKDF2
     const derivedKey = crypto.pbkdf2Sync(key, salt, 10000, 32, 'sha256');
-    
+
     // Decrypt using AES-256-GCM
     const decipher = crypto.createDecipheriv(ALGORITHM, derivedKey, iv);
     decipher.setAuthTag(tag);
-    
+
     let decrypted = decipher.update(data.encrypted, 'hex', 'utf8');
     decrypted += decipher.final('utf8');
-    
+
     return JSON.parse(decrypted);
   } catch (error) {
     console.error('Token decryption failed:', error);
@@ -140,10 +140,10 @@ export const initiateGoogleOAuth = functions.https.onCall(async (data, context) 
 
     const userId = context.auth.uid;
     const organizationId = context.auth.token.organizationId || 'default';
-    
+
     // Generate secure state parameter
     const state = generateSecureState();
-    
+
     // Store state in Firestore for verification
     await admin.firestore()
       .collection('oauthStates')
