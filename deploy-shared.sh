@@ -5,9 +5,9 @@
 # NOTE: This script now calls the master deployment script at the root.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-FUNCTIONS="scheduleMeetMeeting,createMeetMeeting,getVideoConferencingProviders,initiateOAuth,handleOAuthCallback,refreshOAuthToken,revokeOAuthConnection,listAvailableProviders,exchangeHubToken"
+FUNCTIONS="scheduleMeetMeeting,createMeetMeeting,getVideoConferencingProviders,initiateOAuth,handleOAuthCallback,refreshOAuthToken,revokeOAuthConnection,listAvailableProviders,exchangeHubToken,updateOAuthAccountInfo,disconnectIntegration,verifyIntegrationAccess"
 
 echo "🚀 Deploying shared Firebase functions..."
 echo "📦 Includes: videoConferencing, integrations, oauth, slack, google, etc."

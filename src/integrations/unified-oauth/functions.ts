@@ -478,15 +478,61 @@ export const updateOAuthAccountInfo = onCall(
         accountId = user.id || '';
       } else if (provider === 'dropbox') {
         // Use Dropbox API to get current account
-        const response = await fetch('https://api.dropboxapi.com/2/users/get_current_account', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`
+        const makeDropboxRequest = async (token: string) => {
+          return await fetch('https://api.dropboxapi.com/2/users/get_current_account', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          });
+        };
+
+        let response = await makeDropboxRequest(accessToken);
+
+        // If unauthorized, try to refresh token and retry once
+        if (response.status === 401) {
+          console.log(`⚠️ [updateOAuthAccountInfo] Dropbox token expired (401), attempting refresh...`);
+          try {
+            // Refresh the token
+            await oauthService.refreshConnection(organizationId, provider);
+
+            // Re-fetch the updated connection document
+            const updatedConnectionDoc = await db
+              .collection('organizations')
+              .doc(organizationId)
+              .collection('cloudIntegrations')
+              .doc(provider)
+              .get();
+
+            if (updatedConnectionDoc.exists) {
+              const updatedData = updatedConnectionDoc.data()!;
+              const { decryptToken: decryptNewToken } = await import('./encryption');
+              // Get the new access token
+              const newAccessToken = decryptNewToken(updatedData.accessToken);
+
+              console.log(`✅ [updateOAuthAccountInfo] Token refreshed successfully, retrying request...`);
+              // Retry the request with new token
+              response = await makeDropboxRequest(newAccessToken);
+            } else {
+              console.error(`❌ [updateOAuthAccountInfo] Connection document disappeared during refresh`);
+            }
+          } catch (refreshError: any) {
+            console.error(`❌ [updateOAuthAccountInfo] Failed to refresh Dropbox token:`, refreshError);
+            // We will fall through to the error handling below with the original 401 response
           }
-        });
+        }
 
         if (!response.ok) {
-          throw new Error('Failed to get Dropbox account info');
+          const errorText = await response.text();
+          console.error(`❌ [updateOAuthAccountInfo] Dropbox API error: ${response.status} ${response.statusText}`, errorText);
+
+          // Provide more specific error if it's still 401
+          if (response.status === 401) {
+            throw new Error(`Dropbox authentication failed (401). Please try disconnecting and reconnecting your Dropbox account.`);
+          }
+
+          throw new Error(`Failed to get Dropbox account info: ${response.status} ${response.statusText} - ${errorText}`);
         }
 
         const data = await response.json();

@@ -65,10 +65,17 @@ export class DataToolExecutor {
                 case 'create_script_package':
                     try {
                         // Adapt args to match CreateScriptPackageRequest
+                        // Map 'show' -> 'showId' and 'season' -> 'seasonId' for backward compatibility
                         const scriptArgs = {
                             ...args,
+                            showId: args.showId || args.show || undefined,
+                            seasonId: args.seasonId || args.season || undefined,
+                            format: args.format || '3-column-table', // Ensure format defaults correctly
                             organizationId // Ensure org ID from context is used
                         };
+                        // Remove legacy keys if they exist
+                        if ('show' in scriptArgs) delete (scriptArgs as any).show;
+                        if ('season' in scriptArgs) delete (scriptArgs as any).season;
                         const scriptResult = await createScriptPackageCore(scriptArgs, userId);
                         return {
                             success: true,
