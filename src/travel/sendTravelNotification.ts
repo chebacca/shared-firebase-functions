@@ -182,6 +182,23 @@ export const sendTravelReminder = onCall(
       const travelRequest = travelRequestDoc.data();
       const startDate = travelRequest?.startDate?.toDate?.() || new Date(travelRequest?.startDate);
 
+      // Build reminder body with key travel details (flight, hotel, rental)
+      let body = `Your trip to ${travelRequest?.destination || 'destination'} starts tomorrow.`;
+      const flights = travelRequest?.flightBookings as Array<{ airline?: string; flightNumber?: string; departureAirport?: string; arrivalAirport?: string }> | undefined;
+      const lodging = travelRequest?.lodgingBookings as Array<{ hotelName?: string; checkInDate?: string }> | undefined;
+      const rentals = travelRequest?.rentalCarBookings as Array<{ company?: string; confirmationNumber?: string }> | undefined;
+      if (flights?.length) {
+        const f = flights[0];
+        body += ` Flight: ${f.airline || ''} ${f.flightNumber || ''} ${f.departureAirport || ''} → ${f.arrivalAirport || ''}.`;
+      }
+      if (lodging?.length) {
+        body += ` Hotel: ${lodging[0].hotelName || '—'}.`;
+      }
+      if (rentals?.length) {
+        body += ` Rental: ${rentals[0].company || '—'} (Conf: ${rentals[0].confirmationNumber || '—'}).`;
+      }
+      body += ' Tap to view full itinerary.';
+
       // Send notification using the messaging service directly
       const tokensSnapshot = await db
         .collection('users')
@@ -200,7 +217,7 @@ export const sendTravelReminder = onCall(
       const tokens = tokensSnapshot.docs.map(doc => doc.data().token);
       const notification: admin.messaging.Notification = {
         title: `Travel Reminder: ${travelRequest?.title || 'Upcoming Trip'}`,
-        body: `Your trip to ${travelRequest?.destination || 'destination'} starts tomorrow. Don't forget to check your itinerary!`,
+        body,
       };
 
       const message: admin.messaging.MulticastMessage = {
