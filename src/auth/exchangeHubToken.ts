@@ -1,4 +1,5 @@
-import * as functions from 'firebase-functions';
+import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { defaultCallableOptions } from '../lib/functionOptions';
 import * as admin from 'firebase-admin';
 
 // Ensure Firebase Admin is initialized
@@ -10,11 +11,12 @@ if (!admin.apps.length) {
  * Exchanges a valid ID token (from Hub) for a Custom Token.
  * This allows apps to sign in without re-entering credentials.
  */
-export const exchangeHubToken = functions.runWith({ memory: '1GB' }).https.onCall(async (data: any, context: any) => {
+export const exchangeHubToken = onCall(defaultCallableOptions, async (request) => {
+    const data = request.data as { hubIdToken?: string; organizationId?: string; projectId?: string };
     const hubIdToken = data.hubIdToken;
 
     if (!hubIdToken) {
-        throw new functions.https.HttpsError('invalid-argument', 'Missing hubIdToken');
+        throw new HttpsError('invalid-argument', 'Missing hubIdToken');
     }
 
     try {
@@ -76,6 +78,6 @@ export const exchangeHubToken = functions.runWith({ memory: '1GB' }).https.onCal
         };
     } catch (error) {
         console.error('[Auth] Token exchange failed:', error);
-        throw new functions.https.HttpsError('unauthenticated', 'Invalid token or token exchange failed');
+        throw new HttpsError('unauthenticated', 'Invalid token or token exchange failed');
     }
 });

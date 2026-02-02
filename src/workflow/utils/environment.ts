@@ -5,8 +5,6 @@
  * Supports both local development and Firebase Functions config
  */
 
-import * as functions from 'firebase-functions';
-
 // Environment configuration interface
 interface EnvironmentConfig {
   // Google API Services

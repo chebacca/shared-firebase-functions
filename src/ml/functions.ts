@@ -96,6 +96,7 @@ export const searchAll = onCall(
     region: 'us-central1',
     invoker: 'public', // Required for CORS preflight requests
     cors: true, // Set to true to bypass whitelist issues in production
+    memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
     secrets: [geminiApiKey],
   },
   async (request) => {

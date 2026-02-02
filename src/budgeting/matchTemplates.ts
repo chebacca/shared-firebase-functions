@@ -1,4 +1,3 @@
-import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 
@@ -78,7 +77,7 @@ function calculateStringSimilarity(str1: string, str2: string): number {
  * Cloud Function to match templates
  * Protects the proprietary matching algorithm by running it server-side
  */
-export const matchTemplates = onCall(async (request) => {
+export const matchTemplates = onCall({ memory: '512MiB' }, async (request) => {
     // Authentication Gate check (Logic Shield requires Auth)
     if (!request.auth) {
         throw new HttpsError('unauthenticated', 'The function must be called while authenticated.');

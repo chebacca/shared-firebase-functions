@@ -17,7 +17,7 @@ const auth = getAuth();
 /**
  * Create a new calendar event
  */
-export const createCalendarEvent = onCall(async (request) => {
+export const createCalendarEvent = onCall({ memory: '512MiB' }, async (request) => {
   try {
     const { title, description, startDate, endDate, location, eventType, assignedContactIds, projectId } = request.data;
     
@@ -66,7 +66,7 @@ export const createCalendarEvent = onCall(async (request) => {
 /**
  * Update an existing calendar event
  */
-export const updateCalendarEvent = onCall(async (request) => {
+export const updateCalendarEvent = onCall({ memory: '512MiB' }, async (request) => {
   try {
     const { eventId, title, description, startDate, endDate, location, eventType, assignedContactIds } = request.data;
     
@@ -122,7 +122,7 @@ export const updateCalendarEvent = onCall(async (request) => {
 /**
  * Delete a calendar event
  */
-export const deleteCalendarEvent = onCall(async (request) => {
+export const deleteCalendarEvent = onCall({ memory: '512MiB' }, async (request) => {
   try {
     const { eventId } = request.data;
     
@@ -164,7 +164,7 @@ export const deleteCalendarEvent = onCall(async (request) => {
 /**
  * Get calendar events for a project
  */
-export const getCalendarEvents = onCall(async (request) => {
+export const getCalendarEvents = onCall({ memory: '512MiB' }, async (request) => {
   try {
     const { projectId, startDate, endDate, eventType } = request.data;
     
@@ -218,7 +218,7 @@ export const getCalendarEvents = onCall(async (request) => {
 /**
  * Assign contacts to a calendar event
  */
-export const assignContactsToEvent = onCall(async (request) => {
+export const assignContactsToEvent = onCall({ memory: '512MiB' }, async (request) => {
   try {
     const { eventId, contactIds } = request.data;
     

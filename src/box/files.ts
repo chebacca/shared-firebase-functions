@@ -1,5 +1,5 @@
-import * as functions from 'firebase-functions';
 import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
+import { defaultCallableOptions } from '../lib/functionOptions';
 import * as admin from 'firebase-admin';
 import { getStorage } from 'firebase-admin/storage';
 import { encryptTokens, decryptTokens, decryptLegacyToken, hashForLogging } from '../integrations/encryption';
@@ -80,6 +80,7 @@ export const getBoxIntegrationStatus = onCall(
     {
         region: 'us-central1',
         cors: true,
+        memory: '512MiB', // Increased from default 256MiB - function runs out of memory during initialization
         secrets: [encryptionKey],
     },
     async (request) => {
@@ -871,14 +872,15 @@ export const getBoxAccessTokenHttp = onRequest(
 /**
  * List Box folders
  */
-export const listBoxFolders = functions.https.onCall(async (data, context) => {
+export const listBoxFolders = onCall(defaultCallableOptions, async (request) => {
     try {
-        if (!context.auth) {
-            throw new Error('Authentication required');
+        if (!request.auth) {
+            throw new HttpsError('unauthenticated', 'Authentication required');
         }
 
-        const userId = context.auth.uid;
-        const organizationId = context.auth.token.organizationId || 'default';
+        const data = request.data as { folderId?: string };
+        const userId = request.auth.uid;
+        const organizationId = request.auth.token.organizationId || 'default';
         const { folderId = '0' } = data; // '0' is root folder in Box
 
         // Get and refresh organization-level tokens
@@ -938,14 +940,15 @@ export const listBoxFolders = functions.https.onCall(async (data, context) => {
 /**
  * Get Box files in a folder
  */
-export const getBoxFiles = functions.https.onCall(async (data, context) => {
+export const getBoxFiles = onCall(defaultCallableOptions, async (request) => {
     try {
-        if (!context.auth) {
-            throw new Error('Authentication required');
+        if (!request.auth) {
+            throw new HttpsError('unauthenticated', 'Authentication required');
         }
 
-        const userId = context.auth.uid;
-        const organizationId = context.auth.token.organizationId || 'default';
+        const data = request.data as { folderId?: string };
+        const userId = request.auth.uid;
+        const organizationId = request.auth.token.organizationId || 'default';
         const { folderId } = data;
 
         if (!folderId) {
@@ -986,14 +989,15 @@ export const getBoxFiles = functions.https.onCall(async (data, context) => {
 /**
  * Create Box folder
  */
-export const createBoxFolder = functions.https.onCall(async (data, context) => {
+export const createBoxFolder = onCall(defaultCallableOptions, async (request) => {
     try {
-        if (!context.auth) {
-            throw new Error('Authentication required');
+        if (!request.auth) {
+            throw new HttpsError('unauthenticated', 'Authentication required');
         }
 
-        const userId = context.auth.uid;
-        const organizationId = context.auth.token.organizationId || 'default';
+        const data = request.data as { name?: string; parentId?: string };
+        const userId = request.auth.uid;
+        const organizationId = request.auth.token.organizationId || 'default';
         const { name, parentId = '0' } = data; // '0' is root folder in Box
 
         if (!name) {
@@ -1028,7 +1032,7 @@ export const createBoxFolder = functions.https.onCall(async (data, context) => {
 /**
  * Upload file to Box - HTTP version with CORS support
  */
-export const uploadToBoxHttp = functions.https.onRequest(async (req, res) => {
+export const uploadToBoxHttp = onRequest({ memory: '512MiB' }, async (req, res) => {
     const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
     try {
@@ -1134,15 +1138,16 @@ export const uploadToBoxHttp = functions.https.onRequest(async (req, res) => {
 /**
  * Index Box folder - List files and store metadata with shared links for organization-wide access
  */
-export const indexBoxFolder = functions.https.onCall(async (data, context) => {
+export const indexBoxFolder = onCall(defaultCallableOptions, async (request) => {
     try {
+        const data = request.data as { folderId?: string; organizationId?: string };
         // Verify authentication
-        if (!context.auth) {
+        if (!request.auth) {
             return createErrorResponse('Authentication required', 'UNAUTHENTICATED');
         }
 
         const { folderId, organizationId } = data;
-        const userId = context.auth.uid;
+        const userId = request.auth.uid;
 
         if (!folderId || !organizationId) {
             return createErrorResponse('Folder ID and organization ID are required', 'INVALID_ARGUMENT');
@@ -1281,7 +1286,9 @@ export const indexBoxFolder = functions.https.onCall(async (data, context) => {
 /**
  * Proxy Box file streaming with authentication
  */
-export const boxStream = functions.https.onRequest(async (req, res) => {
+export const boxStream = onRequest(
+  { region: 'us-central1', memory: '512MiB' }, // Avoid Cloud Run container healthcheck timeout on cold start
+  async (req, res) => {
     const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
     try {

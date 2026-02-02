@@ -33,7 +33,7 @@ interface CreateGuestProfileRequest {
 export const createGuestProfileFromSecurityDesk = onCall(
     {
         region: 'us-central1',
-        memory: '256MiB',
+        memory: '512MiB',
         timeoutSeconds: 30,
         invoker: 'public',
         cors: true,
@@ -145,7 +145,7 @@ export const createGuestProfileFromSecurityDesk = onCall(
 export const createGuestProfileFromSecurityDeskHttp = onRequest(
     {
         region: 'us-central1',
-        memory: '256MiB',
+        memory: '512MiB',
         timeoutSeconds: 30,
         invoker: 'public',
         cors: false,

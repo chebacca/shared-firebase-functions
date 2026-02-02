@@ -1,11 +1,11 @@
 /**
  * Page Information Functions
- * 
+ *
  * Firebase Functions for managing page help information
  * Allows dynamic updates to page documentation without redeployment
  */
 
-import * as functions from 'firebase-functions';
+import { onRequest } from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
 
 const db = admin.firestore();
@@ -38,7 +38,7 @@ export interface PageInfo {
  * Get Page Information
  * GET /api/pageInfo/:pageId
  */
-export const getPageInfo = functions.https.onRequest(async (req, res) => {
+export const getPageInfo = onRequest({ memory: '512MiB' }, async (req, res) => {
   // Enable CORS
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -88,7 +88,7 @@ export const getPageInfo = functions.https.onRequest(async (req, res) => {
  * List All Page Information
  * GET /api/pageInfo
  */
-export const listAllPageInfo = functions.https.onRequest(async (req, res) => {
+export const listAllPageInfo = onRequest({ memory: '512MiB' }, async (req, res) => {
   // Enable CORS
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -125,7 +125,7 @@ export const listAllPageInfo = functions.https.onRequest(async (req, res) => {
  * Update Page Information (Admin Only)
  * PUT /api/pageInfo/:pageId
  */
-export const updatePageInfo = functions.https.onRequest(async (req, res) => {
+export const updatePageInfo = onRequest({ memory: '512MiB' }, async (req, res) => {
   // Enable CORS
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -193,7 +193,7 @@ export const updatePageInfo = functions.https.onRequest(async (req, res) => {
  * Create Page Information (Admin Only)
  * POST /api/pageInfo
  */
-export const createPageInfo = functions.https.onRequest(async (req, res) => {
+export const createPageInfo = onRequest({ memory: '512MiB' }, async (req, res) => {
   // Enable CORS
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');

@@ -28,7 +28,7 @@ export const sendTravelNotification = onCall(
   {
     region: 'us-central1',
     cors: true,
-    memory: '256MiB',
+    memory: '512MiB',
     timeoutSeconds: 30
   },
   async (request) => {
@@ -162,7 +162,7 @@ export const sendTravelReminder = onCall(
   {
     region: 'us-central1',
     cors: true,
-    memory: '256MiB',
+    memory: '1GiB', // Bumped from 512MiB - still failing healthcheck on cold start
     timeoutSeconds: 30
   },
   async (request) => {

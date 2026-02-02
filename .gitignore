@@ -66,6 +66,9 @@ jspm_packages/
 .env.production
 .secret.local
 
+# Deploy script skip-cache (local state)
+.last-deploy-hash
+
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 .parcel-cache

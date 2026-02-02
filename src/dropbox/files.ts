@@ -1,5 +1,5 @@
-import * as functions from 'firebase-functions';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { defaultCallableOptions } from '../lib/functionOptions';
 import * as admin from 'firebase-admin';
 import { encryptTokens, decryptTokens, decryptLegacyToken, hashForLogging } from '../integrations/encryption';
 import { createSuccessResponse, createErrorResponse, setCorsHeaders } from '../shared/utils';
@@ -367,14 +367,14 @@ export async function refreshDropboxAccessToken(userId: string, organizationId: 
 /**
  * Get Dropbox access token (decrypted)
  */
-export const getDropboxAccessToken = functions.https.onCall(async (data, context) => {
+export const getDropboxAccessToken = onCall(defaultCallableOptions, async (request) => {
     try {
-        if (!context.auth) {
-            throw new Error('Authentication required');
+        if (!request.auth) {
+            throw new HttpsError('unauthenticated', 'Authentication required');
         }
 
-        const userId = context.auth.uid;
-        const organizationId = context.auth.token.organizationId || 'default';
+        const userId = request.auth.uid;
+        const organizationId = request.auth.token.organizationId || 'default';
 
         const tokens = await refreshDropboxAccessToken(userId, organizationId);
 
@@ -396,14 +396,15 @@ export const getDropboxAccessToken = functions.https.onCall(async (data, context
 /**
  * List Dropbox folders
  */
-export const listDropboxFolders = functions.https.onCall(async (data, context) => {
+export const listDropboxFolders = onCall(defaultCallableOptions, async (request) => {
     try {
-        if (!context.auth) {
-            throw new Error('Authentication required');
+        if (!request.auth) {
+            throw new HttpsError('unauthenticated', 'Authentication required');
         }
 
-        const userId = context.auth.uid;
-        const organizationId = context.auth.token.organizationId || 'default';
+        const data = request.data as { folderPath?: string };
+        const userId = request.auth.uid;
+        const organizationId = request.auth.token.organizationId || 'default';
         const { folderPath = '' } = data; // Empty string is root folder in Dropbox
 
         // Get and refresh organization-level tokens
@@ -462,14 +463,15 @@ export const listDropboxFolders = functions.https.onCall(async (data, context) =
 /**
  * Get Dropbox files in a folder
  */
-export const getDropboxFiles = functions.https.onCall(async (data, context) => {
+export const getDropboxFiles = onCall(defaultCallableOptions, async (request) => {
     try {
-        if (!context.auth) {
-            throw new Error('Authentication required');
+        if (!request.auth) {
+            throw new HttpsError('unauthenticated', 'Authentication required');
         }
 
-        const userId = context.auth.uid;
-        const organizationId = context.auth.token.organizationId || 'default';
+        const data = request.data as { folderPath?: string };
+        const userId = request.auth.uid;
+        const organizationId = request.auth.token.organizationId || 'default';
         const { folderPath = '' } = data; // Empty string is root folder
 
         // Get and refresh organization-level tokens
@@ -516,14 +518,15 @@ export const getDropboxFiles = functions.https.onCall(async (data, context) => {
 /**
  * Create Dropbox folder
  */
-export const createDropboxFolder = functions.https.onCall(async (data, context) => {
+export const createDropboxFolder = onCall(defaultCallableOptions, async (request) => {
     try {
-        if (!context.auth) {
-            throw new Error('Authentication required');
+        if (!request.auth) {
+            throw new HttpsError('unauthenticated', 'Authentication required');
         }
 
-        const userId = context.auth.uid;
-        const organizationId = context.auth.token.organizationId || 'default';
+        const data = request.data as { name?: string; parentPath?: string };
+        const userId = request.auth.uid;
+        const organizationId = request.auth.token.organizationId || 'default';
         const { name, parentPath = '' } = data; // Empty string is root folder
 
         if (!name) {
@@ -558,14 +561,15 @@ export const createDropboxFolder = functions.https.onCall(async (data, context) 
 /**
  * Upload file to Dropbox
  */
-export const uploadToDropbox = functions.https.onCall(async (data, context) => {
+export const uploadToDropbox = onCall(defaultCallableOptions, async (request) => {
     try {
-        if (!context.auth) {
-            throw new Error('Authentication required');
+        if (!request.auth) {
+            throw new HttpsError('unauthenticated', 'Authentication required');
         }
 
-        const userId = context.auth.uid;
-        const organizationId = context.auth.token.organizationId || 'default';
+        const data = request.data as { fileName?: string; fileContent?: string; folderPath?: string };
+        const userId = request.auth.uid;
+        const organizationId = request.auth.token.organizationId || 'default';
         const { fileName, fileContent, folderPath = '' } = data; // Empty string is root folder
 
         if (!fileName || !fileContent) {
@@ -605,14 +609,15 @@ export const uploadToDropbox = functions.https.onCall(async (data, context) => {
 /**
  * Index Dropbox folder
  */
-export const indexDropboxFolder = functions.https.onCall(async (data, context) => {
+export const indexDropboxFolder = onCall(defaultCallableOptions, async (request) => {
     try {
-        if (!context.auth) {
+        const data = request.data as { folderPath?: string; organizationId?: string };
+        if (!request.auth) {
             return createErrorResponse('Authentication required', 'UNAUTHENTICATED');
         }
 
         const { folderPath, organizationId } = data;
-        const userId = context.auth.uid;
+        const userId = request.auth.uid;
 
         if (folderPath === undefined || !organizationId) {
             return createErrorResponse('Folder path and organization ID are required', 'INVALID_ARGUMENT');
@@ -735,6 +740,7 @@ export const setDropboxAccessToken = onCall(
     {
         region: 'us-central1',
         cors: true,
+        memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
         secrets: [encryptionKey],
     },
     async (request) => {

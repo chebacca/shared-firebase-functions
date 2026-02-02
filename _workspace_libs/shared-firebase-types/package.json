@@ -20,7 +20,8 @@
     "./workflow": "./src/workflow.ts",
     "./notifications": "./src/notifications.ts",
     "./travel": "./src/travel.types.ts",
-    "./hubAuthAdapter": "./src/hubAuthAdapter.ts"
+    "./hubAuthAdapter": "./src/hubAuthAdapter.ts",
+    "./calendarUtils": "./src/calendarUtils.ts"
   },
   "scripts": {
     "type-check": "tsc --noEmit",

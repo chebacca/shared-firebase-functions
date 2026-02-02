@@ -1,10 +1,11 @@
 /**
  * Send Delivery Package Email
- * 
+ *
  * Firebase Function to send delivery package emails using organization's SMTP settings
  */
 
-import * as functions from 'firebase-functions';
+import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { defaultCallableOptions } from '../../lib/functionOptions';
 import * as admin from 'firebase-admin';
 // @ts-ignore - nodemailer types issue
 const nodemailer = require('nodemailer');
@@ -194,14 +195,14 @@ function generateEmailHTML(data: DeliveryPackageEmailData, packageUrl?: string):
 /**
  * Send delivery package email
  */
-export const sendDeliveryPackageEmail = functions.https.onCall(
+export const sendDeliveryPackageEmail = onCall(defaultCallableOptions,
   async (request) => {
     try {
       const data = request.data as DeliveryPackageEmailData;
 
       // Verify authentication
       if (!request.auth) {
-        throw new functions.https.HttpsError(
+        throw new HttpsError(
           'unauthenticated',
           'User must be authenticated to send delivery emails'
         );
@@ -209,7 +210,7 @@ export const sendDeliveryPackageEmail = functions.https.onCall(
 
       // Validate required fields
       if (!data.organizationId || !data.recipientEmails || !data.subject) {
-        throw new functions.https.HttpsError(
+        throw new HttpsError(
           'invalid-argument',
           'Missing required fields: organizationId, recipientEmails, subject'
         );
@@ -221,7 +222,7 @@ export const sendDeliveryPackageEmail = functions.https.onCall(
       const isEnabled = emailSettings?.smtpConfig?.enabled || emailSettings?.isEnabled || false;
 
       if (!emailSettings || !isEnabled) {
-        throw new functions.https.HttpsError(
+        throw new HttpsError(
           'failed-precondition',
           'Email is not enabled for this organization'
         );
@@ -231,7 +232,7 @@ export const sendDeliveryPackageEmail = functions.https.onCall(
       const transporter = createTransporter(emailSettings);
 
       if (!transporter) {
-        throw new functions.https.HttpsError(
+        throw new HttpsError(
           'failed-precondition',
           'Email service not configured. Please configure SMTP settings in Integrations.'
         );
@@ -304,7 +305,7 @@ This is an automated message from Backbone Production Workflow System.
       };
     } catch (error: any) {
       console.error('[sendDeliveryPackageEmail] Error:', error);
-      throw new functions.https.HttpsError(
+      throw new HttpsError(
         error.code || 'internal',
         error.message || 'Failed to send delivery package email'
       );

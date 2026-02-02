@@ -15,7 +15,7 @@ const db = getFirestore();
 export const getPublishedCallSheet = onCall(
   {
     region: 'us-central1',
-    memory: '256MiB',
+    memory: '512MiB',
     timeoutSeconds: 30,
     invoker: 'public',  // Required for CORS preflight requests
     cors: true

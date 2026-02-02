@@ -7,7 +7,7 @@
 
 import { onDocumentCreated, onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
-import { logger } from 'firebase-functions';
+import { logger } from 'firebase-functions/v2';
 
 const db = getFirestore();
 

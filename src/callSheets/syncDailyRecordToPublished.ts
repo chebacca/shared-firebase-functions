@@ -1,20 +1,20 @@
-import * as functions from 'firebase-functions';
+import { onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import * as admin from 'firebase-admin';
 
 /**
  * Sync Daily Call Sheet Updates to Published Call Sheets
- * 
+ *
  * This trigger automatically syncs changes from dailyCallSheetRecords to publishedCallSheets
  * when a daily record is updated. This ensures that the mobile companion and security desk
  * apps see real-time updates when call sheets are modified in the standalone app.
- * 
+ *
  * Triggered on: dailyCallSheetRecords/{recordId} onUpdate
  */
-export const syncDailyRecordToPublished = functions.firestore
-    .document('dailyCallSheetRecords/{recordId}')
-    .onUpdate(async (change, context) => {
+export const syncDailyRecordToPublished = onDocumentUpdated('dailyCallSheetRecords/{recordId}', async (event) => {
+        const change = event.data;
+        if (!change?.after) return null;
         const startTime = Date.now();
-        const recordId = context.params.recordId;
+        const recordId = event.params.recordId;
 
         console.log('🔄 [syncDailyRecordToPublished] Triggered for record:', recordId);
 

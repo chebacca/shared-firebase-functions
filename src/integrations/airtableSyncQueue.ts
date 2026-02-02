@@ -5,7 +5,7 @@
  * Handles queuing, processing, and retry logic for Airtable sync operations
  */
 
-import { logger } from 'firebase-functions';
+import { logger } from 'firebase-functions/v2';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getFirestore } from 'firebase-admin/firestore';
 import * as crypto from 'crypto';

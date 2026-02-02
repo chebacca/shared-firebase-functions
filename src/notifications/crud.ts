@@ -81,7 +81,7 @@ async function verifyAuth(request: any): Promise<{ uid: string; organizationId: 
 }
 
 // Get all notifications for a user
-export const getNotifications = onRequest(async (request, response) => {
+export const getNotifications = onRequest({ memory: '512MiB' }, async (request, response) => {
   try {
     const { uid, organizationId } = await verifyAuth(request);
 
@@ -113,7 +113,7 @@ export const getNotifications = onRequest(async (request, response) => {
 });
 
 // Get unread notifications for a user
-export const getUnreadNotifications = onRequest(async (request, response) => {
+export const getUnreadNotifications = onRequest({ memory: '512MiB' }, async (request, response) => {
   try {
     const { uid, organizationId } = await verifyAuth(request);
 
@@ -147,7 +147,9 @@ export const getUnreadNotifications = onRequest(async (request, response) => {
 });
 
 // Get notifications by category
-export const getNotificationsByCategory = onRequest(async (request, response) => {
+export const getNotificationsByCategory = onRequest(
+  { memory: '512MiB' }, // Avoid Cloud Run container healthcheck timeout on cold start
+  async (request, response) => {
   try {
     const { uid, organizationId } = await verifyAuth(request);
     const { category } = request.query;
@@ -189,7 +191,7 @@ export const getNotificationsByCategory = onRequest(async (request, response) =>
 });
 
 // Create a new notification
-export const createNotification = onRequest(async (request, response) => {
+export const createNotification = onRequest({ memory: '512MiB' }, async (request, response) => {
   try {
     const { uid, organizationId } = await verifyAuth(request);
     const notificationData: Omit<Notification, 'id'> = request.body;
@@ -251,7 +253,9 @@ export const createNotification = onRequest(async (request, response) => {
 });
 
 // Update a notification
-export const updateNotification = onRequest(async (request, response) => {
+export const updateNotification = onRequest(
+  { memory: '512MiB' }, // Avoid Cloud Run container healthcheck timeout on cold start
+  async (request, response) => {
   try {
     const { uid, organizationId } = await verifyAuth(request);
     const id = request.params.id as string;
@@ -318,7 +322,7 @@ export const updateNotification = onRequest(async (request, response) => {
 });
 
 // Mark notification as read
-export const markNotificationAsRead = onRequest(async (request, response) => {
+export const markNotificationAsRead = onRequest({ memory: '512MiB' }, async (request, response) => {
   try {
     const { uid, organizationId } = await verifyAuth(request);
     const id = request.params.id as string;
@@ -379,7 +383,7 @@ export const markNotificationAsRead = onRequest(async (request, response) => {
 });
 
 // Mark all notifications as read
-export const markAllNotificationsAsRead = onRequest(async (request, response) => {
+export const markAllNotificationsAsRead = onRequest({ memory: '512MiB' }, async (request, response) => {
   try {
     const { uid, organizationId } = await verifyAuth(request);
 
@@ -421,7 +425,7 @@ export const markAllNotificationsAsRead = onRequest(async (request, response) =>
 });
 
 // Delete a notification
-export const deleteNotification = onRequest(async (request, response) => {
+export const deleteNotification = onRequest({ memory: '512MiB' }, async (request, response) => {
   try {
     const { uid, organizationId } = await verifyAuth(request);
     const id = request.params.id as string;
@@ -474,7 +478,7 @@ export const deleteNotification = onRequest(async (request, response) => {
 });
 
 // Clear all notifications
-export const clearAllNotifications = onRequest(async (request, response) => {
+export const clearAllNotifications = onRequest({ memory: '512MiB' }, async (request, response) => {
   try {
     const { uid, organizationId } = await verifyAuth(request);
 
@@ -510,7 +514,9 @@ export const clearAllNotifications = onRequest(async (request, response) => {
 });
 
 // Get notification settings
-export const getNotificationSettings = onRequest(async (request, response) => {
+export const getNotificationSettings = onRequest(
+  { memory: '512MiB' }, // Avoid Cloud Run container healthcheck timeout on cold start
+  async (request, response) => {
   try {
     const { uid, organizationId } = await verifyAuth(request);
 
@@ -564,7 +570,7 @@ export const getNotificationSettings = onRequest(async (request, response) => {
 });
 
 // Update notification settings
-export const updateNotificationSettings = onRequest(async (request, response) => {
+export const updateNotificationSettings = onRequest({ memory: '512MiB' }, async (request, response) => {
   try {
     const { uid, organizationId } = await verifyAuth(request);
     const settingsData = request.body;

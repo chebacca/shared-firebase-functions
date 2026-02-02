@@ -22,7 +22,7 @@ interface GetLaborRulesRequest {
  */
 export const getLaborRules = onCall(
   {
-    memory: '256MiB',
+    memory: '512MiB',
     timeoutSeconds: 60,
     cors: true
   },
@@ -151,7 +151,7 @@ export const getLaborRules = onCall(
  */
 export const getLaborRulesHttp = onRequest(
   {
-    memory: '256MiB',
+    memory: '512MiB',
     timeoutSeconds: 60,
     cors: true,
     invoker: 'public'

@@ -5,8 +5,9 @@
  * Provides server-side OAuth flow with secure token management
  */
 
+import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { defaultCallableOptions } from '../../lib/functionOptions';
 import { google } from 'googleapis';
-import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import * as crypto from 'crypto';
 
@@ -132,14 +133,14 @@ function hashForLogging(data: any): string {
  * Initiate Google OAuth flow
  * Returns authorization URL for user to authenticate
  */
-export const initiateGoogleOAuth = functions.https.onCall(async (data, context) => {
+export const initiateGoogleOAuth = onCall(defaultCallableOptions, async (request) => {
   try {
-    if (!context.auth) {
-      throw new Error('Authentication required');
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Authentication required');
     }
 
-    const userId = context.auth.uid;
-    const organizationId = context.auth.token.organizationId || 'default';
+    const userId = request.auth.uid;
+    const organizationId = request.auth.token.organizationId || 'default';
 
     // Generate secure state parameter
     const state = generateSecureState();
@@ -180,10 +181,11 @@ export const initiateGoogleOAuth = functions.https.onCall(async (data, context) 
  * Handle Google OAuth callback
  * Exchange authorization code for access tokens
  */
-export const handleGoogleOAuthCallback = functions.https.onCall(async (data, context) => {
+export const handleGoogleOAuthCallback = onCall(defaultCallableOptions, async (request) => {
   try {
-    if (!context.auth) {
-      throw new Error('Authentication required');
+    const data = request.data as { code?: string; state?: string };
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Authentication required');
     }
 
     const { code, state } = data;
@@ -191,8 +193,8 @@ export const handleGoogleOAuthCallback = functions.https.onCall(async (data, con
       throw new Error('Missing authorization code or state parameter');
     }
 
-    const userId = context.auth.uid;
-    const organizationId = context.auth.token.organizationId || 'default';
+    const userId = request.auth.uid;
+    const organizationId = request.auth.token.organizationId || 'default';
 
     // Verify state parameter
     const stateDoc = await admin.firestore()
@@ -259,10 +261,11 @@ export const handleGoogleOAuthCallback = functions.https.onCall(async (data, con
 /**
  * Exchange Google authorization code for tokens (legacy function)
  */
-export const exchangeGoogleCodeForTokens = functions.https.onCall(async (data, context) => {
+export const exchangeGoogleCodeForTokens = onCall(defaultCallableOptions, async (request) => {
   try {
-    if (!context.auth) {
-      throw new Error('Authentication required');
+    const data = request.data as { code?: string; state?: string };
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Authentication required');
     }
 
     const { code, state } = data;
@@ -270,8 +273,8 @@ export const exchangeGoogleCodeForTokens = functions.https.onCall(async (data, c
       throw new Error('Missing authorization code or state parameter');
     }
 
-    const userId = context.auth.uid;
-    const organizationId = context.auth.token.organizationId || 'default';
+    const userId = request.auth.uid;
+    const organizationId = request.auth.token.organizationId || 'default';
 
     // Exchange code for tokens
     const { tokens } = await oauth2Client.getToken(code);
@@ -320,14 +323,14 @@ export const exchangeGoogleCodeForTokens = functions.https.onCall(async (data, c
 /**
  * Refresh Google access token
  */
-export const refreshGoogleAccessToken = functions.https.onCall(async (data, context) => {
+export const refreshGoogleAccessToken = onCall(defaultCallableOptions, async (request) => {
   try {
-    if (!context.auth) {
-      throw new Error('Authentication required');
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Authentication required');
     }
 
-    const userId = context.auth.uid;
-    const organizationId = context.auth.token.organizationId || 'default';
+    const userId = request.auth.uid;
+    const organizationId = request.auth.token.organizationId || 'default';
 
     // Get stored tokens
     const integrationDoc = await admin.firestore()
@@ -373,14 +376,14 @@ export const refreshGoogleAccessToken = functions.https.onCall(async (data, cont
 /**
  * List Google Drive folders
  */
-export const listGoogleDriveFolders = functions.https.onCall(async (data, context) => {
+export const listGoogleDriveFolders = onCall(defaultCallableOptions, async (request) => {
   try {
-    if (!context.auth) {
-      throw new Error('Authentication required');
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Authentication required');
     }
 
-    const userId = context.auth.uid;
-    const organizationId = context.auth.token.organizationId || 'default';
+    const userId = request.auth.uid;
+    const organizationId = request.auth.token.organizationId || 'default';
 
     // Get stored tokens
     const integrationDoc = await admin.firestore()
@@ -421,14 +424,15 @@ export const listGoogleDriveFolders = functions.https.onCall(async (data, contex
 /**
  * Get Google Drive files
  */
-export const getGoogleDriveFiles = functions.https.onCall(async (data, context) => {
+export const getGoogleDriveFiles = onCall(defaultCallableOptions, async (request) => {
   try {
-    if (!context.auth) {
-      throw new Error('Authentication required');
+    const data = request.data as { folderId?: string };
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Authentication required');
     }
 
-    const userId = context.auth.uid;
-    const organizationId = context.auth.token.organizationId || 'default';
+    const userId = request.auth.uid;
+    const organizationId = request.auth.token.organizationId || 'default';
     const { folderId } = data;
 
     // Get stored tokens
@@ -471,14 +475,15 @@ export const getGoogleDriveFiles = functions.https.onCall(async (data, context) 
 /**
  * Create Google Drive folder
  */
-export const createGoogleDriveFolder = functions.https.onCall(async (data, context) => {
+export const createGoogleDriveFolder = onCall(defaultCallableOptions, async (request) => {
   try {
-    if (!context.auth) {
-      throw new Error('Authentication required');
+    const data = request.data as { name?: string; parentId?: string };
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Authentication required');
     }
 
-    const userId = context.auth.uid;
-    const organizationId = context.auth.token.organizationId || 'default';
+    const userId = request.auth.uid;
+    const organizationId = request.auth.token.organizationId || 'default';
     const { name, parentId } = data;
 
     // Get stored tokens
@@ -526,15 +531,20 @@ export const createGoogleDriveFolder = functions.https.onCall(async (data, conte
 /**
  * Upload file to Google Drive
  */
-export const uploadToGoogleDrive = functions.https.onCall(async (data, context) => {
+export const uploadToGoogleDrive = onCall(defaultCallableOptions, async (request) => {
   try {
-    if (!context.auth) {
-      throw new Error('Authentication required');
+    const data = request.data as { fileName?: string; fileContent?: string; mimeType?: string; folderId?: string };
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Authentication required');
     }
 
-    const userId = context.auth.uid;
-    const organizationId = context.auth.token.organizationId || 'default';
+    const userId = request.auth.uid;
+    const organizationId = request.auth.token.organizationId || 'default';
     const { fileName, fileContent, mimeType, folderId } = data;
+
+    if (!fileName || !fileContent) {
+      throw new Error('File name and content are required');
+    }
 
     // Get stored tokens
     const integrationDoc = await admin.firestore()
@@ -589,14 +599,14 @@ export const uploadToGoogleDrive = functions.https.onCall(async (data, context) 
 /**
  * Get Google integration status
  */
-export const getGoogleIntegrationStatus = functions.https.onCall(async (data, context) => {
+export const getGoogleIntegrationStatus = onCall(defaultCallableOptions, async (request) => {
   try {
-    if (!context.auth) {
-      throw new Error('Authentication required');
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Authentication required');
     }
 
-    const userId = context.auth.uid;
-    const organizationId = context.auth.token.organizationId || 'default';
+    const userId = request.auth.uid;
+    const organizationId = request.auth.token.organizationId || 'default';
 
     const integrationDoc = await admin.firestore()
       .collection('cloudIntegrations')

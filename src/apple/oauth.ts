@@ -101,6 +101,7 @@ export const appleConnectOAuthInitiate = onCall(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -197,6 +198,7 @@ export const appleConnectOAuthCallback = onCall(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB', // Increased from default 256MiB - function runs out of memory during initialization
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -348,6 +350,7 @@ export const appleConnectOAuthCallbackHttp = onRequest(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
     secrets: [encryptionKey],
   },
   async (req, res) => {
@@ -503,6 +506,7 @@ export const appleConnectRevokeAccess = onCall(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
     secrets: [encryptionKey],
   },
   async (request) => {

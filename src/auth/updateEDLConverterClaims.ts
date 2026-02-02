@@ -1,28 +1,30 @@
 /**
  * Update EDL Converter Claims
- * 
+ *
  * Sets the isEDLConverter claim for users who should have access to the EDL Converter
  */
 
-import * as functions from 'firebase-functions';
+import { onCall } from 'firebase-functions/v2/https';
+import { defaultCallableOptions } from '../lib/functionOptions';
 import * as admin from 'firebase-admin';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
 
-export const updateEDLConverterClaims = functions.https.onCall(async (data: any, context: any) => {
+export const updateEDLConverterClaims = onCall(defaultCallableOptions, async (request) => {
   try {
+    const data = request.data as any;
     // Check if user is authenticated
-    if (!context.auth) {
+    if (!request.auth) {
       return createErrorResponse('User not authenticated');
     }
 
-    const userId = context.auth.uid;
+    const userId = request.auth.uid;
     const { targetUserId, enableEDLConverter } = data;
 
     // Allow users to update their own claims or require admin privileges
     const isUpdatingSelf = userId === targetUserId;
-    const isAdmin = context.auth.token.role === 'SUPER_ADMIN' || 
-                   context.auth.token.hierarchy >= 90 ||
-                   context.auth.token.isAdmin === true;
+    const isAdmin = request.auth.token.role === 'SUPER_ADMIN' ||
+                   request.auth.token.hierarchy >= 90 ||
+                   request.auth.token.isAdmin === true;
 
     if (!isUpdatingSelf && !isAdmin) {
       return createErrorResponse('Insufficient permissions to update claims');
@@ -61,13 +63,13 @@ export const updateEDLConverterClaims = functions.https.onCall(async (data: any,
 /**
  * Grant EDL Converter access to ENTERPRISE users
  */
-export const grantEDLConverterAccessToEnterpriseUsers = functions.https.onCall(async (data: any, context: any) => {
+export const grantEDLConverterAccessToEnterpriseUsers = onCall(defaultCallableOptions, async (request) => {
   try {
     // Check if user is admin
-    if (!context.auth || 
-        (context.auth.token.role !== 'SUPER_ADMIN' && 
-         context.auth.token.hierarchy < 90 && 
-         context.auth.token.isAdmin !== true)) {
+    if (!request.auth ||
+        (request.auth.token.role !== 'SUPER_ADMIN' &&
+         request.auth.token.hierarchy < 90 &&
+         request.auth.token.isAdmin !== true)) {
       return createErrorResponse('Admin privileges required');
     }
 

@@ -82,14 +82,17 @@ export class GeminiService extends CoreGeminiService {
   }
 
   /**
-   * Run an Architect/Planner session
+   * Run an Architect/Planner session.
+   * phase: 'EXPLORATION' = read-only, map solution and write PLAN.md; 'EXECUTION' = read PLAN and implement (default: full planning).
    */
   async runArchitectSession(
     message: string,
     globalContext: GlobalContext,
-    parts: any[] = []
+    parts: any[] = [],
+    phase?: 'EXPLORATION' | 'EXECUTION'
   ): Promise<AgentResponse> {
-    console.log('🏛️ [Gemini Service] Starting ARCHITECT SESSION...');
+    const modeLabel = phase === 'EXPLORATION' ? 'EXPLORATION (Read-Only)' : phase === 'EXECUTION' ? 'EXECUTION' : 'PLANNING';
+    console.log(`🏛️ [Gemini Service] Starting ARCHITECT SESSION (${modeLabel})...`);
 
     /**
      * PROJECT CONTEXT FLOW (Dynamic, NOT Hardcoded):
@@ -114,7 +117,19 @@ export class GeminiService extends CoreGeminiService {
     }
 
     // Import the prompt dynamically (or moved to import at top)
-    const { ARCHITECT_SYSTEM_PROMPT } = require('./prompts/ArchitectPrompts');
+    const {
+      ARCHITECT_SYSTEM_PROMPT,
+      PLAN_MODE_EXPLORATION_PROMPT,
+      PLAN_MODE_EXECUTION_PROMPT
+    } = require('./prompts/ArchitectPrompts');
+
+    // Plan mode phase: EXPLORATION (read-only) vs EXECUTION (read PLAN and implement)
+    let systemPrompt = ARCHITECT_SYSTEM_PROMPT;
+    if (phase === 'EXPLORATION') {
+      systemPrompt = PLAN_MODE_EXPLORATION_PROMPT + '\n\n' + ARCHITECT_SYSTEM_PROMPT;
+    } else if (phase === 'EXECUTION') {
+      systemPrompt = PLAN_MODE_EXECUTION_PROMPT + '\n\n' + ARCHITECT_SYSTEM_PROMPT;
+    }
 
     // Build context information for the Architect
     // CRITICAL: This context is rebuilt on EVERY iteration, so projectId must be included every time
@@ -188,7 +203,7 @@ export class GeminiService extends CoreGeminiService {
     // Using gemini-2.5-flash - gemini-1.5-pro is not available in v1beta API
     const architectModel = this.genAI.getGenerativeModel({
       model: 'gemini-2.5-flash', // Use Flash for complex planning tasks (Pro not available in v1beta)
-      systemInstruction: ARCHITECT_SYSTEM_PROMPT + contextInfo
+      systemInstruction: systemPrompt + contextInfo
     });
 
     // Start chat with Architect Persona

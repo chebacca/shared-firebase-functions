@@ -260,7 +260,7 @@ async function clockOutTimecardEntry(
 export const qrScanCheckInOut = onCall(
   {
     region: 'us-central1',
-    memory: '256MiB',
+    memory: '512MiB',
     timeoutSeconds: 30,
     invoker: 'public',
     cors: true
@@ -415,7 +415,7 @@ export const qrScanCheckInOut = onCall(
 export const qrScanCheckInOutHttp = onRequest(
   {
     region: 'us-central1',
-    memory: '256MiB',
+    memory: '512MiB',
     timeoutSeconds: 30,
     invoker: 'public',
     cors: false

@@ -6,7 +6,6 @@
  */
 
 import * as crypto from 'crypto';
-import * as functions from 'firebase-functions';
 
 // Encryption configuration
 const ALGORITHM = 'aes-256-gcm';

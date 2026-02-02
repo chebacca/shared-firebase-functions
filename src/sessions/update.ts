@@ -1,4 +1,5 @@
-import * as functions from 'firebase-functions';
+import { onRequest, onCall } from 'firebase-functions/v2/https';
+import { defaultCallableOptions } from '../lib/functionOptions';
 import * as admin from 'firebase-admin';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
 // import { Session } from '../shared/types';
@@ -33,7 +34,7 @@ async function updateSessionLogic(data: any, context?: any): Promise<any> {
 }
 
 // HTTP function for UniversalFirebaseInterceptor
-export const updateSession = functions.https.onRequest(async (req: any, res: any) => {
+export const updateSession = onRequest({ memory: '512MiB' }, async (req: any, res: any) => {
   try {
     // Set CORS headers
     res.set('Access-Control-Allow-Origin', '*');
@@ -61,6 +62,6 @@ export const updateSession = functions.https.onRequest(async (req: any, res: any
 });
 
 // Callable function for direct Firebase usage
-export const updateSessionCallable = functions.https.onCall(async (data: any, context: any) => {
-  return await updateSessionLogic(data, context);
+export const updateSessionCallable = onCall(defaultCallableOptions, async (request) => {
+  return await updateSessionLogic(request.data, undefined);
 });

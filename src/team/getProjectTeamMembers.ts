@@ -15,6 +15,7 @@ const db = getFirestore();
 export const getProjectTeamMembersCallable = onCall(
   {
     cors: true,
+    memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
   },
   async (request) => {
     try {

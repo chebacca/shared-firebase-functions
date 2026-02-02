@@ -9,6 +9,7 @@ if (!admin.apps.length) {
 export const db = admin.firestore();
 db.settings({ ignoreUndefinedProperties: true });
 export const auth = admin.auth();
+export const messaging = admin.messaging();
 
 export const createApiResponse = <T>(
   success: boolean,

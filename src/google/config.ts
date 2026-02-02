@@ -5,7 +5,6 @@
  */
 
 import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
-import * as functions from 'firebase-functions'; // Import v1 for config() access
 import { db } from '../shared/utils';
 import * as admin from 'firebase-admin';
 import * as crypto from 'crypto';

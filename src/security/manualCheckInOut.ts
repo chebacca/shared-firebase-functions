@@ -30,7 +30,7 @@ interface ManualCheckInOutRequest {
 export const manualCheckInOut = onCall(
     {
         region: 'us-central1',
-        memory: '256MiB',
+        memory: '512MiB',
         timeoutSeconds: 30,
         invoker: 'public',
         cors: true,
@@ -194,7 +194,7 @@ export const manualCheckInOut = onCall(
 export const manualCheckInOutHttp = onRequest(
     {
         region: 'us-central1',
-        memory: '256MiB',
+        memory: '512MiB',
         timeoutSeconds: 30,
         invoker: 'public',
         cors: false,

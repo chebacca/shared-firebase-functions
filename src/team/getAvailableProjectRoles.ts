@@ -9,7 +9,7 @@ import { createSuccessResponse, createErrorResponse, handleError } from '../shar
 
 export const getAvailableProjectRoles = onRequest(
   {
-    memory: '256MiB',
+    memory: '512MiB',
     timeoutSeconds: 30,
     cors: true
   },

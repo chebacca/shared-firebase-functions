@@ -32,7 +32,7 @@ const storage = getStorage();
 /**
  * Send email notification when pitch status changes
  */
-export const notifyPitchStatusChange = onCall(async (request) => {
+export const notifyPitchStatusChange = onCall({ memory: '512MiB' }, async (request) => {
   try {
     const { pitchId, newStatus, reason, userId } = request.data;
 
@@ -79,7 +79,7 @@ export const notifyPitchStatusChange = onCall(async (request) => {
 /**
  * Send email notification when pitch is assigned to producer
  */
-export const notifyPitchAssignment = onCall(async (request) => {
+export const notifyPitchAssignment = onCall({ memory: '512MiB' }, async (request) => {
   try {
     const { pitchId, producerId, message } = request.data;
 
@@ -125,7 +125,7 @@ export const notifyPitchAssignment = onCall(async (request) => {
 /**
  * Send email notification when licensing specialist is selected
  */
-export const notifyLicensingSpecialist = onCall(async (request) => {
+export const notifyLicensingSpecialist = onCall({ memory: '512MiB' }, async (request) => {
   try {
     const { pitchId, specialistId, message } = request.data;
 
@@ -175,7 +175,7 @@ export const notifyLicensingSpecialist = onCall(async (request) => {
 /**
  * Generate script from story using AI
  */
-export const generateScript = onCall(async (request) => {
+export const generateScript = onCall({ memory: '512MiB' }, async (request) => {
   try {
     const { storyId, templateId } = request.data;
 
@@ -252,7 +252,7 @@ export const generateScript = onCall(async (request) => {
 /**
  * Upload file to Box storage for Clip Show Pro workflow
  */
-export const uploadToBoxForClipShow = onCall(async (request) => {
+export const uploadToBoxForClipShow = onCall({ memory: '512MiB' }, async (request) => {
   try {
     const { fileData, fileName, pitchId, fileType } = request.data;
 
@@ -296,7 +296,9 @@ export const uploadToBoxForClipShow = onCall(async (request) => {
 /**
  * Auto-create story when pitch status changes to "Ready for Script"
  */
-export const autoCreateStory = onDocumentUpdated('clipShowPitches/{pitchId}', async (event) => {
+export const autoCreateStory = onDocumentUpdated(
+  { document: 'clipShowPitches/{pitchId}', memory: '512MiB' }, // Avoid Cloud Run container healthcheck timeout on cold start
+  async (event) => {
   try {
     const before = event.data?.before?.data();
     const after = event.data?.after?.data();
@@ -340,7 +342,12 @@ export const autoCreateStory = onDocumentUpdated('clipShowPitches/{pitchId}', as
 /**
  * Auto-update pitch when story status changes
  */
-export const syncPitchFromStory = onDocumentUpdated('clipShowStories/{storyId}', async (event) => {
+export const syncPitchFromStory = onDocumentUpdated(
+  {
+    document: 'clipShowStories/{storyId}',
+    memory: '512MiB', // Increased from default 256MiB - function runs out of memory during initialization
+  },
+  async (event) => {
   try {
     const before = event.data?.before?.data();
     const after = event.data?.after?.data();
@@ -377,7 +384,9 @@ export const syncPitchFromStory = onDocumentUpdated('clipShowStories/{storyId}',
 /**
  * Get pitch analytics for organization
  */
-export const getPitchAnalytics = onCall(async (request) => {
+export const getPitchAnalytics = onCall(
+  { memory: '512MiB' }, // Avoid Cloud Run container healthcheck timeout on cold start
+  async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -435,7 +444,9 @@ function calculateSuccessRate(pitches: any[]): number {
 /**
  * Analyze pitch content using AI for insights and recommendations
  */
-export const analyzePitchContent = onCall(async (request) => {
+export const analyzePitchContent = onCall(
+  { memory: '512MiB' }, // Avoid container healthcheck timeout on cold start
+  async (request) => {
   try {
     const { pitchId } = request.data;
 
@@ -501,7 +512,9 @@ export { executeAutomation } from './automationExecutor';
 /**
  * Health check for Clip Show Pro functions
  */
-export const clipShowProHealthCheck = onCall(async (request) => {
+export const clipShowProHealthCheck = onCall(
+  { memory: '512MiB' }, // Avoid Cloud Run container healthcheck timeout on cold start
+  async (request) => {
   try {
     return {
       success: true,

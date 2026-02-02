@@ -5,7 +5,6 @@
  */
 
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
-import * as functions from 'firebase-functions';
 import { db } from '../shared/utils';
 import * as admin from 'firebase-admin';
 import * as crypto from 'crypto';
@@ -196,6 +195,7 @@ export const getAppleConnectConfigStatus = onCall(
   { 
     region: 'us-central1',
     cors: true,
+    memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
     secrets: [encryptionKey],
   },
   async (request) => {

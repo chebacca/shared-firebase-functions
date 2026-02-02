@@ -20,7 +20,7 @@ interface DirectionsRequest {
 export const calculateDirections = onCall(
   {
     secrets: [googleMapsApiKey],
-    memory: '256MiB',
+    memory: '512MiB',
     timeoutSeconds: 30,
   },
   async (request) => {

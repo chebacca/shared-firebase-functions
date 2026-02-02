@@ -79,7 +79,7 @@ async function workflowActionExists(
 /**
  * Backfill workflow history for pitches and licenses
  */
-export const backfillWorkflowHistory = onCall(async (request) => {
+export const backfillWorkflowHistory = onCall({ memory: '512MiB' }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -245,7 +245,7 @@ export const backfillWorkflowHistory = onCall(async (request) => {
 /**
  * Audit workflow history - check which pitches/licenses are missing workflow actions
  */
-export const auditWorkflowHistory = onCall(async (request) => {
+export const auditWorkflowHistory = onCall({ memory: '512MiB' }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');

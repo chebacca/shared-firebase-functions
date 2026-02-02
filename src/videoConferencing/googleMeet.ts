@@ -20,7 +20,6 @@ const CORS_ORIGINS = [
 ];
 
 import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
-import * as functions from 'firebase-functions'; // Import v1 for config() access
 import { db, getUserOrganizationId, validateOrganizationAccess, isAdminUser } from '../shared/utils';
 import { getGoogleConfig } from '../google/config';
 import { Timestamp } from 'firebase-admin/firestore';
@@ -805,6 +804,7 @@ export const scheduleMeetMeeting = onCall(
     region: 'us-central1',
     invoker: 'public',  // Required for public access via callable SDK
     cors: CORS_ORIGINS, // Use explicit origins array for stability
+    memory: '512MiB', // Increased from default 256MiB - function runs out of memory during initialization
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -1124,6 +1124,7 @@ export const cancelMeetMeeting = onCall(
     region: 'us-central1',
     invoker: 'public',  // Required for CORS preflight requests
     cors: CORS_ORIGINS,
+    memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -1272,6 +1273,7 @@ function setCorsHeaders(res: any, origin?: string): void {
 export const scheduleMeetMeetingHttp = onRequest(
   {
     region: 'us-central1',
+    memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
     secrets: [encryptionKey],
   },
   async (req, res) => {

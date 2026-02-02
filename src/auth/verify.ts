@@ -1,10 +1,12 @@
-import * as functions from 'firebase-functions';
+import { onCall } from 'firebase-functions/v2/https';
+import { defaultCallableOptions } from '../lib/functionOptions';
 import * as admin from 'firebase-admin';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
 import { User } from '../shared/types';
 
-export const verifyEmail = functions.https.onCall(async (data: any, context: any) => {
+export const verifyEmail = onCall(defaultCallableOptions, async (request) => {
   try {
+    const data = request.data as any;
     const { email, verificationCode } = data;
 
     if (!email || !verificationCode) {
@@ -38,8 +40,9 @@ export const verifyEmail = functions.https.onCall(async (data: any, context: any
   }
 });
 
-export const resendVerificationEmail = functions.https.onCall(async (data: any, context: any) => {
+export const resendVerificationEmail = onCall(defaultCallableOptions, async (request) => {
   try {
+    const data = request.data as any;
     const { email } = data;
 
     if (!email) {
@@ -64,8 +67,9 @@ export const resendVerificationEmail = functions.https.onCall(async (data: any, 
   }
 });
 
-export const forgotPassword = functions.https.onCall(async (data: any, context: any) => {
+export const forgotPassword = onCall(defaultCallableOptions, async (request) => {
   try {
+    const data = request.data as any;
     const { email } = data;
 
     if (!email) {
@@ -92,8 +96,9 @@ export const forgotPassword = functions.https.onCall(async (data: any, context: 
   }
 });
 
-export const resetPassword = functions.https.onCall(async (data: any, context: any) => {
+export const resetPassword = onCall(defaultCallableOptions, async (request) => {
   try {
+    const data = request.data as any;
     const { email, resetCode, newPassword } = data;
 
     if (!email || !resetCode || !newPassword) {
@@ -120,7 +125,8 @@ export const resetPassword = functions.https.onCall(async (data: any, context: a
   }
 });
 
-export const checkEmailAvailability = functions.https.onCall(async (data: any, context: any) => {
+export const checkEmailAvailability = onCall(defaultCallableOptions, async (request) => {
+  const data = request.data as any;
   try {
     const { email } = data;
 
@@ -143,9 +149,9 @@ export const checkEmailAvailability = functions.https.onCall(async (data: any, c
   }
 });
 
-export const validateSession = functions.https.onCall(async (data: any, context: any) => {
+export const validateSession = onCall(defaultCallableOptions, async (request) => {
   try {
-    const userId = context.auth?.uid;
+    const userId = request.auth?.uid;
 
     if (!userId) {
       return createErrorResponse('User not authenticated');
@@ -181,9 +187,9 @@ export const validateSession = functions.https.onCall(async (data: any, context:
   }
 });
 
-export const refreshUserClaims = functions.https.onCall(async (data: any, context: any) => {
+export const refreshUserClaims = onCall(defaultCallableOptions, async (request) => {
   try {
-    const userId = context.auth?.uid;
+    const userId = request.auth?.uid;
 
     if (!userId) {
       return createErrorResponse('User not authenticated');
@@ -220,9 +226,9 @@ export const refreshUserClaims = functions.https.onCall(async (data: any, contex
   }
 });
 
-export const getAuthStatus = functions.https.onCall(async (data: any, context: any) => {
+export const getAuthStatus = onCall(defaultCallableOptions, async (request) => {
   try {
-    const userId = context.auth?.uid;
+    const userId = request.auth?.uid;
 
     if (!userId) {
       return createSuccessResponse({

@@ -1,12 +1,12 @@
 /**
  * Google Drive Integration Service - HTTP Functions
- * 
+ *
  * HTTP versions of Google Drive functions to bypass CORS restrictions
  * These functions use HTTP requests instead of httpsCallable
  */
 
+import { onRequest } from 'firebase-functions/v2/https';
 import { google } from 'googleapis';
-import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { encryptTokens, decryptTokens, generateSecureState, verifyState, hashForLogging } from './encryption';
 import { createSuccessResponse, createErrorResponse, setCorsHeaders } from '../shared/utils';
@@ -57,7 +57,7 @@ async function verifyAuthToken(req: any): Promise<{ userId: string; organization
  * Initiate Google OAuth flow - HTTP version
  * Returns authorization URL for user to authenticate
  */
-export const initiateGoogleOAuthHttp = functions.https.onRequest(async (req, res) => {
+export const initiateGoogleOAuthHttp = onRequest({ memory: '512MiB' }, async (req, res) => {
   try {
     // Set CORS headers
     setCorsHeaders(req, res);
@@ -146,7 +146,7 @@ export const initiateGoogleOAuthHttp = functions.https.onRequest(async (req, res
  * Handle Google OAuth callback - HTTP version
  * Exchange authorization code for tokens
  */
-export const handleGoogleOAuthCallbackHttp = functions.https.onRequest(async (req, res) => {
+export const handleGoogleOAuthCallbackHttp = onRequest({ memory: '512MiB' }, async (req, res) => {
   try {
     // Set CORS headers
     setCorsHeaders(req, res);
@@ -251,7 +251,7 @@ export const handleGoogleOAuthCallbackHttp = functions.https.onRequest(async (re
 /**
  * Get Google Drive integration status - HTTP version
  */
-export const getGoogleIntegrationStatusHttp = functions.https.onRequest(async (req, res) => {
+export const getGoogleIntegrationStatusHttp = onRequest({ memory: '512MiB' }, async (req, res) => {
   // Set CORS headers first thing - before any error handling
   setCorsHeaders(req, res);
 
@@ -396,7 +396,7 @@ export const getGoogleIntegrationStatusHttp = functions.https.onRequest(async (r
 /**
  * List Google Drive folders - HTTP version
  */
-export const listGoogleDriveFoldersHttp = functions.https.onRequest(async (req, res) => {
+export const listGoogleDriveFoldersHttp = onRequest({ memory: '512MiB' }, async (req, res) => {
   // Set CORS headers first thing - before any error handling
   setCorsHeaders(req, res);
 
@@ -490,7 +490,7 @@ export const listGoogleDriveFoldersHttp = functions.https.onRequest(async (req, 
 /**
  * Get Google Drive files - HTTP version
  */
-export const getGoogleDriveFilesHttp = functions.https.onRequest(async (req, res) => {
+export const getGoogleDriveFilesHttp = onRequest({ memory: '512MiB' }, async (req, res) => {
   // Set CORS headers first thing - before any error handling
   setCorsHeaders(req, res);
 
@@ -592,7 +592,7 @@ export const getGoogleDriveFilesHttp = functions.https.onRequest(async (req, res
 /**
  * Create Google Drive folder - HTTP version
  */
-export const createGoogleDriveFolderHttp = functions.https.onRequest(async (req, res) => {
+export const createGoogleDriveFolderHttp = onRequest({ memory: '512MiB' }, async (req, res) => {
   try {
     // Set CORS headers
     setCorsHeaders(req, res);
@@ -672,7 +672,7 @@ export const createGoogleDriveFolderHttp = functions.https.onRequest(async (req,
 /**
  * Upload to Google Drive - HTTP version
  */
-export const uploadToGoogleDriveHttp = functions.https.onRequest(async (req, res) => {
+export const uploadToGoogleDriveHttp = onRequest({ memory: '512MiB' }, async (req, res) => {
   try {
     // Set CORS headers
     setCorsHeaders(req, res);

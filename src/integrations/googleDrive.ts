@@ -6,8 +6,8 @@
  */
 
 import { google } from 'googleapis';
-import * as functions from 'firebase-functions';
 import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
+import { defaultCallableOptions } from '../lib/functionOptions';
 import * as admin from 'firebase-admin';
 import { encryptTokens, decryptTokens, generateSecureState, verifyState, hashForLogging } from './encryption';
 import { encryptToken, decryptToken } from './unified-oauth/encryption';
@@ -127,7 +127,7 @@ const SCOPES = [
  * Returns authorization URL for user to authenticate
  */
 // HTTP version for CORS support
-export const initiateGoogleOAuthHttp = functions.https.onRequest(async (req, res) => {
+export const initiateGoogleOAuthHttp = onRequest({ memory: '512MiB' }, async (req, res) => {
   // Set CORS headers
   const allowedOrigins = [
     'https://backbone-logic.web.app',
@@ -685,7 +685,7 @@ export const handleGoogleOAuthCallbackHttp = onRequest(
 /**
  * HTTP endpoint to refresh Google access token
  */
-export const refreshGoogleAccessTokenHttp = functions.https.onRequest(async (req, res) => {
+export const refreshGoogleAccessTokenHttp = onRequest({ memory: '512MiB' }, async (req, res) => {
   // Set CORS headers
   const allowedOrigins = [
     'https://backbone-logic.web.app',
@@ -1461,14 +1461,15 @@ export const uploadToGoogleDrive = onCall(
 /**
  * Download file from Google Drive
  */
-export const downloadGoogleDriveFile = functions.https.onCall(async (data, context) => {
+export const downloadGoogleDriveFile = onCall(defaultCallableOptions, async (request) => {
   try {
-    if (!context.auth) {
-      throw new Error('Authentication required');
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Authentication required');
     }
 
-    const userId = context.auth.uid;
-    const organizationId = context.auth.token.organizationId || 'default';
+    const data = request.data as { fileId?: string };
+    const userId = request.auth.uid;
+    const organizationId = request.auth.token.organizationId || 'default';
     const { fileId } = data;
 
     if (!fileId) {
@@ -1514,14 +1515,15 @@ export const downloadGoogleDriveFile = functions.https.onCall(async (data, conte
 /**
  * Delete file from Google Drive
  */
-export const deleteGoogleDriveFile = functions.https.onCall(async (data, context) => {
+export const deleteGoogleDriveFile = onCall(defaultCallableOptions, async (request) => {
   try {
-    if (!context.auth) {
-      throw new Error('Authentication required');
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Authentication required');
     }
 
-    const userId = context.auth.uid;
-    const organizationId = context.auth.token.organizationId || 'default';
+    const data = request.data as { fileId?: string };
+    const userId = request.auth.uid;
+    const organizationId = request.auth.token.organizationId || 'default';
     const { fileId } = data;
 
     if (!fileId) {

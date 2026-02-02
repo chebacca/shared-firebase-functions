@@ -1,4 +1,5 @@
-import * as functions from 'firebase-functions';
+import { onRequest, onCall } from 'firebase-functions/v2/https';
+import { defaultCallableOptions } from '../lib/functionOptions';
 import * as admin from 'firebase-admin';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
 
@@ -97,7 +98,7 @@ async function getProjectDatasetsLogic(data: any, context?: any): Promise<any> {
 }
 
 // HTTP function for UniversalFirebaseInterceptor
-export const assignDatasetToProject = functions.https.onRequest(async (req: any, res: any) => {
+export const assignDatasetToProject = onRequest({ memory: '512MiB' }, async (req: any, res: any) => {
   try {
     // Set CORS headers
     res.set('Access-Control-Allow-Origin', '*');
@@ -124,7 +125,7 @@ export const assignDatasetToProject = functions.https.onRequest(async (req: any,
   }
 });
 
-export const removeDatasetFromProject = functions.https.onRequest(async (req: any, res: any) => {
+export const removeDatasetFromProject = onRequest({ memory: '512MiB' }, async (req: any, res: any) => {
   try {
     // Set CORS headers
     res.set('Access-Control-Allow-Origin', '*');
@@ -151,7 +152,7 @@ export const removeDatasetFromProject = functions.https.onRequest(async (req: an
   }
 });
 
-export const getProjectDatasets = functions.https.onRequest(async (req: any, res: any) => {
+export const getProjectDatasets = onRequest({ memory: '512MiB' }, async (req: any, res: any) => {
   try {
     // Set CORS headers
     res.set('Access-Control-Allow-Origin', '*');
@@ -179,14 +180,14 @@ export const getProjectDatasets = functions.https.onRequest(async (req: any, res
 });
 
 // Callable functions for direct Firebase usage
-export const assignDatasetToProjectCallable = functions.https.onCall(async (data: any, context: any) => {
-  return await assignDatasetToProjectLogic(data, context);
+export const assignDatasetToProjectCallable = onCall(defaultCallableOptions, async (request) => {
+  return await assignDatasetToProjectLogic(request.data, undefined);
 });
 
-export const removeDatasetFromProjectCallable = functions.https.onCall(async (data: any, context: any) => {
-  return await removeDatasetFromProjectLogic(data, context);
+export const removeDatasetFromProjectCallable = onCall(defaultCallableOptions, async (request) => {
+  return await removeDatasetFromProjectLogic(request.data, undefined);
 });
 
-export const getProjectDatasetsCallable = functions.https.onCall(async (data: any, context: any) => {
-  return await getProjectDatasetsLogic(data, context);
+export const getProjectDatasetsCallable = onCall(defaultCallableOptions, async (request) => {
+  return await getProjectDatasetsLogic(request.data, undefined);
 });

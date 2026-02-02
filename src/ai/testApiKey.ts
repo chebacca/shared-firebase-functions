@@ -38,6 +38,7 @@ interface TestApiKeyResponse {
 export const testAIApiKey = onCall(
   { 
     cors: true,
+    memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
     // Include the encryption key secret
     secrets: [encryptionKeySecret]
   },

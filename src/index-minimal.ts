@@ -5,7 +5,6 @@
  */
 
 import { initializeApp } from 'firebase-admin/app';
-import * as functions from 'firebase-functions';
 
 // Initialize Firebase Admin
 initializeApp();

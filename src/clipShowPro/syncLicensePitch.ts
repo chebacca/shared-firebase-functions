@@ -237,7 +237,7 @@ export const onLicenseUpdated = onDocumentUpdated(
  * Manual sync function to fix any orphaned or missing links
  * Can be called via HTTP to sync all pitches with their licenses
  */
-export const syncAllPitchesWithLicenses = onCall(async (request) => {
+export const syncAllPitchesWithLicenses = onCall({ memory: '512MiB' }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');

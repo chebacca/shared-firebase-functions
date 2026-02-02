@@ -15,6 +15,7 @@ const auth = getAuth();
 export const getTURNCredentials = onCall(
   {
     cors: true,
+    memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
   },
   async (request) => {
     try {
@@ -54,7 +55,8 @@ export const getTURNCredentials = onCall(
 export const getTURNCredentialsHttp = onRequest(
   {
     cors: true,
-    invoker: 'public'
+    invoker: 'public',
+    memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
   },
   async (req, res) => {
     try {

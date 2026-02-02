@@ -12,7 +12,7 @@ const db = getFirestore();
 export const updateCallSheetAccessCode = onRequest(
   {
     region: 'us-central1',
-    memory: '256MiB',
+    memory: '512MiB',
     timeoutSeconds: 30,
     invoker: 'public',
     cors: false

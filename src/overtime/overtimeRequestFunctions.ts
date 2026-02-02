@@ -3,15 +3,28 @@
  * Firebase Functions for managing overtime requests and approval workflow
  */
 
+// Explicit CORS origins so preflight from https://localhost:* (e.g. Vite HTTPS) is allowed
+const CORS_ORIGINS = [
+  'http://localhost:4002',
+  'http://localhost:4003',
+  'http://localhost:4004',
+  'http://localhost:4006',
+  'http://localhost:4010',
+  'https://localhost:4010',
+  'http://localhost:5173',
+  'http://localhost:5300',
+  'https://backbone-client.web.app',
+  'https://backbone-logic.web.app',
+  'https://backbone-callsheet-standalone.web.app',
+  'https://clipshowpro.web.app',
+];
+
 import { onCall } from 'firebase-functions/v2/https';
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
-import { getMessaging } from 'firebase-admin/messaging';
+import { FieldValue } from 'firebase-admin/firestore';
+import { db, messaging } from '../shared/utils';
 import { createSuccessResponse, createErrorResponse } from '../shared/utils';
 import * as admin from 'firebase-admin';
 import type { OvertimeRequest, OvertimeRequestType, OvertimeRequestStatus, OvertimeResponse } from 'shared-firebase-types';
-
-const db = getFirestore();
-const messaging = getMessaging();
 
 /**
  * Create a new overtime request
@@ -19,8 +32,8 @@ const messaging = getMessaging();
 export const createOvertimeRequest = onCall(
   {
     region: 'us-central1',
-    cors: true,
-    memory: '256MiB',
+    cors: CORS_ORIGINS,
+    memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
     timeoutSeconds: 30
   },
   async (request) => {
@@ -80,7 +93,7 @@ export const createOvertimeRequest = onCall(
         organizationId,
         category: 'overtime_request',
         type: requestType === 'MANAGER_INQUIRY' ? 'overtime_inquiry' : 'overtime_request',
-        title: requestType === 'MANAGER_INQUIRY' 
+        title: requestType === 'MANAGER_INQUIRY'
           ? 'Overtime Inquiry from Manager'
           : 'Overtime Request',
         message: requestType === 'MANAGER_INQUIRY'
@@ -109,7 +122,7 @@ export const createOvertimeRequest = onCall(
           const tokens = tokensSnapshot.docs.map(doc => doc.data().token);
           await messaging.sendEachForMulticast({
             notification: {
-              title: requestType === 'MANAGER_INQUIRY' 
+              title: requestType === 'MANAGER_INQUIRY'
                 ? 'Overtime Inquiry'
                 : 'Overtime Request',
               body: requestType === 'MANAGER_INQUIRY'
@@ -143,8 +156,8 @@ export const createOvertimeRequest = onCall(
 export const respondToOvertimeRequest = onCall(
   {
     region: 'us-central1',
-    cors: true,
-    memory: '256MiB',
+    cors: CORS_ORIGINS,
+    memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
     timeoutSeconds: 30
   },
   async (request) => {
@@ -218,8 +231,8 @@ export const respondToOvertimeRequest = onCall(
 export const certifyOvertimeRequest = onCall(
   {
     region: 'us-central1',
-    cors: true,
-    memory: '256MiB',
+    cors: CORS_ORIGINS,
+    memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
     timeoutSeconds: 30
   },
   async (request) => {
@@ -335,8 +348,8 @@ export const certifyOvertimeRequest = onCall(
 export const approveOvertimeRequest = onCall(
   {
     region: 'us-central1',
-    cors: true,
-    memory: '256MiB',
+    cors: CORS_ORIGINS,
+    memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
     timeoutSeconds: 30
   },
   async (request) => {
@@ -357,7 +370,7 @@ export const approveOvertimeRequest = onCall(
       const userData = userDoc.data();
       const role = userData?.role || userData?.dashboardRole || '';
       const execRoles = ['EXECUTIVE_PRODUCER', 'PRODUCER', 'ACCOUNTING', 'ADMIN', 'OWNER'];
-      
+
       if (!execRoles.includes(role.toUpperCase())) {
         throw new Error('Unauthorized: Only executives and accounting can approve overtime requests');
       }
@@ -435,8 +448,8 @@ export const approveOvertimeRequest = onCall(
 export const rejectOvertimeRequest = onCall(
   {
     region: 'us-central1',
-    cors: true,
-    memory: '256MiB',
+    cors: CORS_ORIGINS,
+    memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
     timeoutSeconds: 30
   },
   async (request) => {
@@ -457,7 +470,7 @@ export const rejectOvertimeRequest = onCall(
       const userData = userDoc.data();
       const role = userData?.role || userData?.dashboardRole || '';
       const execRoles = ['EXECUTIVE_PRODUCER', 'PRODUCER', 'ACCOUNTING', 'ADMIN', 'OWNER'];
-      
+
       if (!execRoles.includes(role.toUpperCase())) {
         throw new Error('Unauthorized: Only executives and accounting can reject overtime requests');
       }

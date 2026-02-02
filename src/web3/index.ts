@@ -21,7 +21,7 @@ const auth = getAuth();
  */
 export const web3Api: HttpsFunction = onRequest(
   {
-    memory: '256MiB',
+    memory: '512MiB',
     timeoutSeconds: 30,
     cors: true
   },

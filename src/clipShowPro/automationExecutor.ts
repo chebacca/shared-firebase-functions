@@ -75,6 +75,7 @@ export const executeAutomation = onCall(
     region: 'us-central1',
     invoker: 'public',
     cors: true,
+    memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
   },
   async (request) => {
   try {

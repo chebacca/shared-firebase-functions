@@ -5,7 +5,7 @@
 
 import { onCall } from 'firebase-functions/v2/https';
 import { getFirestore } from 'firebase-admin/firestore';
-import { logger } from 'firebase-functions';
+import { logger } from 'firebase-functions/v2';
 import { getStorage } from 'firebase-admin/storage';
 
 const db = getFirestore();

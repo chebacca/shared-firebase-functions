@@ -19,7 +19,7 @@ interface GetProjectTeamMembersForContactRequest {
 export const getProjectTeamMembersForContact = onCall(
     {
         region: 'us-central1',
-        memory: '256MiB',
+        memory: '512MiB',
         timeoutSeconds: 30,
         invoker: 'public',
         cors: true,
@@ -127,7 +127,7 @@ export const getProjectTeamMembersForContact = onCall(
 export const getProjectTeamMembersForContactHttp = onRequest(
     {
         region: 'us-central1',
-        memory: '256MiB',
+        memory: '512MiB',
         timeoutSeconds: 30,
         invoker: 'public',
         cors: false,

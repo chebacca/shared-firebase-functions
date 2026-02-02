@@ -7,7 +7,7 @@
 
 import { onRequest } from 'firebase-functions/v2/https';
 import { getAuth } from 'firebase-admin/auth';
-import { logger } from 'firebase-functions';
+import { logger } from 'firebase-functions/v2';
 
 interface GenerateTransferTokenRequest {
   userId: string;
@@ -26,7 +26,7 @@ export const generateAuthTransferToken = onRequest(
   {
     cors: true,
     timeoutSeconds: 30,
-    memory: '256MiB'
+    memory: '512MiB'
   },
   async (request, response) => {
     // Handle CORS preflight requests

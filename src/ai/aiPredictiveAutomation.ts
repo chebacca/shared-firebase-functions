@@ -55,7 +55,9 @@ interface PredictiveAutomationResponse {
 /**
  * AI Predictive Automation - Main function
  */
-export const aiPredictiveAutomation = onCall(async (request): Promise<PredictiveAutomationResponse> => {
+export const aiPredictiveAutomation = onCall(
+  { memory: '512MiB' }, // Avoid container healthcheck timeout on cold start
+  async (request): Promise<PredictiveAutomationResponse> => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');

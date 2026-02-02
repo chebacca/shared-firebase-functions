@@ -1,4 +1,5 @@
-import * as functions from 'firebase-functions';
+import { onRequest, onCall } from 'firebase-functions/v2/https';
+import { defaultCallableOptions } from '../lib/functionOptions';
 import * as admin from 'firebase-admin';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
 // import { License } from '../shared/types';
@@ -44,7 +45,7 @@ async function listLicensesLogic(data: any, context?: any): Promise<any> {
 }
 
 // HTTP function for UniversalFirebaseInterceptor
-export const listLicenses = functions.https.onRequest(async (req: any, res: any) => {
+export const listLicenses = onRequest({ memory: '512MiB' }, async (req: any, res: any) => {
   try {
     // Set CORS headers
     res.set('Access-Control-Allow-Origin', '*');
@@ -72,6 +73,6 @@ export const listLicenses = functions.https.onRequest(async (req: any, res: any)
 });
 
 // Callable function for direct Firebase usage
-export const listLicensesCallable = functions.https.onCall(async (data: any, context: any) => {
-  return await listLicensesLogic(data, context);
+export const listLicensesCallable = onCall(defaultCallableOptions, async (request) => {
+  return await listLicensesLogic(request.data, undefined);
 });

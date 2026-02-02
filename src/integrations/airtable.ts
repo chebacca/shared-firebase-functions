@@ -10,7 +10,7 @@ import { onRequest } from 'firebase-functions/v2/https';
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { onDocumentCreated } from 'firebase-functions/v2/firestore';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
-import { logger } from 'firebase-functions';
+import { logger } from 'firebase-functions/v2';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getStorage } from 'firebase-admin/storage';
@@ -323,7 +323,7 @@ function transformAirtableToFirebase(record: any, mapping: any): any {
 /**
  * Initiate Airtable OAuth flow
  */
-export const initiateAirtableOAuth = onCall(async (request) => {
+export const initiateAirtableOAuth = onCall({ memory: '512MiB' }, async (request) => {
   try {
     const { organizationId } = request.data;
     
@@ -365,7 +365,7 @@ export const initiateAirtableOAuth = onCall(async (request) => {
 /**
  * Handle Airtable OAuth callback
  */
-export const handleAirtableOAuthCallback = onCall(async (request) => {
+export const handleAirtableOAuthCallback = onCall({ memory: '512MiB' }, async (request) => {
   try {
     const { code, state } = request.data;
     
@@ -440,7 +440,7 @@ export const handleAirtableOAuthCallback = onCall(async (request) => {
 /**
  * Get Airtable integration status
  */
-export const getAirtableIntegrationStatus = onCall(async (request) => {
+export const getAirtableIntegrationStatus = onCall({ memory: '512MiB' }, async (request) => {
   try {
     const { organizationId } = request.data;
     
@@ -508,7 +508,7 @@ export const getAirtableIntegrationStatus = onCall(async (request) => {
 /**
  * Sync Airtable to Firebase
  */
-export const syncAirtableToFirebase = onCall(async (request) => {
+export const syncAirtableToFirebase = onCall({ memory: '512MiB' }, async (request) => {
   try {
     const { organizationId, baseId, tableId, syncMode = 'incremental' } = request.data;
     
@@ -632,7 +632,7 @@ export const syncAirtableToFirebase = onCall(async (request) => {
 /**
  * Sync Firebase to Airtable
  */
-export const syncFirebaseToAirtable = onCall(async (request) => {
+export const syncFirebaseToAirtable = onCall({ memory: '512MiB' }, async (request) => {
   try {
     const { organizationId, baseId, tableId, collectionName } = request.data;
     
@@ -824,7 +824,7 @@ export const scheduledAirtableSync = onSchedule('every 15 minutes', async () => 
 /**
  * Bulk import from Airtable
  */
-export const importAirtableData = onCall(async (request) => {
+export const importAirtableData = onCall({ memory: '512MiB' }, async (request) => {
   try {
     const { organizationId, baseId, tableIds, importMode = 'full' } = request.data;
     
@@ -887,7 +887,7 @@ export const importAirtableData = onCall(async (request) => {
 /**
  * Export to Airtable
  */
-export const exportToAirtable = onCall(async (request) => {
+export const exportToAirtable = onCall({ memory: '512MiB' }, async (request) => {
   try {
     const { organizationId, baseId, tableId, collectionName, exportMode = 'full' } = request.data;
     
@@ -923,7 +923,7 @@ export const exportToAirtable = onCall(async (request) => {
 /**
  * Validate Airtable connection
  */
-export const validateAirtableConnection = onCall(async (request) => {
+export const validateAirtableConnection = onCall({ memory: '512MiB' }, async (request) => {
   try {
     const { apiKey, baseId } = request.data;
     
@@ -955,7 +955,7 @@ export const validateAirtableConnection = onCall(async (request) => {
 /**
  * Get Airtable bases
  */
-export const getAirtableBases = onCall(async (request) => {
+export const getAirtableBases = onCall({ memory: '512MiB' }, async (request) => {
   try {
     const { apiKey } = request.data;
     
@@ -988,7 +988,7 @@ export const getAirtableBases = onCall(async (request) => {
 /**
  * Get Airtable tables
  */
-export const getAirtableTables = onCall(async (request) => {
+export const getAirtableTables = onCall({ memory: '512MiB' }, async (request) => {
   try {
     const { apiKey, baseId } = request.data;
     

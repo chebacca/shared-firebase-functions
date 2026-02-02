@@ -18,6 +18,7 @@ export const migrateBoxTokens = onCall(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB', // Increased from default 256MiB - function runs out of memory during initialization
     secrets: [encryptionKey],
   },
   async (request) => {

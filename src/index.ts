@@ -461,8 +461,12 @@ export {
   onPitchUpdated,
   onStoryUpdated,
   onClearanceCreated,
-  onClearanceUpdated
+  onClearanceUpdated,
+  syncSubscriptionAddOns,
+  onUserDocumentUpdated
 } from './clipShowPro';
+// Callable used by Clip Show Pro BoxService (httpsCallable('uploadToBox'))
+export { uploadToBoxForClipShow as uploadToBox } from './clipShowPro';
 
 // Export main API function
 export { api, uploadNetworkDeliveryBible, getNetworkDeliveryDeliverables } from './api';
@@ -508,7 +512,12 @@ export {
   bulkApproveTimecards,
   // Clock in/out functions
   clockIn,
-  clockOut
+  clockOut,
+  // Extended users & labor (used by Call Sheet and timecard tooling)
+  getExtendedUsers,
+  getExtendedUsersHttp,
+  getLaborRules,
+  getLaborRulesHttp
 } from './timecards';
 
 // Export budgeting functions (callable versions only - HTTP versions removed to reduce CPU quota)
@@ -612,7 +621,7 @@ export { docuSignWebhookHandler } from './clipShowPro/docusign/webhookHandler';
 
 // QC Functions
 export {
-  onQCFileUpload,
+  // onQCFileUpload, // Temporarily disabled - bucket region detection issue
   triggerQCAnalysis
 } from './qc';
 

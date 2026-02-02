@@ -1,19 +1,18 @@
-import * as functions from 'firebase-functions';
+import { onRequest } from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
 import axios from 'axios';
-import { Request, Response } from 'express';
 import cors from 'cors';
 
 const corsHandler = cors({ origin: true });
 
 /**
  * Proxy File Download Function
- * 
+ *
  * Fetches a file from a remote URL and streams it back to the client.
  * This is used to bypass CORS restrictions when downloading files from
  * third-party providers (Box, Dropbox, etc.) directly in the browser.
  */
-export const proxyFileDownload = functions.https.onRequest(async (req: any, res: any) => {
+export const proxyFileDownload = onRequest({ memory: '512MiB' }, async (req: any, res: any) => {
     return corsHandler(req, res, async () => {
         try {
             // 1. Validate Authentication

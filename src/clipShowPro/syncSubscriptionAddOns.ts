@@ -3,13 +3,13 @@ import { onCall } from 'firebase-functions/v2/https';
 import * as admin from 'firebase-admin';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
-import { logger } from 'firebase-functions';
+import { logger } from 'firebase-functions/v2';
 
 /**
  * Syncs subscription add-ons from Firestore user document to Firebase Auth custom claims
  * This ensures that subscription add-ons are immediately available in the user's token
  */
-export const syncSubscriptionAddOns = onCall(async (request) => {
+export const syncSubscriptionAddOns = onCall({ memory: '512MiB' }, async (request) => {
   try {
     const { userId } = request.data;
     
@@ -165,7 +165,7 @@ export const onUserDocumentUpdated = onDocumentUpdated(
  * Grants Clip Show Pro access to a user
  * This function can be called by admins to grant add-on access
  */
-export const grantClipShowProAccess = onCall(async (request) => {
+export const grantClipShowProAccess = onCall({ memory: '512MiB' }, async (request) => {
   try {
     const { targetUserId, grantedBy } = request.data;
     
@@ -249,7 +249,7 @@ export const grantClipShowProAccess = onCall(async (request) => {
  * Revokes Clip Show Pro access from a user
  * This function can be called by admins to revoke add-on access
  */
-export const revokeClipShowProAccess = onCall(async (request) => {
+export const revokeClipShowProAccess = onCall({ memory: '512MiB' }, async (request) => {
   try {
     const { targetUserId, revokedBy } = request.data;
     

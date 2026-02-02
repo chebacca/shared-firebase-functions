@@ -24,7 +24,7 @@ const db = getFirestore();
  * Check and backfill missing license fees
  * Can be called manually to audit and fix license fee data
  */
-export const backfillLicenseFees = onCall(async (request) => {
+export const backfillLicenseFees = onCall({ memory: '512MiB' }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');
@@ -190,7 +190,7 @@ export const backfillLicenseFees = onCall(async (request) => {
 /**
  * Audit license fees - check which licenses are missing fees without updating them
  */
-export const auditLicenseFees = onCall(async (request) => {
+export const auditLicenseFees = onCall({ memory: '512MiB' }, async (request) => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');

@@ -1,10 +1,12 @@
-import * as functions from 'firebase-functions';
+import { onCall } from 'firebase-functions/v2/https';
+import { defaultCallableOptions } from '../lib/functionOptions';
 import * as admin from 'firebase-admin';
 import { createSuccessResponse, createErrorResponse, handleError, validateEmail } from '../shared/utils';
 import { User } from '../shared/types';
 
-export const loginUser = functions.https.onCall(async (data: any, context: any) => {
+export const loginUser = onCall(defaultCallableOptions, async (request) => {
   try {
+    const data = request.data as any;
     const { email, password } = data;
 
     if (!email || !password) {
@@ -54,8 +56,9 @@ export const loginUser = functions.https.onCall(async (data: any, context: any) 
   }
 });
 
-export const verifyToken = functions.https.onCall(async (data: any, context: any) => {
+export const verifyToken = onCall(defaultCallableOptions, async (request) => {
   try {
+    const data = request.data as any;
     const { token } = data;
 
     if (!token) {
@@ -88,8 +91,9 @@ export const verifyToken = functions.https.onCall(async (data: any, context: any
   }
 });
 
-export const refreshToken = functions.https.onCall(async (data: any, context: any) => {
+export const refreshToken = onCall(defaultCallableOptions, async (request) => {
   try {
+    const data = request.data as any;
     const { refreshToken } = data;
 
     if (!refreshToken) {
@@ -98,7 +102,7 @@ export const refreshToken = functions.https.onCall(async (data: any, context: an
 
     // Firebase handles refresh token validation
     // This function is for additional business logic
-    const userRecord = await admin.auth().getUser(context.auth?.uid || '');
+    const userRecord = await admin.auth().getUser(request.auth?.uid || '');
     
     // Get user data from Firestore
     const userDoc = await admin.firestore().collection('users').doc(userRecord.uid).get();
@@ -127,9 +131,9 @@ export const refreshToken = functions.https.onCall(async (data: any, context: an
   }
 });
 
-export const logoutUser = functions.https.onCall(async (data: any, context: any) => {
+export const logoutUser = onCall(defaultCallableOptions, async (request) => {
   try {
-    const userId = context.auth?.uid;
+    const userId = request.auth?.uid;
 
     if (!userId) {
       return createErrorResponse('User not authenticated');
@@ -148,9 +152,9 @@ export const logoutUser = functions.https.onCall(async (data: any, context: any)
   }
 });
 
-export const getUserProfile = functions.https.onCall(async (data: any, context: any) => {
+export const getUserProfile = onCall(defaultCallableOptions, async (request) => {
   try {
-    const userId = context.auth?.uid;
+    const userId = request.auth?.uid;
 
     if (!userId) {
       return createErrorResponse('User not authenticated');
@@ -183,9 +187,10 @@ export const getUserProfile = functions.https.onCall(async (data: any, context: 
   }
 });
 
-export const updateUserProfile = functions.https.onCall(async (data: any, context: any) => {
+export const updateUserProfile = onCall(defaultCallableOptions, async (request) => {
   try {
-    const userId = context.auth?.uid;
+    const data = request.data as any;
+    const userId = request.auth?.uid;
     const { displayName, preferences } = data;
 
     if (!userId) {
@@ -221,9 +226,10 @@ export const updateUserProfile = functions.https.onCall(async (data: any, contex
   }
 });
 
-export const changePassword = functions.https.onCall(async (data: any, context: any) => {
+export const changePassword = onCall(defaultCallableOptions, async (request) => {
   try {
-    const userId = context.auth?.uid;
+    const data = request.data as any;
+    const userId = request.auth?.uid;
     const { currentPassword, newPassword } = data;
 
     if (!userId) {
@@ -250,9 +256,10 @@ export const changePassword = functions.https.onCall(async (data: any, context: 
   }
 });
 
-export const deleteAccount = functions.https.onCall(async (data: any, context: any) => {
+export const deleteAccount = onCall(defaultCallableOptions, async (request) => {
   try {
-    const userId = context.auth?.uid;
+    const data = request.data as any;
+    const userId = request.auth?.uid;
     const { password } = data;
 
     if (!userId) {

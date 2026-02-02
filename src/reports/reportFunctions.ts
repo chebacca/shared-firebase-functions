@@ -68,10 +68,13 @@ export const analyzeProject = onCall({ timeoutSeconds: 60, memory: '1GiB' }, asy
     }
 });
 
-export const getReportStatus = onCall(async (request) => {
+export const getReportStatus = onCall(
+  { memory: '512MiB' }, // Avoid Cloud Run container healthcheck timeout on cold start
+  async (request) => {
     // Placeholder for when we implement async background generation
     return { status: 'completed' };
-});
+  }
+);
 
 import { ReportExportService, ExportDestination } from './ReportExportService';
 

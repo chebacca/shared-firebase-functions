@@ -892,6 +892,7 @@ export const boxOAuthInitiateHttp = onRequest(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
     secrets: [encryptionKey],
   },
   async (req, res) => {

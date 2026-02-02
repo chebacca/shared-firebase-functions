@@ -67,6 +67,7 @@ export const sendLicenseEmail = onRequest(
   {
     region: 'us-central1',
     cors: true, // Enable CORS at function level as backup
+    memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
   },
   async (req: any, res: any) => {
     // Handle preflight OPTIONS request FIRST with explicit CORS headers

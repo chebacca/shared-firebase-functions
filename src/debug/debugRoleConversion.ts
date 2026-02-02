@@ -9,7 +9,7 @@ import { createSuccessResponse, handleError } from '../shared/utils';
 
 export const debugRoleConversion = onRequest(
   {
-    memory: '256MiB',
+    memory: '512MiB',
     timeoutSeconds: 30,
     cors: true
   },

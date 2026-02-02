@@ -28,7 +28,11 @@ const auth = getAuth();
 /**
  * Get user information with unified data model
  */
-export const getUserInfo = onCall(async (request) => {
+export const getUserInfo = onCall(
+  {
+    memory: '512MiB', // Increased from default 256MiB - function runs out of memory during initialization
+  },
+  async (request) => {
   try {
     const { uid } = request.data;
     
@@ -453,7 +457,9 @@ export const updateUserClaims = onCall(
 /**
  * Sync user data between Firebase Auth and Firestore
  */
-export const syncUserData = onCall(async (request) => {
+export const syncUserData = onCall(
+  { memory: '512MiB' }, // Avoid Cloud Run container healthcheck timeout on cold start
+  async (request) => {
   try {
     const { uid } = request.data;
     
@@ -520,7 +526,7 @@ export const syncUserData = onCall(async (request) => {
 /**
  * Validate user license for specific application
  */
-export const validateLicense = onCall(async (request) => {
+export const validateLicense = onCall({ memory: '512MiB' }, async (request) => {
   try {
     const { uid, appType } = request.data;
     
@@ -575,7 +581,7 @@ export const validateLicense = onCall(async (request) => {
 /**
  * Grant application access to user
  */
-export const grantAppAccess = onCall(async (request) => {
+export const grantAppAccess = onCall({ memory: '512MiB' }, async (request) => {
   try {
     const { uid, appType, granted } = request.data;
     
@@ -637,7 +643,7 @@ export const grantAppAccess = onCall(async (request) => {
 /**
  * Get user's organization data
  */
-export const getUserOrganization = onCall(async (request) => {
+export const getUserOrganization = onCall({ memory: '512MiB' }, async (request) => {
   try {
     const { uid } = request.data;
     
@@ -702,7 +708,7 @@ export const getUserOrganization = onCall(async (request) => {
 /**
  * Update user's organization
  */
-export const updateUserOrganization = onCall(async (request) => {
+export const updateUserOrganization = onCall({ memory: '512MiB' }, async (request) => {
   try {
     const { uid, organizationId } = request.data;
     
@@ -757,7 +763,7 @@ export const updateUserOrganization = onCall(async (request) => {
 /**
  * Get user's accessible projects
  */
-export const getUserProjects = onCall(async (request) => {
+export const getUserProjects = onCall({ memory: '512MiB' }, async (request) => {
   try {
     const { uid } = request.data;
     
@@ -809,7 +815,11 @@ export const getUserProjects = onCall(async (request) => {
 /**
  * Get user's active projects (filtered by active status and project assignments)
  */
-export const getUserActiveProjects = onCall(async (request) => {
+export const getUserActiveProjects = onCall(
+  {
+    memory: '512MiB', // Increased from default 256MiB - function runs out of memory during initialization
+  },
+  async (request) => {
   try {
     const { uid } = request.data;
     
@@ -881,7 +891,7 @@ export const getUserActiveProjects = onCall(async (request) => {
 /**
  * Discover collections with intelligent categorization
  */
-export const discoverCollections = onCall(async (request) => {
+export const discoverCollections = onCall({ memory: '512MiB' }, async (request) => {
   try {
     const { organizationId } = request.data;
     
@@ -1057,7 +1067,9 @@ export const discoverCollectionsHttp = onRequest(
 /**
  * Transfer authentication token between apps
  */
-export const transferAuthToken = onCall(async (request) => {
+export const transferAuthToken = onCall(
+  { memory: '512MiB' }, // Avoid Cloud Run container healthcheck timeout on cold start
+  async (request) => {
   try {
     const { uid, targetApp } = request.data;
     
@@ -1128,7 +1140,7 @@ export const transferAuthToken = onCall(async (request) => {
 /**
  * Get system statistics
  */
-export const getSystemStats = onCall(async (request) => {
+export const getSystemStats = onCall({ memory: '512MiB' }, async (request) => {
   try {
     // Get user count
     const userList = await auth.listUsers(1000);
@@ -1174,6 +1186,7 @@ export const getSystemStats = onCall(async (request) => {
 export const getParticipantDetails = onCall(
   {
     cors: true,
+    memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
   },
   async (request) => {
     try {
@@ -1326,7 +1339,7 @@ export const getParticipantDetails = onCall(
 /**
  * Health check endpoint
  */
-export const healthCheck = onRequest(async (req, res) => {
+export const healthCheck = onRequest({ memory: '512MiB' }, async (req, res) => {
   try {
     // Check Firebase services
     await auth.listUsers(1);

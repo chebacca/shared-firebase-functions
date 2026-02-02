@@ -1,4 +1,5 @@
-import * as functions from 'firebase-functions';
+import { onRequest, onCall } from 'firebase-functions/v2/https';
+import { defaultCallableOptions } from '../lib/functionOptions';
 import * as admin from 'firebase-admin';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
 import { Project } from '../shared/types';
@@ -7,7 +8,8 @@ import { Project } from '../shared/types';
 async function createProjectLogic(data: any, context?: any): Promise<any> {
   try {
     // Check if user is authenticated (for callable functions)
-    if (context?.auth?.uid) {
+    const authUid = context?.auth?.uid;
+    if (authUid) {
       // This is a callable function call
       const {
         name,
@@ -28,7 +30,7 @@ async function createProjectLogic(data: any, context?: any): Promise<any> {
         name,
         description: description || '',
         organizationId,
-        createdBy: context.auth.uid,
+        createdBy: authUid,
         applicationMode,
         storageBackend,
         allowCollaboration,
@@ -102,7 +104,7 @@ async function createProjectLogic(data: any, context?: any): Promise<any> {
 }
 
 // HTTP function for UniversalFirebaseInterceptor
-export const createProject = functions.https.onRequest(async (req: any, res: any) => {
+export const createProject = onRequest({ memory: '512MiB' }, async (req: any, res: any) => {
   try {
     // Set CORS headers
     res.set('Access-Control-Allow-Origin', '*');
@@ -130,6 +132,6 @@ export const createProject = functions.https.onRequest(async (req: any, res: any
 });
 
 // Callable function for direct Firebase usage
-export const createProjectCallable = functions.https.onCall(async (data: any, context: any) => {
-  return await createProjectLogic(data, context);
+export const createProjectCallable = onCall(defaultCallableOptions, async (request) => {
+  return await createProjectLogic(request.data, { auth: request.auth });
 });

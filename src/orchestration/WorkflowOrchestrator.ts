@@ -30,6 +30,10 @@ export interface WorkflowState {
   context: Record<string, any>;
   results: Record<string, any>;
   errors: Error[];
+  // Plan Mode (Claude-style): read-only exploration → plan → human approval → execution
+  isPlanning?: boolean;
+  planPath?: string;
+  waitingForApproval?: boolean;
 }
 
 export class WorkflowOrchestrator {
@@ -56,6 +60,7 @@ export class WorkflowOrchestrator {
 
     // Add nodes for each orchestration step
     workflow.addNode("analyze", this.analyzeRequest.bind(this));
+    workflow.addNode("architect_exploration", this.architectExploration.bind(this));
     workflow.addNode("query_notebooklm", this.queryNotebookLM.bind(this));
     workflow.addNode("execute_mcp_tools", this.executeMCPTools.bind(this));
     workflow.addNode("generate_response", this.generateResponse.bind(this));
@@ -67,16 +72,20 @@ export class WorkflowOrchestrator {
       "analyze",
       this.routeAfterAnalysis.bind(this),
       {
+        "plan": "architect_exploration",
         "notebooklm": "query_notebooklm",
         "mcp": "execute_mcp_tools",
         "error": "error_handler"
       }
     );
+    workflow.addEdge("architect_exploration", "generate_response");
     workflow.addEdge("query_notebooklm", "generate_response");
     workflow.addEdge("execute_mcp_tools", "generate_response");
     workflow.addEdge("generate_response", END);
     workflow.addEdge("error_handler", END);
 
+    // Plan mode: architect_exploration → generate_response (returns plan, waiting for approval).
+    // Execution runs only when user sends "Proceed" with context.approvedPlanContent/approvedPlanActions.
     return workflow.compile();
   }
 
@@ -92,6 +101,93 @@ export class WorkflowOrchestrator {
         context: { ...state.context, analysis },
         results: { ...state.results, analysis }
       };
+    });
+  }
+
+  /**
+   * Architect Exploration node: read-only phase in Plan Mode.
+   * Allows ls, read, grep, search only; rejects write/execute until plan is written to _plans/CURRENT_PLAN.md.
+   * Returns plan in state and leads to generate_response (human approval required before execute_mcp_tools).
+   */
+  private async architectExploration(state: WorkflowState): Promise<Partial<WorkflowState>> {
+    return traceFunction('workflow.architect_exploration', async () => {
+      addSpanAttribute('workflow.step', 'architect_exploration');
+      addSpanAttribute('organization.id', state.organizationId);
+
+      try {
+        const geminiService = createGeminiService();
+        const globalContext = await gatherGlobalContext(state.organizationId, state.userId) as GlobalContext;
+        (globalContext as any).activeMode = 'plan_mode';
+        (globalContext as any).conversationHistory = state.context?.conversationHistory || [];
+        (globalContext as any).currentProjectId = state.context?.projectId || null;
+
+        const userMessage = state.messages[state.messages.length - 1];
+        const messageText = typeof userMessage === 'string'
+          ? userMessage
+          : (userMessage as any)?.content ?? (userMessage as any)?.text ?? '';
+
+        // EXPLORATION phase: read-only; plan written to _plans/CURRENT_PLAN.md conceptually (stored in results)
+        const architectResponse = await geminiService.runArchitectSession(
+          messageText,
+          globalContext,
+          [],
+          'EXPLORATION'
+        );
+
+        const planPath = '_plans/CURRENT_PLAN.md';
+        const planContent = architectResponse.contextData?.markdown ?? architectResponse.response ?? '';
+        const actions = architectResponse.contextData?.actions ?? [];
+
+        // Persist Plan to File System
+        try {
+          const fs = require('fs').promises;
+          const path = require('path');
+
+          // Ensure _plans directory exists
+          const plansDir = path.resolve(process.cwd(), '_plans');
+          await fs.mkdir(plansDir, { recursive: true });
+
+          // Write plan file
+          const absolutePlanPath = path.resolve(process.cwd(), planPath);
+          await fs.writeFile(absolutePlanPath, planContent, 'utf-8');
+          console.log(`💾 [WorkflowOrchestrator] Plan persisted to ${absolutePlanPath}`);
+        } catch (fileError) {
+          console.error('❌ [WorkflowOrchestrator] Failed to write plan file:', fileError);
+          // Non-blocking error, we still have it in state
+        }
+
+        return {
+          context: {
+            ...state.context,
+            isPlanning: false,
+            planPath,
+            waitingForApproval: true
+          },
+          results: {
+            ...state.results,
+            planPath,
+            planContent,
+            waitingForApproval: true,
+            architectResponse,
+            analysis: {
+              ...state.results.analysis,
+              architectResponse,
+              actions: [], // Do not execute yet; wait for approval
+              planContent,
+              waitingForApproval: true
+            }
+          },
+          isPlanning: false,
+          planPath,
+          waitingForApproval: true
+        };
+      } catch (error: any) {
+        captureException(error, { step: 'architect_exploration', state });
+        return {
+          errors: [...state.errors, error],
+          results: { ...state.results, error: error.message }
+        };
+      }
     });
   }
 
@@ -120,9 +216,15 @@ export class WorkflowOrchestrator {
       addSpanAttribute('workflow.step', 'execute_mcp_tools');
 
       try {
-        // Check if architect provided actions in the plan
+        // Check for actions: approved plan (user said "Proceed") or architect-provided actions
         const analysis = state.results.analysis;
-        const architectActions = analysis?.actions || [];
+        const context = state.context || {};
+        const architectActions =
+          analysis?.actions?.length
+            ? analysis.actions
+            : (context.approvedPlanActions && context.approvedPlanActions.length > 0)
+              ? context.approvedPlanActions
+              : [];
 
         if (architectActions.length > 0) {
           console.log('🏛️ [WorkflowOrchestrator] Using actions from Architect plan');
@@ -190,15 +292,28 @@ export class WorkflowOrchestrator {
 
   private routeAfterAnalysis(state: WorkflowState): string {
     const analysis = state.results.analysis;
+    const context = state.context || {};
 
     if (!analysis || state.errors.length > 0) {
       return "error";
     }
 
-    // Route based on analysis
+    // Plan mode: exploration phase (read-only) → architect_exploration; approval phase → execute_mcp_tools
+    const isPlanMode = analysis.isPlanMode === true;
+    const hasApprovedPlan = !!(context.approvedPlanContent || (context.approvedPlanActions && context.approvedPlanActions.length > 0));
+
+    if (isPlanMode && !hasApprovedPlan) {
+      return "plan"; // Architect Exploration: read-only, write PLAN.md, then stop for approval
+    }
+    if (isPlanMode && hasApprovedPlan) {
+      return "mcp"; // User approved: execute using approved plan/actions
+    }
+
+    // Regular routing
     if (analysis.requiresDocumentKnowledge) {
       return "notebooklm";
-    } else if (analysis.requiresActions) {
+    }
+    if (analysis.requiresActions) {
       return "mcp";
     }
 
@@ -265,23 +380,29 @@ export class WorkflowOrchestrator {
         const geminiService = createGeminiService();
         const currentMode = (state.context?.activeMode as any) || 'none';
 
-        // If in plan mode, use architect session
-        if (isPlanMode) {
-          console.log('🏛️ [WorkflowOrchestrator] Using Architect mode for analysis');
-          const architectResponse = await geminiService.runArchitectSession(
-            messageText,
-            globalContext,
-            []
-          );
+        // Plan mode: exploration (read-only) vs execution (user approved)
+        const approvedPlanActions = state.context?.approvedPlanActions;
+        const isApprovalMessage = /^(proceed|approve|go ahead|execute|run it|looks good)/i.test(messageText.trim());
 
-          // Extract analysis from architect response
+        if (isPlanMode && approvedPlanActions && approvedPlanActions.length > 0 && isApprovalMessage) {
+          // User approved plan: route to execute_mcp_tools with approved actions
+          console.log('🏛️ [WorkflowOrchestrator] Plan approved – routing to execution');
           return {
             requiresDocumentKnowledge: false,
             requiresActions: true,
             isPlanMode: true,
-            architectResponse: architectResponse,
-            // If architect has a complete plan with actions, we can execute them
-            actions: architectResponse.contextData?.actions || []
+            actions: approvedPlanActions
+          };
+        }
+
+        if (isPlanMode && !state.context?.approvedPlanContent) {
+          // Exploration phase: route to architect_exploration (read-only); do not call Gemini here
+          console.log('🏛️ [WorkflowOrchestrator] Plan mode – routing to Architect Exploration (read-only)');
+          return {
+            requiresDocumentKnowledge: false,
+            requiresActions: true,
+            isPlanMode: true,
+            actions: []
           };
         }
 
@@ -521,6 +642,25 @@ export class WorkflowOrchestrator {
   private async synthesizeResponse(state: WorkflowState): Promise<any> {
     // Combine results into final response
     const analysis = state.results.analysis;
+    const results = state.results;
+
+    // Plan mode: waiting for approval – return plan and approval state (human-in-the-loop)
+    if (results.waitingForApproval && (results.planContent || results.planPath)) {
+      const architectResponse = results.architectResponse;
+      return {
+        message: architectResponse?.response || 'Plan ready for your review. Approve to execute.',
+        data: {
+          ...results,
+          architectPlan: results.planContent || architectResponse?.contextData?.markdown,
+          planPath: results.planPath || '_plans/CURRENT_PLAN.md',
+          planApprovalState: 'pending',
+          requiresApproval: true,
+          planContent: results.planContent,
+          actions: architectResponse?.contextData?.actions || [],
+          executedActions: results.executedActions || []
+        }
+      };
+    }
 
     // If architect provided a response, use it
     if (analysis?.architectResponse) {

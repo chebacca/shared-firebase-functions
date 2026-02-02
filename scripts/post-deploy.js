@@ -12,6 +12,18 @@ const path = require('path');
 const FUNCTIONS_DIR = path.resolve(__dirname, '..');
 const PKG_JSON_PATH = path.join(FUNCTIONS_DIR, 'package.json');
 const PKG_JSON_BACKUP = path.join(FUNCTIONS_DIR, 'package.json.backup');
+const ENV_BACKUP = path.join(FUNCTIONS_DIR, '.env.backup.deploy');
+
+// Restore .env if it was stripped of GOOGLE_MAPS_API_KEY during pre-deploy
+if (fs.existsSync(ENV_BACKUP)) {
+  try {
+    fs.copyFileSync(ENV_BACKUP, path.join(FUNCTIONS_DIR, '.env'));
+    fs.unlinkSync(ENV_BACKUP);
+    console.log('✅ Restored .env (GOOGLE_MAPS_API_KEY)');
+  } catch (err) {
+    console.warn('⚠️  Could not restore .env from .env.backup.deploy:', err.message);
+  }
+}
 
 // Always restore package.json from backup if backup exists
 if (fs.existsSync(PKG_JSON_BACKUP)) {

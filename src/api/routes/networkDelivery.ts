@@ -532,7 +532,7 @@ router.post('/bibles/:bibleId/reprocess', authenticateToken, async (req: Request
 });
 
 // Get deliverables - Callable Function
-export const getNetworkDeliveryDeliverables = onCall(async (request) => {
+export const getNetworkDeliveryDeliverables = onCall({ memory: '512MiB' }, async (request) => {
     try {
         const { bibleId } = request.data;
         if (!bibleId) throw new HttpsError('invalid-argument', 'Bible ID is required');
@@ -561,7 +561,7 @@ export const getNetworkDeliveryDeliverables = onCall(async (request) => {
 });
 
 // Upload bible - Callable Function
-export const uploadNetworkDeliveryBible = onCall(async (request) => {
+export const uploadNetworkDeliveryBible = onCall({ memory: '512MiB' }, async (request) => {
     try {
         const { fileName, fileContent, fileType, projectId } = request.data;
         if (!fileName || !fileContent || !fileType) throw new HttpsError('invalid-argument', 'Missing required fields');

@@ -16,6 +16,7 @@ export const checkScheduledMessages = onSchedule(
     schedule: 'every 1 minutes',
     region: 'us-central1',
     timeZone: 'America/Los_Angeles',
+    memory: '512MiB', // Increased from default 256MiB - function runs out of memory during initialization
   },
   async (event) => {
     const db = getFirestore();

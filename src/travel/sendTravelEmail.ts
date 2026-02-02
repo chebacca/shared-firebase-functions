@@ -51,7 +51,7 @@ export const sendTravelEmail = onCall(
   {
     region: 'us-central1',
     cors: true,
-    memory: '256MiB',
+    memory: '512MiB', // Increased from 256MiB - function runs out of memory during initialization
     timeoutSeconds: 30
   },
   async (request) => {

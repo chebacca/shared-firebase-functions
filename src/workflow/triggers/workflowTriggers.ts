@@ -1,4 +1,4 @@
-import * as functions from 'firebase-functions/v1';
+import { onDocumentUpdated } from 'firebase-functions/v2/firestore';
 import * as admin from 'firebase-admin';
 
 // Initialize app if not already
@@ -14,9 +14,9 @@ const db = admin.firestore();
  * 1. Unblock dependent steps
  * 2. Auto-trigger AI Agents
  */
-export const onWorkflowStepUpdate = functions.firestore
-    .document('workflowSteps/{stepId}')
-    .onUpdate(async (change: functions.Change<functions.firestore.QueryDocumentSnapshot>, context: functions.EventContext) => {
+export const onWorkflowStepUpdate = onDocumentUpdated('workflowSteps/{stepId}', async (event) => {
+        const change = event.data;
+        if (!change?.after || !change?.before) return null;
         const after = change.after.data();
         const before = change.before.data();
 
@@ -25,7 +25,7 @@ export const onWorkflowStepUpdate = functions.firestore
             return null;
         }
 
-        const stepId = context.params.stepId;
+        const stepId = event.params.stepId;
         const { workflowInstanceId, sessionId } = after;
 
         if (!workflowInstanceId) {

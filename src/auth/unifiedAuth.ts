@@ -1,4 +1,6 @@
-import * as functions from 'firebase-functions';
+import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { beforeUserCreated } from 'firebase-functions/v2/identity';
+import { defaultCallableOptions } from '../lib/functionOptions';
 import * as admin from 'firebase-admin';
 
 // Ensure Firebase Admin is initialized
@@ -152,13 +154,13 @@ export async function computeUserClaims(user: { uid: string; email?: string }): 
  * Client calls this to force-refresh their ID token claims.
  * This function is available to all apps via shared-firebase-functions.
  */
-export const refreshAuthClaims = functions.https.onCall(async (data, context) => {
-    if (!context.auth) {
-        throw new functions.https.HttpsError('unauthenticated', 'User must be logged in to refresh claims.');
+export const refreshAuthClaims = onCall(defaultCallableOptions, async (request) => {
+    if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'User must be logged in to refresh claims.');
     }
 
-    const uid = context.auth.uid;
-    const email = context.auth.token.email;
+    const uid = request.auth.uid;
+    const email = request.auth.token.email;
 
     console.log(`🔄 [UnifiedAuth] Refreshing claims for ${email} (${uid})`);
 
@@ -172,28 +174,30 @@ export const refreshAuthClaims = functions.https.onCall(async (data, context) =>
         return { success: true, claims };
     } catch (error) {
         console.error(`❌ [UnifiedAuth] Failed to refresh claims for ${uid}:`, error);
-        throw new functions.https.HttpsError('internal', 'Failed to compute claims.');
+        throw new HttpsError('internal', 'Failed to compute claims.');
     }
 });
 
 /**
- * 🛑 BLOCKING FUNCTION: BEFORE SIGN IN
- * Runs before the user completes sign-in. Mints claims so they are ready immediately.
- * Note: Requires Identity Platform (GCIP) enabled.
+ * 🛑 V2 BLOCKING: BEFORE USER CREATED (Identity Platform / GCIP)
+ * Runs before the user is created. Returns customClaims so they are set at creation time.
+ * Requires Identity Platform (GCIP) enabled on the project.
  */
-// export const beforeSignIn = functions.auth.user().beforeSignIn(async (user, context) => {
-//   const claims = await computeUserClaims({ uid: user.uid, email: user.email });
-//   return {
-//     customClaims: claims
-//   };
-// });
-
-// Note: For now, we export a background trigger as a fallback if blocking functions aren't enabled
-export const onUserLoginTrigger: any = functions.auth.user().onCreate(async (user: any) => {
-    console.log(`🆕 [UnifiedAuth] New user created: ${user.email}. Minting initial claims.`);
-    const claims = await computeUserClaims({ uid: user.uid, email: user.email });
-    await admin.auth().setCustomUserClaims(user.uid, claims);
-});
+export const onUserLoginTrigger = beforeUserCreated(
+    { memory: '512MiB' },
+    async (event) => {
+        const user = event.data;
+        if (!user) {
+            console.warn('[UnifiedAuth] beforeUserCreated event had no user data');
+            return {};
+        }
+        const uid = user.uid;
+        const email = user.email ?? undefined;
+        console.log(`🆕 [UnifiedAuth] Before user create: ${email}. Minting initial claims.`);
+        const claims = await computeUserClaims({ uid, email });
+        return { customClaims: claims };
+    }
+);
 
 /**
  * 🔄 SYNC USER CLAIMS ON LOGIN
@@ -203,13 +207,13 @@ export const onUserLoginTrigger: any = functions.auth.user().onCreate(async (use
  * Note: onCall functions automatically handle CORS. If CORS errors occur,
  * ensure the function is deployed and the Firebase project allows localhost origins.
  */
-export const syncUserClaimsOnLogin = functions.runWith({ memory: '1GB' }).https.onCall(async (data, context) => {
-    if (!context.auth) {
-        throw new functions.https.HttpsError('unauthenticated', 'User must be logged in to sync claims.');
+export const syncUserClaimsOnLogin = onCall(defaultCallableOptions, async (request) => {
+    if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'User must be logged in to sync claims.');
     }
 
-    const uid = context.auth.uid;
-    const email = context.auth.token.email;
+    const uid = request.auth.uid;
+    const email = request.auth.token.email;
 
     console.log(`🔄 [UnifiedAuth] Syncing claims on login for ${email} (${uid})`);
 
@@ -247,6 +251,6 @@ export const syncUserClaimsOnLogin = functions.runWith({ memory: '1GB' }).https.
         }
     } catch (error) {
         console.error(`❌ [UnifiedAuth] Failed to sync claims for ${uid}:`, error);
-        throw new functions.https.HttpsError('internal', 'Failed to sync claims.');
+        throw new HttpsError('internal', 'Failed to sync claims.');
     }
 });

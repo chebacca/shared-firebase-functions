@@ -17,7 +17,8 @@ export const cleanupExpiredOAuthStates = onSchedule(
   {
     schedule: 'every 24 hours',
     region: 'us-central1',
-    timeZone: 'America/Los_Angeles'
+    timeZone: 'America/Los_Angeles',
+    memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
   },
   async (event) => {
     console.log('🧹 Starting OAuth state cleanup...');

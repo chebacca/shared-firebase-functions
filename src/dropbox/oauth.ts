@@ -6,7 +6,6 @@
  */
 
 import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
-import * as functions from 'firebase-functions';
 import { db, verifyAuthToken, createSuccessResponse, createErrorResponse, setCorsHeaders } from '../shared/utils';
 import * as crypto from 'crypto';
 import { getDropboxConfig } from './config';

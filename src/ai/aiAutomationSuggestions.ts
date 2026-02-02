@@ -63,7 +63,13 @@ interface AutomationSuggestionsResponse {
 /**
  * AI Automation Suggestions - Main function
  */
-export const aiAutomationSuggestions = onCall(async (request): Promise<AutomationSuggestionsResponse> => {
+export const aiAutomationSuggestions = onCall(
+  {
+    region: 'us-central1',
+    memory: '1GiB', // Heavy AI deps; avoid Cloud Run container healthcheck timeout on cold start
+    timeoutSeconds: 120,
+  },
+  async (request): Promise<AutomationSuggestionsResponse> => {
   try {
     // Verify authentication
     if (!request.auth) {

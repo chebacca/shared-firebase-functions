@@ -1,4 +1,5 @@
-import * as functions from 'firebase-functions';
+import { onRequest, onCall } from 'firebase-functions/v2/https';
+import { defaultCallableOptions } from '../lib/functionOptions';
 import * as admin from 'firebase-admin';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
 // import { Payment } from '../shared/types';
@@ -33,7 +34,7 @@ async function updatePaymentLogic(data: any, context?: any): Promise<any> {
 }
 
 // HTTP function for UniversalFirebaseInterceptor
-export const updatePayment = functions.https.onRequest(async (req: any, res: any) => {
+export const updatePayment = onRequest({ memory: '512MiB' }, async (req: any, res: any) => {
   try {
     // Set CORS headers
     res.set('Access-Control-Allow-Origin', '*');
@@ -61,6 +62,6 @@ export const updatePayment = functions.https.onRequest(async (req: any, res: any
 });
 
 // Callable function for direct Firebase usage
-export const updatePaymentCallable = functions.https.onCall(async (data: any, context: any) => {
-  return await updatePaymentLogic(data, context);
+export const updatePaymentCallable = onCall(defaultCallableOptions, async (request) => {
+  return await updatePaymentLogic(request.data, undefined);
 });

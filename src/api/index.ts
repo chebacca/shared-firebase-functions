@@ -1,4 +1,5 @@
-import * as functions from 'firebase-functions';
+import { onRequest } from 'firebase-functions/v2/https';
+import { apiHttpOptions } from '../lib/functionOptions';
 import express from 'express';
 import cors from 'cors';
 import { authenticateToken } from '../shared/middleware';
@@ -69,22 +70,11 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 });
 
 /**
- * 🚀 Main Unified API Function (Firebase Functions v1)
- * 
- * Using v1 to maintain the stable URL format for existing clients:
- * https://us-central1-backbone-logic.cloudfunctions.net/api
+ * 🚀 Main Unified API Function (Firebase Functions v2)
+ *
+ * URL: https://us-central1-backbone-logic.cloudfunctions.net/api
  */
-export const api = functions
-  .runWith({
-    timeoutSeconds: 300,
-    memory: '2GB',
-    secrets: [
-      'INTEGRATIONS_ENCRYPTION_KEY',
-      'GOOGLE_MAPS_API_KEY',
-      'GEMINI_API_KEY'
-    ]
-  })
-  .https.onRequest(app);
+export const api = onRequest(apiHttpOptions, app);
 
 // Export onCall functions (kept as shortcuts)
 export { uploadNetworkDeliveryBible, getNetworkDeliveryDeliverables };

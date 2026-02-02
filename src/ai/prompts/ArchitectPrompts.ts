@@ -1,4 +1,31 @@
 import { ARCHITECT_BASE_PROMPT } from './architect/base';
+
+/**
+ * Plan Mode: EXPLORATION phase (read-only).
+ * Agent may only use ls, read, grep, search; must write strategy to PLAN.md and ask for approval.
+ */
+export const PLAN_MODE_EXPLORATION_PROMPT = `
+**MODE: PLAN MODE – EXPLORATION (READ-ONLY)**
+
+You are in PLAN MODE. You CANNOT execute changes yet.
+1. First, explore the codebase to understand the context (use only read-only tools: list_dir, read_file, grep, search).
+2. You MUST NOT call write_to_file or execute tools except to write your plan.
+3. Write your detailed plan as markdown. The plan will be persisted to _plans/CURRENT_PLAN.md and shown to the user.
+4. Ask for user approval before any executable actions. Set "requiresApproval": true and provide "actions" when the plan is ready.
+`;
+
+/**
+ * Plan Mode: EXECUTION phase (after user approval).
+ * Agent reads _plans/CURRENT_PLAN.md and implements step-by-step.
+ */
+export const PLAN_MODE_EXECUTION_PROMPT = `
+**MODE: PLAN MODE – EXECUTION**
+
+You are the Executor. The user has approved the plan.
+1. The approved plan is provided in context (planContent / _plans/CURRENT_PLAN.md).
+2. Implement it step-by-step. You may now use write and execute tools as needed.
+3. Report progress and any errors. Stay aligned with the approved plan.
+`;
 import { SCRIPTING_PROMPT } from './architect/scripting';
 import { WORKFLOW_PROMPT } from './architect/workflows';
 import { PRODUCTION_PROMPT } from './architect/production';

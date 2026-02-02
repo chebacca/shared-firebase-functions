@@ -1,4 +1,5 @@
-import * as functions from 'firebase-functions';
+import { onRequest, onCall } from 'firebase-functions/v2/https';
+import { defaultCallableOptions } from '../lib/functionOptions';
 import * as admin from 'firebase-admin';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
 
@@ -36,7 +37,7 @@ async function deleteDatasetLogic(data: any, context?: any): Promise<any> {
 }
 
 // HTTP function for UniversalFirebaseInterceptor
-export const deleteDataset = functions.https.onRequest(async (req: any, res: any) => {
+export const deleteDataset = onRequest({ memory: '512MiB' }, async (req: any, res: any) => {
   try {
     // Set CORS headers
     res.set('Access-Control-Allow-Origin', '*');
@@ -64,6 +65,6 @@ export const deleteDataset = functions.https.onRequest(async (req: any, res: any
 });
 
 // Callable function for direct Firebase usage
-export const deleteDatasetCallable = functions.https.onCall(async (data: any, context: any) => {
-  return await deleteDatasetLogic(data, context);
+export const deleteDatasetCallable = onCall(defaultCallableOptions, async (request) => {
+  return await deleteDatasetLogic(request.data, undefined);
 });

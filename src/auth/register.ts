@@ -1,10 +1,12 @@
-import * as functions from 'firebase-functions';
+import { onCall } from 'firebase-functions/v2/https';
+import { defaultCallableOptions } from '../lib/functionOptions';
 import * as admin from 'firebase-admin';
 import { createSuccessResponse, createErrorResponse, handleError, validateEmail, generateId } from '../shared/utils';
 import { User, Organization } from '../shared/types';
 
-export const registerUser = functions.https.onCall(async (data: any, context: any) => {
+export const registerUser = onCall(defaultCallableOptions, async (request) => {
   try {
+    const data = request.data as any;
     const { email, password, displayName, organizationId, organizationName } = data;
 
     if (!email || !password) {
@@ -93,10 +95,11 @@ export const registerUser = functions.https.onCall(async (data: any, context: an
   }
 });
 
-export const registerTeamMember = functions.https.onCall(async (data: any, context: any) => {
+export const registerTeamMember = onCall(defaultCallableOptions, async (request) => {
   try {
+    const data = request.data as any;
     const { email, password, displayName, organizationId, role, hierarchy } = data;
-    const inviterId = context.auth?.uid;
+    const inviterId = request.auth?.uid;
 
     if (!inviterId) {
       return createErrorResponse('User not authenticated');
@@ -186,7 +189,9 @@ export const registerTeamMember = functions.https.onCall(async (data: any, conte
   }
 });
 
-export const inviteUser = functions.https.onCall(async (data: any, context: any) => {
+export const inviteUser = onCall(defaultCallableOptions, async (request) => {
+  const data = request.data as any;
+  const context = { auth: request.auth };
   try {
     const { email, organizationId, role, hierarchy, message } = data;
     const inviterId = context.auth?.uid;
@@ -259,8 +264,9 @@ export const inviteUser = functions.https.onCall(async (data: any, context: any)
   }
 });
 
-export const acceptInvitation = functions.https.onCall(async (data: any, context: any) => {
+export const acceptInvitation = onCall(defaultCallableOptions, async (request) => {
   try {
+    const data = request.data as any;
     const { invitationId, password, displayName } = data;
 
     if (!invitationId || !password) {
@@ -351,10 +357,11 @@ export const acceptInvitation = functions.https.onCall(async (data: any, context
   }
 });
 
-export const resendInvitation = functions.https.onCall(async (data: any, context: any) => {
+export const resendInvitation = onCall(defaultCallableOptions, async (request) => {
   try {
+    const data = request.data as any;
     const { invitationId } = data;
-    const inviterId = context.auth?.uid;
+    const inviterId = request.auth?.uid;
 
     if (!inviterId) {
       return createErrorResponse('User not authenticated');
@@ -405,10 +412,11 @@ export const resendInvitation = functions.https.onCall(async (data: any, context
   }
 });
 
-export const cancelInvitation = functions.https.onCall(async (data: any, context: any) => {
+export const cancelInvitation = onCall(defaultCallableOptions, async (request) => {
   try {
+    const data = request.data as any;
     const { invitationId } = data;
-    const inviterId = context.auth?.uid;
+    const inviterId = request.auth?.uid;
 
     if (!inviterId) {
       return createErrorResponse('User not authenticated');

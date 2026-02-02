@@ -1,4 +1,5 @@
-import * as functions from 'firebase-functions';
+import { onCall } from 'firebase-functions/v2/https';
+import { defaultCallableOptions } from '../lib/functionOptions';
 import * as admin from 'firebase-admin';
 import { createSuccessResponse, createErrorResponse, handleError } from '../shared/utils';
 
@@ -6,8 +7,9 @@ import { createSuccessResponse, createErrorResponse, handleError } from '../shar
  * Migrate existing users to have lastActive timestamps
  * This function should be run once to populate lastActive for existing users
  */
-export const migrateUserLastActive = functions.https.onCall(async (data: any, context: any) => {
+export const migrateUserLastActive = onCall(defaultCallableOptions, async (request) => {
   try {
+    const data = request.data as any;
     const { organizationId, dryRun = false } = data;
 
     if (!organizationId) {
@@ -74,8 +76,9 @@ export const migrateUserLastActive = functions.https.onCall(async (data: any, co
 /**
  * Update lastActive for a specific user
  */
-export const updateUserLastActive = functions.https.onCall(async (data: any, context: any) => {
+export const updateUserLastActive = onCall(defaultCallableOptions, async (request) => {
   try {
+    const data = request.data as any;
     const { userId, timestamp } = data;
 
     if (!userId) {
@@ -107,8 +110,9 @@ export const updateUserLastActive = functions.https.onCall(async (data: any, con
 /**
  * Get users without lastActive timestamps
  */
-export const getUsersWithoutLastActive = functions.https.onCall(async (data: any, context: any) => {
+export const getUsersWithoutLastActive = onCall(defaultCallableOptions, async (request) => {
   try {
+    const data = request.data as any;
     const { organizationId } = data;
 
     if (!organizationId) {

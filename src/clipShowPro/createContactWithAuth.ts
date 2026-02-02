@@ -20,7 +20,7 @@ try {
 const db = getFirestore();
 const auth = getAuth();
 
-export const createContactWithAuth = onCall(async (request) => {
+export const createContactWithAuth = onCall({ memory: '512MiB' }, async (request) => {
   try {
     const { 
       contactData, 

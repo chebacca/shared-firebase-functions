@@ -1,4 +1,5 @@
-import * as functions from 'firebase-functions';
+import { onCall } from 'firebase-functions/v2/https';
+import { defaultCallableOptions } from './lib/functionOptions';
 import * as admin from 'firebase-admin';
 
 // Simple utility functions inline
@@ -10,9 +11,10 @@ const handleError = (error: any, functionName: string) => ({ success: false, err
  * Update user's last active timestamp
  * This function should be called whenever a user performs an action in the application
  */
-export const updateUserActivity = functions.https.onCall(async (data: any, context: any) => {
+export const updateUserActivity = onCall(defaultCallableOptions, async (request) => {
   try {
-    const userId = context.auth?.uid;
+    const data = request.data as { action?: string; resource?: string; metadata?: any };
+    const userId = request.auth?.uid;
 
     if (!userId) {
       return createErrorResponse('User not authenticated');
@@ -51,9 +53,10 @@ export const updateUserActivity = functions.https.onCall(async (data: any, conte
  * Batch update last active for multiple users
  * Useful for bulk operations or system maintenance
  */
-export const batchUpdateUserActivity = functions.https.onCall(async (data: any, context: any) => {
+export const batchUpdateUserActivity = onCall(defaultCallableOptions, async (request) => {
   try {
-    const { userIds, action } = data;
+    const data = request.data as { userIds?: string[]; action?: string };
+    const { userIds, action } = data || {};
 
     if (!userIds || !Array.isArray(userIds)) {
       return createErrorResponse('User IDs array is required');
@@ -85,15 +88,16 @@ export const batchUpdateUserActivity = functions.https.onCall(async (data: any, 
 /**
  * Get user activity statistics
  */
-export const getUserActivityStats = functions.https.onCall(async (data: any, context: any) => {
+export const getUserActivityStats = onCall(defaultCallableOptions, async (request) => {
   try {
-    const userId = context.auth?.uid;
+    const data = request.data as { organizationId?: string; timeRange?: string };
+    const userId = request.auth?.uid;
 
     if (!userId) {
       return createErrorResponse('User not authenticated');
     }
 
-    const { organizationId, timeRange = '30d' } = data;
+    const { organizationId, timeRange = '30d' } = data || {};
 
     // Calculate time range
     const now = new Date();

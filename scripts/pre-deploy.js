@@ -23,6 +23,24 @@ const WORKSPACE_PACKAGES = [
 
 console.log('📦 Bundling workspace dependencies for Firebase deployment...\n');
 
+// Strip GOOGLE_MAPS_API_KEY from .env during deploy so Secret Manager is the only source (avoids Cloud Run "overlaps" error)
+const envPath = path.join(FUNCTIONS_DIR, '.env');
+const envBackupPath = path.join(FUNCTIONS_DIR, '.env.backup.deploy');
+if (fs.existsSync(envPath)) {
+  const envContent = fs.readFileSync(envPath, 'utf8');
+  const lines = envContent.split(/\r?\n/);
+  const stripped = lines.filter(line => {
+    const t = line.trimStart();
+    if (t.startsWith('#')) return true;
+    return !t.startsWith('GOOGLE_MAPS_API_KEY=');
+  });
+  if (stripped.length !== lines.length) {
+    fs.copyFileSync(envPath, envBackupPath);
+    fs.writeFileSync(envPath, stripped.join('\n') + (stripped.length && !stripped[stripped.length - 1] ? '' : '\n'));
+    console.log('🔧 Removed GOOGLE_MAPS_API_KEY from .env for deploy (avoids secret overlap); will restore in post-deploy.\n');
+  }
+}
+
 // Build workspace packages first
 console.log('🔨 Building workspace packages...\n');
 for (const pkgName of WORKSPACE_PACKAGES) {
@@ -111,6 +129,54 @@ for (const pkgName of WORKSPACE_PACKAGES) {
   }
 }
 
+// Build catalog version map from pnpm-workspace.yaml (for main package.json and bundled packages)
+const workspaceYamlPath = path.join(ROOT_DIR, 'pnpm-workspace.yaml');
+let catalogVersionMap = {};
+if (fs.existsSync(workspaceYamlPath)) {
+  const workspaceYaml = fs.readFileSync(workspaceYamlPath, 'utf8');
+  const catalogMatch = workspaceYaml.match(/catalogs:\s*\n\s*default:\s*\n([\s\S]*?)(?=\n\w|\n$)/);
+  if (catalogMatch) {
+    const catalogSection = catalogMatch[1];
+    const versionMatches = catalogSection.matchAll(/(\S+):\s*(\S+)/g);
+    for (const match of versionMatches) {
+      catalogVersionMap[match[1].trim()] = match[2].trim();
+    }
+  }
+}
+if (Object.keys(catalogVersionMap).length === 0) {
+  catalogVersionMap = {
+    'firebase': '^12.7.0',
+    'firebase-admin': '^13.5.0',
+    'firebase-functions': '^7.0.0',
+    'typescript': '^5.3.3'
+  };
+}
+
+// Replace catalog:default (and any catalog:*) in MAIN functions package.json so Cloud Build npm install works
+console.log('\n🔧 Replacing catalog: in main package.json for Cloud Build...\n');
+if (functionsPkgJson.dependencies) {
+  for (const [dep, version] of Object.entries(functionsPkgJson.dependencies)) {
+    if (typeof version === 'string' && version.startsWith('catalog:')) {
+      const resolved = catalogVersionMap[dep] || catalogVersionMap['firebase-functions'] || '^7.0.0';
+      functionsPkgJson.dependencies[dep] = resolved;
+      modified = true;
+      console.log(`  Replaced main deps ${dep}: ${version} -> ${resolved}`);
+    }
+  }
+}
+if (functionsPkgJson.devDependencies) {
+  for (const [dep, version] of Object.entries(functionsPkgJson.devDependencies)) {
+    if (typeof version === 'string' && version.startsWith('catalog:')) {
+      const resolved = catalogVersionMap[dep];
+      if (resolved) {
+        functionsPkgJson.devDependencies[dep] = resolved;
+        modified = true;
+        console.log(`  Replaced main devDeps ${dep}: ${version} -> ${resolved}`);
+      }
+    }
+  }
+}
+
 // Replace catalog: references in bundled packages with actual versions
 console.log('\n🔧 Replacing catalog: references with actual versions...\n');
 for (const pkgName of WORKSPACE_PACKAGES) {
@@ -121,33 +187,7 @@ for (const pkgName of WORKSPACE_PACKAGES) {
 
   const targetPkgJson = JSON.parse(fs.readFileSync(targetPkgJsonPath, 'utf8'));
   let pkgModified = false;
-
-  // Read catalog versions from pnpm-workspace.yaml
-  const workspaceYamlPath = path.join(ROOT_DIR, 'pnpm-workspace.yaml');
-  let versionMap = {};
-  if (fs.existsSync(workspaceYamlPath)) {
-    const workspaceYaml = fs.readFileSync(workspaceYamlPath, 'utf8');
-    // Parse YAML-like structure to extract catalog versions
-    const catalogMatch = workspaceYaml.match(/catalogs:\s*\n\s*default:\s*\n([\s\S]*?)(?=\n\w|\n$)/);
-    if (catalogMatch) {
-      const catalogSection = catalogMatch[1];
-      const versionMatches = catalogSection.matchAll(/(\S+):\s*(\S+)/g);
-      for (const match of versionMatches) {
-        const depName = match[1].trim();
-        const version = match[2].trim();
-        versionMap[depName] = version;
-      }
-    }
-  }
-  
-  // Fallback to hardcoded versions if catalog parsing fails
-  if (Object.keys(versionMap).length === 0) {
-    versionMap = {
-      'firebase-admin': '^13.5.0',
-      'firebase-functions': '^5.1.1',
-      'typescript': '^5.3.3'
-    };
-  }
+  const versionMap = catalogVersionMap;
 
   // Replace catalog: references in dependencies
   if (targetPkgJson.dependencies) {

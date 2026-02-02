@@ -15,7 +15,7 @@ const db = getFirestore();
 export const authenticateTeamMember = onCall(
   {
     region: 'us-central1',
-    memory: '256MiB',
+    memory: '512MiB',
     timeoutSeconds: 30,
     invoker: 'public',  // Required for CORS preflight requests
     cors: true
@@ -188,7 +188,7 @@ export const authenticateTeamMember = onCall(
 export const authenticateTeamMemberHttp = onRequest(
   {
     region: 'us-central1',
-    memory: '256MiB',
+    memory: '512MiB',
     timeoutSeconds: 30,
     invoker: 'public',
     cors: false  // 🔧 CRITICAL FIX: Handle CORS manually to ensure proper preflight handling

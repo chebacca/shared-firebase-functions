@@ -4,13 +4,10 @@
  */
 
 import { onSchedule } from 'firebase-functions/v2/scheduler';
-import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
-import { getMessaging } from 'firebase-admin/messaging';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { db, messaging } from '../shared/utils';
 import * as admin from 'firebase-admin';
 import type { OvertimeSession } from 'shared-firebase-types';
-
-const db = getFirestore();
-const messaging = getMessaging();
 
 /**
  * Check Active Overtime Sessions Every 5 Minutes

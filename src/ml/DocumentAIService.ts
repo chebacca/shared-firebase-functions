@@ -7,7 +7,6 @@
 
 import { DocumentProcessorServiceClient } from '@google-cloud/documentai';
 import { getStorage } from 'firebase-admin/storage';
-import { config } from 'firebase-functions';
 
 export interface NetworkBibleData {
   technicalSpecs: {
@@ -85,8 +84,8 @@ export class DocumentAIService {
   constructor() {
     this.client = new DocumentProcessorServiceClient();
     this.projectId = process.env.GCLOUD_PROJECT || '';
-    this.location = process.env.DOCUMENT_AI_LOCATION || config().documentai?.location || 'us';
-    this.processorId = process.env.DOCUMENT_AI_PROCESSOR_ID || config().documentai?.processor_id || null;
+    this.location = process.env.DOCUMENT_AI_LOCATION || 'us';
+    this.processorId = process.env.DOCUMENT_AI_PROCESSOR_ID || null;
   }
 
   /**

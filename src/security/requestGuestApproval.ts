@@ -38,7 +38,7 @@ interface RequestGuestApprovalData {
 export const requestGuestApproval = onCall(
     {
         region: 'us-central1',
-        memory: '256MiB',
+        memory: '512MiB',
         timeoutSeconds: 30,
         invoker: 'public',
         cors: true,
@@ -96,7 +96,7 @@ export const requestGuestApproval = onCall(
 export const requestGuestApprovalHttp = onRequest(
     {
         region: 'us-central1',
-        memory: '256MiB',
+        memory: '512MiB',
         timeoutSeconds: 30,
         invoker: 'public',
         cors: false,

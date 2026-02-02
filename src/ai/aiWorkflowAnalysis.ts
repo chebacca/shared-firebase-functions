@@ -38,7 +38,9 @@ interface WorkflowAnalysisResponse {
 /**
  * AI Workflow Analysis - Main function
  */
-export const aiWorkflowAnalysis = onCall(async (request): Promise<WorkflowAnalysisResponse> => {
+export const aiWorkflowAnalysis = onCall(
+  { memory: '512MiB' }, // Avoid container healthcheck timeout on cold start
+  async (request): Promise<WorkflowAnalysisResponse> => {
   try {
     if (!request.auth) {
       throw new HttpsError('unauthenticated', 'User must be authenticated');

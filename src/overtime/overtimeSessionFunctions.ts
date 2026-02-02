@@ -4,14 +4,11 @@
  */
 
 import { onCall } from 'firebase-functions/v2/https';
-import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
-import { getMessaging } from 'firebase-admin/messaging';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { db, messaging } from '../shared/utils';
 import { createSuccessResponse, createErrorResponse } from '../shared/utils';
 import * as admin from 'firebase-admin';
 import type { OvertimeSession, OvertimeRequest } from 'shared-firebase-types';
-
-const db = getFirestore();
-const messaging = getMessaging();
 
 /**
  * Start Overtime Session
@@ -21,7 +18,7 @@ export const startOvertimeSession = onCall(
   {
     region: 'us-central1',
     cors: true,
-    memory: '256MiB',
+    memory: '512MiB',
     timeoutSeconds: 30
   },
   async (request) => {
@@ -170,7 +167,7 @@ export const updateOvertimeSessionHours = onCall(
   {
     region: 'us-central1',
     cors: true,
-    memory: '256MiB',
+    memory: '512MiB',
     timeoutSeconds: 30
   },
   async (request) => {
@@ -258,7 +255,7 @@ export const endOvertimeSession = onCall(
   {
     region: 'us-central1',
     cors: true,
-    memory: '256MiB',
+    memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
     timeoutSeconds: 30
   },
   async (request) => {
@@ -365,7 +362,7 @@ export const getActiveOvertimeSession = onCall(
   {
     region: 'us-central1',
     cors: true,
-    memory: '256MiB',
+    memory: '512MiB',
     timeoutSeconds: 30
   },
   async (request) => {

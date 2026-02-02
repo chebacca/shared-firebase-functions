@@ -430,7 +430,7 @@ export const getSlackConfigStatus = onCall(
 export const getSlackConfigStatusHttp = onRequest(
   {
     region: 'us-central1',
-    memory: '256MiB',
+    memory: '512MiB',
     cpu: 0.25,
   },
   async (req, res) => {

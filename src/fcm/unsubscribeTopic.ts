@@ -17,6 +17,7 @@ const auth = getAuth();
 export const unsubscribeFromFCMTopic = onCall(
   {
     cors: true,
+    memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
   },
   async (request) => {
     try {
@@ -70,7 +71,8 @@ export const unsubscribeFromFCMTopic = onCall(
 export const unsubscribeFromFCMTopicHttp = onRequest(
   {
     cors: true,
-    invoker: 'public'
+    invoker: 'public',
+    memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
   },
   async (req, res) => {
     try {

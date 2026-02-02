@@ -555,6 +555,7 @@ export const extractTranscript = onCall(
     region: 'us-central1',
     invoker: 'public',
     cors: true,
+    memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
     secrets: [encryptionKeySecret], // Required for Gemini API key decryption (optional fallback)
   },
   async (request): Promise<TranscriptResponse> => {

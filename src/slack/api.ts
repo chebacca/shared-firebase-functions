@@ -1116,6 +1116,7 @@ export const slackPinMessage = onCall(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB', // Increased from default 256MiB - function runs out of memory during initialization
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -1222,6 +1223,7 @@ export const slackGetChannelInfo = onCall(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -1560,6 +1562,7 @@ export const slackGetFileList = onCall(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
     secrets: [encryptionKey],
   },
   async (request) => {
@@ -1738,6 +1741,7 @@ export const slackGetPinnedMessages = onCall(
   {
     region: 'us-central1',
     cors: true,
+    memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
     secrets: [encryptionKey],
   },
   async (request) => {

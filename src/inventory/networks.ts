@@ -20,7 +20,7 @@ const auth = getAuth();
 /**
  * Get all networks for the user's organization
  */
-export const getNetworks = onRequest(async (req, res) => {
+export const getNetworks = onRequest({ memory: '512MiB' }, async (req, res) => {
   try {
     console.log('🌐 [NETWORKS API] Fetching all networks...');
 
@@ -108,7 +108,7 @@ export const getNetworks = onRequest(async (req, res) => {
 /**
  * Get a single network by ID
  */
-export const getNetwork = onRequest(async (req, res) => {
+export const getNetwork = onRequest({ memory: '512MiB' }, async (req, res) => {
   try {
     const networkId = req.params.id;
     console.log(`🌐 [NETWORKS API] Fetching network: ${networkId}`);
@@ -209,7 +209,7 @@ export const getNetwork = onRequest(async (req, res) => {
 /**
  * Create a new network
  */
-export const createNetwork = onRequest(async (req, res) => {
+export const createNetwork = onRequest({ memory: '512MiB' }, async (req, res) => {
   try {
     console.log('🌐 [NETWORKS API] Creating new network...');
 
@@ -312,7 +312,7 @@ export const createNetwork = onRequest(async (req, res) => {
 /**
  * Update an existing network
  */
-export const updateNetwork = onRequest(async (req, res) => {
+export const updateNetwork = onRequest({ memory: '512MiB' }, async (req, res) => {
   try {
     const networkId = req.params.id;
     console.log(`🌐 [NETWORKS API] Updating network: ${networkId}`);
@@ -433,7 +433,7 @@ export const updateNetwork = onRequest(async (req, res) => {
 /**
  * Delete a network
  */
-export const deleteNetwork = onRequest(async (req, res) => {
+export const deleteNetwork = onRequest({ memory: '512MiB' }, async (req, res) => {
   try {
     const networkId = req.params.id;
     console.log(`🌐 [NETWORKS API] Deleting network: ${networkId}`);

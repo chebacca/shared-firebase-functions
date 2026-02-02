@@ -14,7 +14,7 @@ const auth = getAuth();
 
 export const healthCheck: any = onRequest(
   {
-    memory: '256MiB',
+    memory: '512MiB',
     timeoutSeconds: 30,
     cors: true
   },

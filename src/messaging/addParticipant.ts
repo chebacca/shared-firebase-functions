@@ -18,6 +18,7 @@ const auth = getAuth();
 export const addParticipant = onCall(
   {
     cors: true,
+    memory: '512MiB', // Avoid container healthcheck timeout on cold start
   },
   async (request) => {
     try {

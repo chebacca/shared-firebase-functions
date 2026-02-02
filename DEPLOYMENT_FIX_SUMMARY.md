@@ -96,6 +96,24 @@ firebase deploy --only functions
 1. Check `pnpm-workspace.yaml` catalog section
 2. Update version map in pre-deploy script if needed
 
+### GOOGLE_MAPS_API_KEY overlap (calculateDirections / iwmApi)
+**Error:** `Secret environment variable overlaps non secret environment variable: GOOGLE_MAPS_API_KEY`
+
+**Cause:** `.env` sets `GOOGLE_MAPS_API_KEY` and the functions also use `defineSecret('GOOGLE_MAPS_API_KEY')`; Cloud Run rejects the same name as both secret and plain env.
+
+**Fix:** Pre-deploy now temporarily removes `GOOGLE_MAPS_API_KEY` from `.env` before deploy and post-deploy restores it. Deploy via `./scripts/deployment/deploy-functions.sh` so pre/post-deploy run. If you deploy with raw `firebase deploy`, run `node scripts/pre-deploy.js` first so `.env` is stripped.
+
+### onWorkflowStepUpdate: "Changing from HTTPS to background triggered function"
+**Error:** `Changing from an HTTPS function to a background triggered function is not allowed. Please delete your function and create a new one instead.`
+
+**Cause:** The function was previously deployed as a different trigger type (e.g. HTTPS). The source now defines it as a Firestore-triggered function.
+
+**Fix (one-time):** Delete the old function, then deploy again:
+```bash
+firebase functions:delete onWorkflowStepUpdate --region us-central1 --project backbone-logic --force
+./scripts/deployment/deploy-functions.sh --project backbone-logic
+```
+
 ## Next Steps
 
 1. Test deployment with a single function first:

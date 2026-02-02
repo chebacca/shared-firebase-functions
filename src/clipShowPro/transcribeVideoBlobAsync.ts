@@ -447,6 +447,7 @@ export const getTranscriptionTaskStatus = onCall(
     region: 'us-central1',
     invoker: 'public',
     cors: true,
+    memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
     maxInstances: 10,
     timeoutSeconds: 30,
   },
