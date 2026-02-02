@@ -34,6 +34,15 @@ app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Strip /api prefix so routes mounted at /google-maps etc. match when client calls .../api/google-maps/...
+// (Cloud Function URL is .../api so request path is /api/google-maps/config; we need /google-maps/config)
+app.use((req, _res, next) => {
+  if (req.url.startsWith('/api')) {
+    req.url = req.url.slice(4) || '/';
+  }
+  next();
+});
+
 // Register refactored routes
 app.use('/health', healthRouter);
 app.use('/timecard-approval', timecardApprovalRouter);

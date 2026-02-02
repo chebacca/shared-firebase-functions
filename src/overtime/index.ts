@@ -6,6 +6,7 @@
 export {
   createOvertimeRequest,
   respondToOvertimeRequest,
+  respondToOvertimeRequestHttp,
   certifyOvertimeRequest,
   approveOvertimeRequest,
   rejectOvertimeRequest

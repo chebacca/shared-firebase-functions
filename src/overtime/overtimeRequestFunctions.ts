@@ -3,23 +3,9 @@
  * Firebase Functions for managing overtime requests and approval workflow
  */
 
-// Explicit CORS origins so preflight from https://localhost:* (e.g. Vite HTTPS) is allowed
-const CORS_ORIGINS = [
-  'http://localhost:4002',
-  'http://localhost:4003',
-  'http://localhost:4004',
-  'http://localhost:4006',
-  'http://localhost:4010',
-  'https://localhost:4010',
-  'http://localhost:5173',
-  'http://localhost:5300',
-  'https://backbone-client.web.app',
-  'https://backbone-logic.web.app',
-  'https://backbone-callsheet-standalone.web.app',
-  'https://clipshowpro.web.app',
-];
-
-import { onCall } from 'firebase-functions/v2/https';
+// CORS: true allows preflight from any origin (localhost, Hub iframe, deployed apps).
+// Callable functions validate auth server-side, so origin restriction is optional.
+import { onCall, onRequest } from 'firebase-functions/v2/https';
 import { FieldValue } from 'firebase-admin/firestore';
 import { db, messaging } from '../shared/utils';
 import { createSuccessResponse, createErrorResponse } from '../shared/utils';
@@ -32,7 +18,7 @@ import type { OvertimeRequest, OvertimeRequestType, OvertimeRequestStatus, Overt
 export const createOvertimeRequest = onCall(
   {
     region: 'us-central1',
-    cors: CORS_ORIGINS,
+    cors: true,
     memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
     timeoutSeconds: 30
   },
@@ -151,76 +137,120 @@ export const createOvertimeRequest = onCall(
 );
 
 /**
- * Respond to an overtime request
+ * Respond to an overtime request (handler logic shared by callable and HTTP)
+ */
+async function respondToOvertimeRequestHandler(
+  data: { requestId: string; response: string; responseReason?: string },
+  authUid: string
+) {
+  const { requestId, response, responseReason } = data;
+  if (!requestId || !response) {
+    throw new Error('Missing required fields: requestId, response');
+  }
+  const requestRef = db.collection('overtimeRequests').doc(requestId);
+  const requestDoc = await requestRef.get();
+  if (!requestDoc.exists) {
+    throw new Error('Overtime request not found');
+  }
+  const requestData = requestDoc.data() as OvertimeRequest;
+  if (requestData.recipientId !== authUid) {
+    throw new Error('Unauthorized: You are not the recipient of this request');
+  }
+  if (requestData.status !== 'PENDING') {
+    throw new Error('Request has already been responded to');
+  }
+  await requestRef.update({
+    response,
+    responseReason,
+    status: 'RESPONDED' as OvertimeRequestStatus,
+    respondedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp()
+  });
+  await db.collection('notifications').add({
+    userId: requestData.requesterId,
+    organizationId: requestData.organizationId,
+    category: 'overtime_request',
+    type: 'overtime_response',
+    title: 'Overtime Request Response',
+    message: `${requestData.recipientName} has ${response === 'ACCEPTED' ? 'accepted' : 'declined'} your overtime request`,
+    data: { overtimeRequestId: requestId, response },
+    read: false,
+    createdAt: FieldValue.serverTimestamp()
+  });
+  console.log(`✅ [OvertimeRequest] Response recorded: ${requestId}`);
+  return createSuccessResponse({ requestId, response }, 'Response recorded successfully');
+}
+
+/**
+ * Respond to an overtime request (callable)
  */
 export const respondToOvertimeRequest = onCall(
   {
     region: 'us-central1',
-    cors: CORS_ORIGINS,
-    memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
+    cors: true,
+    memory: '512MiB',
     timeoutSeconds: 30
   },
   async (request) => {
     try {
       const { data, auth } = request;
-      if (!auth) {
-        throw new Error('Unauthorized');
-      }
-
-      const { requestId, response, responseReason } = data;
-
-      if (!requestId || !response) {
-        throw new Error('Missing required fields: requestId, response');
-      }
-
-      const requestRef = db.collection('overtimeRequests').doc(requestId);
-      const requestDoc = await requestRef.get();
-
-      if (!requestDoc.exists) {
-        throw new Error('Overtime request not found');
-      }
-
-      const requestData = requestDoc.data() as OvertimeRequest;
-
-      // Verify user is the recipient
-      if (requestData.recipientId !== auth.uid) {
-        throw new Error('Unauthorized: You are not the recipient of this request');
-      }
-
-      if (requestData.status !== 'PENDING') {
-        throw new Error('Request has already been responded to');
-      }
-
-      // Update request with response
-      await requestRef.update({
-        response,
-        responseReason,
-        status: 'RESPONDED' as OvertimeRequestStatus,
-        respondedAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp()
-      });
-
-      // Notify requester
-      await db.collection('notifications').add({
-        userId: requestData.requesterId,
-        organizationId: requestData.organizationId,
-        category: 'overtime_request',
-        type: 'overtime_response',
-        title: 'Overtime Request Response',
-        message: `${requestData.recipientName} has ${response === 'ACCEPTED' ? 'accepted' : 'declined'} your overtime request`,
-        data: {
-          overtimeRequestId: requestId,
-          response
-        },
-        read: false,
-        createdAt: FieldValue.serverTimestamp()
-      });
-
-      console.log(`✅ [OvertimeRequest] Response recorded: ${requestId}`);
-      return createSuccessResponse({ requestId, response }, 'Response recorded successfully');
+      if (!auth) throw new Error('Unauthorized');
+      return await respondToOvertimeRequestHandler(data, auth.uid);
     } catch (error: any) {
       console.error('❌ [OvertimeRequest] Error responding to request:', error);
       return createErrorResponse(error.message || 'Failed to respond to overtime request');
+    }
+  }
+);
+
+/**
+ * Respond to overtime request (HTTP with explicit CORS) - use when callable CORS fails (e.g. localhost).
+ * Same logic as respondToOvertimeRequest; client can call this URL with Authorization header and JSON body.
+ * invoker: 'public' required so OPTIONS preflight (no auth) reaches this handler; POST still requires Bearer token.
+ */
+export const respondToOvertimeRequestHttp = onRequest(
+  {
+    region: 'us-central1',
+    cors: true,
+    invoker: 'public',
+    memory: '512MiB',
+    timeoutSeconds: 30
+  },
+  async (req, res) => {
+    // CORS: allow request origin (localhost, Hub, deployed apps) so preflight and response succeed
+    const origin = req.get('Origin');
+    const allowOrigin = origin || '*';
+    res.set('Access-Control-Allow-Origin', allowOrigin);
+    res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.set('Access-Control-Max-Age', '86400');
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+    if (req.method !== 'POST') {
+      res.status(405).json(createErrorResponse('Method not allowed'));
+      return;
+    }
+    try {
+      const authHeader = req.get('Authorization');
+      if (!authHeader?.startsWith('Bearer ')) {
+        res.status(401).json(createErrorResponse('Unauthorized'));
+        return;
+      }
+      const token = authHeader.slice(7);
+      const decoded = await admin.auth().verifyIdToken(token);
+      const uid = decoded.uid;
+      const body = req.body?.data ?? req.body;
+      const { requestId, response, responseReason } = body || {};
+      const result = await respondToOvertimeRequestHandler(
+        { requestId, response, responseReason },
+        uid
+      );
+      res.status(200).json(result);
+    } catch (error: any) {
+      console.error('❌ [OvertimeRequest HTTP] Error:', error);
+      res.status(400).json(createErrorResponse(error.message || 'Failed to respond to overtime request'));
     }
   }
 );
@@ -231,7 +261,7 @@ export const respondToOvertimeRequest = onCall(
 export const certifyOvertimeRequest = onCall(
   {
     region: 'us-central1',
-    cors: CORS_ORIGINS,
+    cors: true,
     memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
     timeoutSeconds: 30
   },
@@ -348,7 +378,7 @@ export const certifyOvertimeRequest = onCall(
 export const approveOvertimeRequest = onCall(
   {
     region: 'us-central1',
-    cors: CORS_ORIGINS,
+    cors: true,
     memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
     timeoutSeconds: 30
   },
@@ -448,7 +478,7 @@ export const approveOvertimeRequest = onCall(
 export const rejectOvertimeRequest = onCall(
   {
     region: 'us-central1',
-    cors: CORS_ORIGINS,
+    cors: true,
     memory: '512MiB', // Avoid Cloud Run container healthcheck timeout on cold start
     timeoutSeconds: 30
   },

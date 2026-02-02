@@ -1,0 +1,49 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Accounting Approval Alerts
+    match /accountingApprovalAlerts/{alertId} {
+      allow read: if request.auth != null && 
+        (resource.data.organizationId == request.auth.token.organizationId ||
+         request.auth.token.role in ['ACCOUNTING', 'ACCOUNTANT', 'FINANCE', 'CFO', 'ADMIN', 'OWNER']);
+      
+      allow create: if request.auth != null && 
+        request.resource.data.organizationId == request.auth.token.organizationId;
+      
+      allow update: if request.auth != null && 
+        (resource.data.organizationId == request.auth.token.organizationId) &&
+        (request.auth.token.role in ['ACCOUNTING', 'ACCOUNTANT', 'FINANCE', 'CFO', 'ADMIN', 'OWNER'] ||
+         request.resource.data.managerId == request.auth.uid);
+      
+      allow delete: if request.auth != null && 
+        resource.data.organizationId == request.auth.token.organizationId &&
+        request.auth.token.role in ['ADMIN', 'OWNER'];
+    }
+
+    // Accounting Approval Notifications
+    match /accountingApprovalNotifications/{notificationId} {
+      allow read: if request.auth != null && 
+        (resource.data.organizationId == request.auth.token.organizationId &&
+         (request.auth.uid in resource.data.recipientIds ||
+          request.auth.token.role in ['ACCOUNTING', 'ACCOUNTANT', 'FINANCE', 'CFO', 'ADMIN', 'OWNER']));
+      
+      allow create: if request.auth != null && 
+        request.resource.data.organizationId == request.auth.token.organizationId;
+      
+      allow update: if request.auth != null && 
+        resource.data.organizationId == request.auth.token.organizationId &&
+        (request.auth.uid in resource.data.recipientIds ||
+         request.auth.token.role in ['ACCOUNTING', 'ACCOUNTANT', 'FINANCE', 'CFO', 'ADMIN', 'OWNER']);
+      
+      allow delete: if request.auth != null && 
+        resource.data.organizationId == request.auth.token.organizationId &&
+        request.auth.token.role in ['ADMIN', 'OWNER'];
+    }
+    
+    // Default deny all other collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

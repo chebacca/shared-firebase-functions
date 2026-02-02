@@ -919,7 +919,7 @@ async function completeOAuthCallbackLogic(code: string, state: string, stateData
     // axios is imported at the top level
 
     try {
-      const response = await axios.post('https://api.dropboxapi.com/2/users/get_current_account', null, {
+      const response = await axios.post('https://api.dropboxapi.com/2/users/get_current_account', 'null', {
         headers: {
           'Authorization': `Bearer ${tokenResponse.access_token}`,
           'Content-Type': 'application/json'

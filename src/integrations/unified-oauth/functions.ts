@@ -484,7 +484,8 @@ export const updateOAuthAccountInfo = onCall(
             headers: {
               'Authorization': `Bearer ${token}`,
               'Content-Type': 'application/json'
-            }
+            },
+            body: 'null' // Dropbox API requires JSON literal null; omitting body causes 400 "could not decode input as JSON"
           });
         };
 

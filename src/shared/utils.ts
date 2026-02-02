@@ -503,22 +503,36 @@ export const setCorsHeaders = (req: any, res: any): void => {
     'https://clipshowpro.web.app', // Added Clip Show Pro origin
     'https://backbone-mobile-companion.web.app', // Mobile Companion app
     'http://localhost:4000',
+    'https://localhost:4000', // HTTPS localhost variants
     'http://localhost:4001',
+    'https://localhost:4001',
     'http://localhost:4002', // Licensing website
+    'https://localhost:4002',
     'http://localhost:4003',
+    'https://localhost:4003',
     'http://localhost:4004',
+    'https://localhost:4004',
     'http://localhost:4005', // CNS
+    'https://localhost:4005',
     'http://localhost:4006', // Standalone Call Sheet App (dev port)
+    'https://localhost:4006',
     'http://localhost:4007', // Standalone Call Sheet App
+    'https://localhost:4007',
     'http://localhost:4009',
+    'https://localhost:4009',
     'http://localhost:4010',
+    'https://localhost:4010', // Mobile Companion HTTPS
+    'http://localhost:4011',
+    'https://localhost:4011',
     'http://localhost:5173', // Bridge
+    'https://localhost:5173',
     'null'
   ];
 
   const origin = req.headers.origin;
 
   // Priority 1: Always allow localhost origins (for development/testing) - check this FIRST
+  // This includes both HTTP and HTTPS localhost variants
   if (origin && (origin.includes('localhost') || origin.includes('127.0.0.1'))) {
     res.set('Access-Control-Allow-Origin', origin);
   }

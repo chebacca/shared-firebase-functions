@@ -672,6 +672,7 @@ export {
 export {
   createOvertimeRequest,
   respondToOvertimeRequest,
+  respondToOvertimeRequestHttp,
   certifyOvertimeRequest,
   approveOvertimeRequest,
   rejectOvertimeRequest,
@@ -681,6 +682,15 @@ export {
   getActiveOvertimeSession,
   checkOvertimeSessions
 } from './overtime';
+
+// Export accounting approval functions
+export {
+  getAccountingApprovalAlerts,
+  createAccountingApprovalAlert,
+  acknowledgeAccountingAlert,
+  resolveAccountingAlert,
+  checkManagerApprovalThreshold
+} from './accounting';
 
 // NOTE: Other functions commented out due to TypeScript errors
 

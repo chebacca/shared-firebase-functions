@@ -155,8 +155,10 @@ export class DropboxProvider implements OAuthProvider {
       const response = await fetch('https://api.dropboxapi.com/2/users/get_current_account', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${tokens.accessToken}`
-        }
+          'Authorization': `Bearer ${tokens.accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: 'null' // Dropbox API requires JSON literal null
       });
 
       return response.ok;
@@ -173,8 +175,10 @@ export class DropboxProvider implements OAuthProvider {
       const response = await fetch('https://api.dropboxapi.com/2/users/get_current_account', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: 'null' // Dropbox API requires JSON literal null
       });
 
       if (!response.ok) {
